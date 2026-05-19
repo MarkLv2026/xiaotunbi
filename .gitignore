@@ -2,3 +2,5 @@
 *.xls
 __pycache__/
 .data_cache/
+.workbuddy/
+NUL
