@@ -58,6 +58,13 @@ CSS = '''
 .tag-p1 {background:#fff7ed;color:#ea580c;border:1px solid #fed7aa;}
 .tag-p2 {background:#fefce8;color:#ca8a04;border:1px solid #fde68a;}
 .tag-p3 {background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;}
+/* 自定义HTML表格样式 */
+.styled-table-wrap {overflow-x:auto; border-radius:12px; border:1px solid #e2e8f0; margin-top:6px;}
+.styled-table {width:100%; border-collapse:collapse; font-size:12.5px;}
+.styled-table thead th {background:#1e293b; color:#fff; font-weight:700; text-align:left; padding:9px 10px; white-space:nowrap; position:sticky; top:0; z-index:1;}
+.styled-table tbody td {padding:7px 10px; border-bottom:1px solid #e5e7eb; vertical-align:middle;}
+.styled-table tbody tr:hover {background:#eff6ff;}
+.styled-table td span {white-space:normal;}
 </style>
 '''
 st.markdown(CSS, unsafe_allow_html=True)
@@ -247,6 +254,31 @@ def period_delta_text(metric_key):
     b = '--' if yy is None else f'同比 {yy*100:+.1f}%'
     return f'{a} / {b}'
 
+
+def _html_table(rows, col_widths=None, height=None):
+    """将dict列表渲染为带样式的HTML表格，支持单元格内HTML标签"""
+    if not rows:
+        return '<div style="color:#94a3b8;padding:10px;">暂无数据</div>'
+    cols = list(rows[0].keys())
+    w = col_widths or {}
+    h = f' style="max-height:{height}px;overflow-y:auto;"' if height else ''
+    html = f'<div class="styled-table-wrap"{h}><table class="styled-table"><thead><tr>'
+    for c in cols:
+        cw = w.get(c, '')
+        st = f' style="min-width:{cw}"' if cw else ''
+        html += f'<th{st}>{c}</th>'
+    html += '</tr></thead><tbody>'
+    for i, r in enumerate(rows):
+        bg = '#fafafa' if i % 2 == 0 else 'white'
+        html += f'<tr style="background:{bg}">'
+        for c in cols:
+            val = r.get(c, '')
+            html += f'<td>{val}</td>'
+        html += '</tr>'
+    html += '</tbody></table></div>'
+    return html
+
+
 # 当前筛选数据
 daily = filter_rows(data['daily'], '日期')
 totals = summarize(daily)
@@ -264,7 +296,7 @@ store_rows = group(daily, '店铺')
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
 # ─────────────────────────────────────────────────────────────
-tabs = st.tabs(['经营总览', '时间段对比', '趋势分析', '渠道矩阵', '商品诊断', '🔍 智能诊断'])
+tabs = st.tabs(['经营总览', '时间段对比', '趋势分析', '渠道矩阵', '商品诊断', '🔍 智能诊断', '📊 自动复盘'])
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 1: 经营总览
@@ -1090,7 +1122,7 @@ with tabs[5]:
                 '归因分析(主因)':reason_str,
                 '转化率变化':f"{cvr_diff:+.1f}pp" if cvr_diff is not None else '--',
                 '流量变化':_pct(vis_chg_m)})
-        st.dataframe(df(tbl_rows),use_container_width=True,hide_index=True,height=max(280,min(520,len(tbl_rows)*38+40)))
+        st.markdown(_html_table(tbl_rows, height=max(280,min(520,len(tbl_rows)*38+40))), unsafe_allow_html=True)
         top_drag=sorted(ch_model_issues,key=lambda x:x['环比'])[:5]
         drag_summary=' | '.join([f"[{t['型号']}]{_pct(t['环比'])}" for t in top_drag])
         st.caption(f'📌 最大拖累TOP5: {drag_summary}')
@@ -1126,7 +1158,7 @@ with tabs[5]:
                 '降幅':f"<span style='color:#dc2626;font-weight:700'>{_pct(c['降幅'])}</span>",
                 '本期访客':f"{c['本期访客']:,.0f}",'本期GMV':f"\u00A5{c['本期GMV']:,.0f}",
                 '漏斗判断':fn})
-        st.dataframe(df(cdr),use_container_width=True,hide_index=True,height=min(450,len(cdr)*36+40))
+        st.markdown(_html_table(cdr, height=min(450,len(cdr)*36+40)), unsafe_allow_html=True)
     else:
         st.info('\u2705 未发现转化率骤降型号（阈值：降幅>20%，访客>50）。')
 
@@ -1157,7 +1189,7 @@ with tabs[5]:
                 '降幅':f"<span style='color:#ea580c;font-weight:700'>{_pct(a['降幅'])}</span>",
                 '本期件数':f"{a['本期件数']:,.0f}",'上期件数':f"{a['上期件数']:,.0f}",
                 '初步判断':ar})
-        st.dataframe(df(adr),use_container_width=True,hide_index=True,height=min(420,len(adr)*36+40))
+        st.markdown(_html_table(adr, height=min(420,len(adr)*36+40)), unsafe_allow_html=True)
     else:
         st.info('\u2705 未发现客单价明显下跌型号（阈值：降幅>10%，件数>10）。')
 
@@ -1182,7 +1214,7 @@ with tabs[5]:
                 '缩水':f"<span style='color:#dc2626;font-weight:700'>{_pct(d['缩水幅度'])}</span>",
                 '损失金额':f"\u00A5{loss:,.0f}",
                 '占上期份额':f"{d['上期GMV']/max(prev_sum_all.get('支付金额',1),1)*100:.1f}%"})
-        st.dataframe(df(dsr),use_container_width=True,hide_index=True,height=min(400,len(dsr)*36+40))
+        st.markdown(_html_table(dsr, height=min(400,len(dsr)*36+40)), unsafe_allow_html=True)
     else:
         st.info('\u2705 上期TOP20爆款型号均保持稳定。')
 
@@ -1210,7 +1242,7 @@ with tabs[5]:
             rsr.append({'渠道':r['渠道'],'品类':r['品类'],'型号':r['型号'],
                 '上期GMV':f"\u00A5{r['上期GMV']:,.0f}" if r['上期GMV']>0 else '新上榜',
                 '本期GMV':f"\u00A5{r['本期GMV']:,.0f}",'增速':sp})
-        st.dataframe(df(rsr),use_container_width=True,hide_index=True,height=min(340,len(rsr)*34+40))
+        st.markdown(_html_table(rsr, height=min(340,len(rsr)*34+40)), unsafe_allow_html=True)
     else:
         st.info('\u2139\ufe0f 本周期未发现显著增长新星（阈值：增速>50% 或 新上榜且GMV>\u00A52000）。')
 
@@ -1386,3 +1418,424 @@ with tabs[5]:
         rows_to_csv(dl_data, list(dl_data[0].keys()) if dl_data else rep_header),
         file_name=f'xiaotunbi_diagnosis_{s.replace("-","")}_{e.replace("-","")}.csv',
         mime='text/csv')
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 7: 📊 自动复盘（周复盘/月复盘/大促复盘）
+# ═══════════════════════════════════════════════════════════════
+with tabs[6]:
+    st.markdown('<div class="section-title">📊 自动复盘</div>', unsafe_allow_html=True)
+    st.caption('对所选时间段进行多维度复盘分析，支持同比（去年同期）、月环比（上月同期）对比，自动识别问题并给出落地方案。')
+
+    # ---- 复盘参数设置 ----
+    rc1, rc2, rc3 = st.columns([2, 2, 1])
+    with rc1:
+        review_type = st.selectbox('📋 复盘类型', ['周复盘', '月复盘', '大促复盘(618/双11)', '自定义周期'],
+                                    help='不同类型会调整对比维度和关注重点')
+    with rc2:
+        focus_area = st.multiselect('🎯 重点聚焦（可选）',
+            ['GMV表现', '流量健康度', '转化效率', '客单价', '退款售后', '渠道结构', '品类表现', '爆款监控'],
+            default=['GMV表现','流量健康度','转化效率'])
+    with rc3:
+        st.markdown('<br>')
+        auto_export = st.checkbox('📥 一键导出报告', value=True)
+
+    st.markdown("---")
+
+    # ── 数据准备：本期/上期(环比)/去年同期(同比) ──
+    cur_days = (end - start).days + 1
+    mom_end = start - datetime.timedelta(days=1)
+    mom_start = mom_end - datetime.timedelta(days=cur_days - 1)
+    try:
+        yoy_start = start.replace(year=start.year - 1)
+    except ValueError:
+        yoy_start = start.replace(year=start.year - 1, day=28)
+    try:
+        yoy_end = end.replace(year=end.year - 1)
+    except ValueError:
+        yoy_end = end.replace(year=end.year - 1, day=28)
+
+    cur_rows_all = filter_rows(data['daily'], '日期')
+    prev_rows_all = filter_rows(data['daily'], '日期',
+                                 channel=sel_channel if sel_channel != '全部' else None,
+                                 store=sel_store if sel_store != '全部' else None,
+                                 category=sel_category if sel_category != '全部' else None,
+                                 model=sel_model if sel_model != '全部' else None)
+    mom_rows = [r for r in data['daily'] if r.get('日期')
+                and str(yoy_start) <= str(r['日期']) <= str(mom_end)]
+    yoy_rows = [r for r in data['daily'] if r.get('日期')
+                and str(yoy_start) <= str(r['日期']) <= str(yoy_end)]
+
+    def _safe_sum(rows, key):
+        return sum(_num(r.get(key)) for r in rows) if rows else 0
+
+    def _safe_avg(rows, num_key, den_key):
+        n = _safe_sum(rows, num_key)
+        d = _safe_sum(rows, den_key)
+        return n / d if d > 0 else 0
+
+    cur_gmv   = _safe_sum(cur_rows_all, '支付金额')
+    cur_vis   = _safe_sum(cur_rows_all, '商品访客数')
+    cur_cvr   = _safe_avg(cur_rows_all, '支付买家数', '商品访客数') * 100
+    cur_aov   = _safe_avg(cur_rows_all, '支付金额', '支付件数')
+    cur_ref   = _safe_avg(cur_rows_all, '成功退款金额', '支付金额') * 100
+    cur_buyers = _safe_sum(cur_rows_all, '支付买家数')
+    cur_units  = _safe_sum(cur_rows_all, '支付件数')
+    cur_cart   = _safe_sum(cur_rows_all, '商品加购人数')
+
+    mom_gmv   = _safe_sum(mom_rows, '支付金额')
+    mom_vis   = _safe_sum(mom_rows, '商品访客数')
+    mom_cvr   = _safe_avg(mom_rows, '支付买家数', '商品访客数') * 100
+    mom_aov   = _safe_avg(mom_rows, '支付金额', '支付件数')
+
+    yoy_gmv   = _safe_sum(yoy_rows, '支付金额')
+    yoy_vis   = _safe_sum(yoy_rows, '商品访客数')
+    yoy_cvr   = _safe_avg(yoy_rows, '支付买家数', '商品访客数') * 100
+    yoy_aov   = _safe_avg(yoy_rows, '支付金额', '支付件数')
+
+    def _chg(cur, base):
+        if base and base > 0: return (cur - base) / base
+        return None
+
+    mom_gmv_chg = _chg(cur_gmv, mom_gmv)
+    mom_vis_chg = _chg(cur_vis, mom_vis)
+    mom_cvr_chg = _chg(cur_cvr, mom_cvr)
+    mom_aov_chg = _chg(cur_aov, mom_aov)
+
+    yoy_gmv_chg = _chg(cur_gmv, yoy_gmv)
+    yoy_vis_chg = _chg(cur_vis, yoy_vis)
+    yoy_cvr_chg = _chg(cur_cvr, yoy_cvr)
+    yoy_aov_chg = _chg(cur_aov, yoy_aov)
+
+    # ══════════════════════════════════
+    # R1. 复盘总览卡片（本期 + 环比 + 同比）
+    # ══════════════════════════════════
+    st.markdown('#### 📌 一、经营总览 — 本期 vs 环比 vs 同比')
+
+    def _fmt_chg(v):
+        if v is None: return '--'
+        c = '#22c55e' if v >= 0 else '#ef4444'
+        arrow = '↑' if v >= 0 else '↓'
+        return f"<span style='color:{c};font-weight:700'>{arrow}{abs(v)*100:.1f}%</span>"
+
+    m1,m2,m3,m4,m5 = st.columns(5)
+    metrics_review = [
+        ('💰 GMV总额', cur_gmv, mom_gmv, yoy_gmv, mom_gmv_chg, yoy_gmv_chg, '\u00A5'),
+        ('👁 访客总数', cur_vis, mom_vis, yoy_vis, mom_vis_chg, yoy_vis_chg, ''),
+        ('🔄 转化率%', round(cur_cvr,2), round(mom_cvr,2), round(yoy_cvr,2), mom_cvr_chg, yoy_cvr_chg, '%'),
+        ('🎫 客单价', round(cur_aov,0), round(mom_aov,0), round(yoy_aov,0), mom_aov_chg, yoy_aov_chg, '\u00A5'),
+        ('↩️ 退款率%', round(cur_ref,2), None, None, None, None, '%'),
+    ]
+    for col,(name,cv,mv,yv,mc,yc,pfx) in zip([m1,m2,m3,m4,m5],metrics_review):
+        with col:
+            cv_s = f'{pfx}{cv:,.0f}' if name not in ['转化率%','退款率%'] else f'{cv:.2f}%'
+            mom_s = f'{_fmt_chg(mc)}<br><span style="font-size:10px;color:#94a3b8;">vs上月 {pfx}{mv:,.0f}</span>' if mc is not None else '<span style="color:#94a3b8;">--</span>'
+            yoy_s = f'<br>{_fmt_chg(yc)}<span style="font-size:10px;color:#94a3b8;">vs去年{pfx}{yv:,.0f}</span>' if yc is not None else ''
+            bg = '#fef2f2' if (mc is not None and mc < -0.05) or (yc is not None and yc < -0.10) else '#f0fdf4'
+            border = '#fca5a5' if (mc is not None and mc < -0.05) or (yc is not None and yc < -0.10) else '#86efac'
+            st.markdown(
+                f'<div style="background:{bg};border:1px solid {border};border-radius:14px;padding:14px;text-align:center;">'
+                f'<div style="font-size:11px;color:#64748b;font-weight:700;">{name}</div>'
+                f'<div style="font-size:22px;font-weight:900;color:#0f172a;margin:4px 0;">{cv_s}</div>'
+                f'<div style="font-size:11px;">{mom_s}{yoy_s}</div></div>', unsafe_allow_html=True)
+
+    # ══════════════════════════════════
+    # R2. 问题诊断矩阵
+    # ══════════════════════════════════
+    st.markdown('---')
+    st.markdown("#### 🔍 二、核心问题诊断")
+
+    problems = []
+
+    # --- GMV问题 ---
+    if mom_gmv_chg is not None and mom_gmv_chg < -0.05:
+        loss_amt = max(0, mom_gmv - cur_gmv)
+        sev = '🔴 严重' if mom_gmv_chg < -0.20 else ('🟠 明显' if mom_gmv_chg < -0.10 else '🟡 轻微')
+        root_parts = []
+        if mom_vis_chg is not None and mom_vis_chg < -0.03:
+            root_parts.append(f'流量下降{_fmt_chg(mom_vis_chg)}')
+        if mom_cvr_chg is not None and mom_cvr_chg < -0.02:
+            root_parts.append(f'转化率下降{abs(mom_cvr_chg)*100:.1f}pp')
+        if mom_aov_chg is not None and mom_aov_chg < -0.02:
+            root_parts.append(f'客单价下跌{_fmt_chg(mom_aov_chg)}')
+        root_str = '、'.join(root_parts) if root_parts else '多因素综合影响'
+        problems.append({
+            '领域': 'GMV总览', '等级': sev,
+            '问题描述': f'本期GMV\u00A5{cur_gmv:,.0f}，较上期下降\u00A5{loss_amt:,.0f}（{_fmt_chg(mom_gmv_chg)}）',
+            '根因': root_str,
+            '建议': f'① 检查推广预算是否耗尽 ② 核心关键词排名是否下滑 ③ 竞品是否有大促活动 ④ 目标值：恢复至\u00A5{mom_gmv*0.95:,.0f}'
+        })
+    elif yoy_gmv_chg is not None and yoy_gmv_chg > 0.10:
+        problems.append({
+            '领域': 'GMV总览', '等级': '🟢 亮点',
+            '问题描述': f'同比增长{_fmt_chg(yoy_gmv_chg)}，超出预期！',
+            '根因': '需进一步确认增长驱动因素（新渠道？新品爆发？大促拉动？）',
+            '建议': f'① 复盘增长来源，固化成功经验 ② 将有效策略复制到弱势渠道 ③ 设定下一期目标：\u00A5{cur_gmv*1.10:,.0f}'
+        })
+
+    # --- 流量问题 ---
+    if mom_vis_chg is not None and mom_vis_chg < -0.08:
+        problems.append({
+            '领域': '流量', '等级': '🔴 严重' if mom_vis_chg < -0.20 else '🟠 明显',
+            '问题描述': f'访客从{mom_vis:,.0f}\u2192{cur_vis:,.0f}（{_fmt_chg(mom_vis_chg)}），流失约{max(0,mom_vis-cur_vis):,.0f}人',
+            '根因': '可能原因：推广计划降权/搜索排名下降/季节性波动/内容热度衰减',
+            '建议': f'① 直通车后台检查近7天展现量降幅>30%的计划\n② 生意参谋查看类目搜索人气变化\n③ 应急：日预算+50%观察3天'
+        })
+
+    # --- 转化问题 ---
+    if mom_cvr_chg is not None and mom_cvr_chg < -0.03:
+        lost_orders = int(cur_vis * (mom_cvr/100 - cur_cvr/100)) if cur_vis else 0
+        lost_val = lost_orders * cur_aov
+        problems.append({
+            '领域': '转化效率', '等级': '🔴 严重' if mom_cvr_chg < -0.08 else '🟠 明显',
+            '问题描述': f'转化率从{mom_cvr:.2f}%\u2192{cur_cvr:.2f}%（\u2193{abs(mom_cvr_chg)*100:.1f}pp），少成交约{lost_orders:,}单，损失约\u00A5{lost_val:,.0f}',
+            '根因': '价格竞争力↓ / 差评累积 / 详情页体验差 / 库存缺货 / 加购未转化',
+            '建议': f'① 导出近60天差评→优化Top3负评点\n② 对比竞品同款定价策略\n③ 检查详情页首屏加载速度和卖点展示\n④ 目标：转化率回升到{mom_cvr:.1f}%以上'
+        })
+
+    # --- 客单价问题 ---
+    if mom_aov_chg is not None and mom_aov_chg < -0.05:
+        problems.append({
+            '领域': '客单价', '等级': '🟠 明显' if mom_aov_chg < -0.10 else '🟡 轻微',
+            '问题描述': f'客单价从\u00A5{mom_aov:,.0f}\u2192\u00A5{cur_aov:,.0f}（{_fmt_chg(mom_aov_chg)}）',
+            '根因': '低价SKU占比提升 / 折扣力度加大 / 高客单品销量萎缩 / 关联销售下降',
+            '建议': f'① 检查高客单TOP5型号的销量变化\n② 优化关联推荐（搭配购/满减）\n③ 设置满减门槛刺激连带率\n④ 目标：客单价回升到\u00A5{mom_aov*0.95:,.0f}'
+        })
+
+    # --- 渠道结构问题 ---
+    ch_cur = {}
+    for r in cur_rows_all:
+        k = r.get('渠道','未知')
+        ch_cur[k] = ch_cur.get(k, 0) + _num(r.get('支付金额'))
+    ch_mom = {}
+    for r in mom_rows:
+        k = r.get('渠道','未知')
+        ch_mom[k] = ch_mom.get(k, 0) + _num(r.get('支付金额'))
+    total_ch_mom = sum(ch_mom.values()) or 1
+    for ch_name, ch_v in sorted(ch_cur.items(), key=lambda x:x[1], reverse=True):
+        ch_prev = ch_mom.get(ch_name, 0)
+        ch_share_cur = ch_v / (cur_gmv or 1) * 100
+        ch_share_prev = ch_prev / total_ch_mom * 100
+        share_chg = ch_share_cur - ch_share_prev
+        if abs(share_chg) > 5 and ch_v > 5000:
+            direction = '上升↑' if share_chg > 0 else '下降↓'
+            problems.append({
+                '领域': '渠道结构', '等级': '🟡 关注',
+                '问题描述': f'【{ch_name}】份额{ch_share_cur:.1f}%（{direction}{abs(share_chg):.1f}pp）',
+                '根因': f'该渠道投入或自然流量发生变化' if share_chg < 0 else '该渠道表现优于其他渠道',
+                '建议': f'{"加大该渠道投入" if share_chg > 0 else "排查该渠道流量/转化异常"}'
+            })
+
+    # --- 品类/型号问题 ---
+    model_issues = []
+    for mk_key, mv in group(cur_rows_all, '渠道+品类+型号').items():
+        pv_list = [r for r in mom_rows
+                    if r.get('渠道')==mk_key.split('|')[0] if len(mk_key.split('|'))>1
+                    and r.get('品类')==mk_key.split('|')[1]
+                    and r.get('型号')==mk_key.split('|')[2]] if len(mk_key.split('|'))==3 else []
+        mc = mv.get('支付金额', 0)
+        mp = sum(_num(r.get('支付金额')) for r in pv_list) if pv_list else 0
+        if mp > 2000 and mc < mp * 0.6:
+            model_issues.append({'key': mk_key, 'cur': mc, 'prev': mp, 'drop': (mc-mp)/mp})
+    model_issues.sort(key=lambda x: x['drop'])
+    for mi in model_issues[:3]:
+        problems.append({
+            '领域': '爆款监控', '等级': '🔴 风险' if mi['drop'] < -0.30 else '🟠 警示',
+            '问题描述': f'【{mi["key"]}】GMV从\u00A5{mi["prev"]:,.0f}\u2192\u00A5{mi["cur"]:,.0f}（{_fmt_chg(mi["drop"])}）',
+            '根因': '上期爆款本期断崖掉量 → 可能缺货/降价/竞品冲击/推广停止',
+            '建议': f'① 确认库存状态 ② 检查竞品同款价格 ③ 恢复推广预算 ④ 考虑清仓或捆绑促销'
+        })
+
+    # 展示问题诊断表
+    if problems:
+        prob_display = []
+        for i, p in enumerate(problems):
+            prob_display.append({
+                '序号': i+1, '领域': p['领域'], '等级': p['等级'],
+                '问题描述': p['问题描述'], '核心根因': p['根因'],
+                '行动建议': p['建议']
+            })
+        st.markdown(_html_table(prob_display, height=min(450,len(prob_display)*50+40)), unsafe_allow_html=True)
+    else:
+        st.success('✅ 当前所选时间段各项指标表现良好，未发现显著异常问题。')
+
+    # ══════════════════════════════════
+    # R3. 可执行提升方案
+    # ══════════════════════════════════
+    st.markdown('---')
+    st.markdown('#### 🛠️ 三、可执行提升方案（按优先级排序）')
+
+    review_actions = []
+    action_id = 0
+
+    def _ra(priority, title, detail, owner, deadline, target_kpi):
+        nonlocal action_id; action_id += 1
+        review_actions.append({'id': action_id, 'p': priority, 't': title,
+                              'd': detail, 'o': owner, 'dl': deadline, 'kpi': target_kpi})
+
+    # 根据问题生成措施
+    has_gmv_issue = any(p['领域']=='GMV总览' and '严重' in p['等级'] for p in problems)
+    has_flow_issue = any(p['领域']=='流量' for p in problems)
+    has_cvr_issue = any(p['领域']=='转化效率' for p in problems)
+    has_aov_issue = any(p['领域']=='客单价' for p in problems)
+
+    if has_gmv_issue or has_flow_issue:
+        _ra('P0', '【流量急救】全渠道流量排查与拉升',
+            f'现状：本期访客{cur_vis:,.0f}，上期{mom_vis:,.0f}（{_fmt_chg(mom_vis_chg) if mom_vis_chg is not None else "--"}）\n'
+            f'潜在损失GMV约\u00A5{max(0,mom_gmv-cur_gmv):,.0f}\n\n'
+            f'执行步骤：\n'
+            f'① 打开直通车→推广计划→按近7天展现量排序→标记降幅>30%的计划\n'
+            f'② 对每个异常计划：检查质量分、点击率、出价是否被超越\n'
+            f'③ 生意参谋→市场→搜索分析→查看核心类目Top10词的搜索人气趋势\n'
+            f'④ 直播间：回放查看流量来源构成变化\n'
+            f'⑤ 应急：表现最差的3个计划日预算+50%，观察3天效果',
+            '运营负责人', '24小时内见效', f'访客恢复≥{int(mom_vis*0.95):,}')
+
+    if has_cvr_issue:
+        cart_rate_cur = (cur_cart / cur_vis * 100) if cur_vis else 0
+        _ra('P0', '【转化提升】全店转化率专项优化',
+            f'现状：转化率{cur_cvr:.2f}% vs 上期{mom_cvr:.2f}%（\u2193{abs(mom_cvr_chg)*100 if mom_cvr_chg else 0:.1f}pp）\n'
+            f'加购率：{cart_rate_cur:.1f}% | 客单价：\u00A5{cur_aov:,.0f}\n\n'
+            f'执行步骤：\n'
+            f'① 导出近60天评价→统计负面标签Top5→针对性优化话术\n'
+            f'② 检查详情页首屏3秒内能否看清核心卖点和价格\n'
+            f'③ 搜索竞品同款→对比价格/赠品/服务承诺→制定差异化策略\n'
+            f'④ 检查库存：确认主推款无缺货/预售状态\n'
+            f'⑤ 若加购率高但转化低→重点优化价格和信任背书',
+            '运营+美工', '3-5天见效', f'转化率回升≥{mom_cvr-1:.1f}%')
+
+    if has_aov_issue:
+        _ra('P1', '【客单价】关联销售与满减优化',
+            f'现状：客单价从\u00A5{mom_aov:,.0f}\u2192\u00A5{cur_aov:,.0f}\n\n'
+            f'执行步骤：\n'
+            f'① 分析订单数据：计算连带率（件数/订单数）变化\n'
+            f'② 优化搭配购：设置强关联SKU组合优惠\n'
+            f'③ 调整满减门槛：当前均值\u00A5{cur_aov:,.0f}→建议设满减为\u00A5{int(cur_aov*1.2):,}\n'
+            f'④ 推荐位优化：详情页/购物车/结算页增加关联推荐\n'
+            f'⑤ 检查优惠券使用率，避免过度折扣拉低均价',
+            '运营+策划', '1周内见效', f'客单价≥\u00A5{mom_aov*0.95:,.0f}')
+
+    # 渠道优化
+    if any(p['领域']=='渠道结构' for p in problems):
+        _ra('P1', '【渠道】渠道结构再平衡',
+            f'根据各渠道份额变化进行资源重新分配\n'
+            f'① 对上升通道加大投入预算\n'
+            f'② 对下滑渠道排查原因（流量/质量/竞争）\n'
+            f'③ 制定渠道专属目标KPI',
+            '运营负责人', '本周内完成', '渠道ROI均>3')
+
+    # 爆款保护
+    if any(p['领域']=='爆款监控' for p in problems):
+        _ra('P1', '【爆款】断崖掉量紧急处理',
+            f'发现{len(model_issues)}个上期爆款本期掉量超40%\n'
+            f'① 逐个确认库存状态\n'
+            f'② 检查是否被竞品低价冲击\n'
+            f'③ 确认推广计划是否正常运行\n'
+            f'④ 制定清仓或换款方案',
+            '运营+供应链', '48小时内', '掉量幅度<20%')
+
+    # 常规动作
+    _ra('P2', '【复盘机制】建立周度复盘习惯',
+        f'每周一上午固定流程：\n'
+        f'① 导出上周核心指标数据\n'
+        f'② 与前一周对比，标注变化>5%的指标\n'
+        f'③ 连续2周同一方向变化→专项分析会\n'
+        f'④ 截图存档形成复盘档案',
+        '全员', '每周一固定', '周报按时产出')
+
+    _ra('P3', '【竞品】竞品动态跟踪',
+        f'① 每周记录Top3竞品的促销活动、价格变动、新品上架\n'
+        f'② 大促期间每日跟踪\n'
+        f'③ 发现重大变化及时通报团队',
+        '运营', '持续', '无遗漏')
+
+    # 展示措施
+    for act in review_actions:
+        cls = {'P0':'tag-p0','P1':'tag-p1','P2':'tag-p2','P3':'tag-p3'}[act['p']]
+        tag_html = f"<span class='action-tag {cls}'>{act['p']}</span>"
+        exp_title = f"{tag_html} **{act['t']}** <small style='color:#94a3b8;'>| {act['o']} | 目标: {act['kpi']} | 截止: {act['dl']}</small>"
+        with st.expander(exp_title, expanded=(act['p']=='P0')):
+            st.markdown(act['d'].replace('\n', '<br>'), unsafe_allow_html=True)
+
+    if not review_actions:
+        st.success('✅ 当前各项指标健康，保持现有经营策略即可。')
+
+    # ══════════════════════════════════
+    # R4. 复盘结论 & 下期目标
+    # ══════════════════════════════════
+    st.markdown('---')
+    st.markdown('#### 📝 四、复盘总结与下期目标')
+
+    # 自动生成总结文字
+    score_parts = []
+    if mom_gmv_chg is not None:
+        if mom_gmv_chg >= 0.05: score_parts.append(f'GMV同比增长{_fmt_chg(mom_gmv_chg)}，表现优秀')
+        elif mom_gmv_chg >= -0.05: score_parts.append(f'GMV基本持平，小幅波动{_fmt_chg(mom_gmv_chg)}')
+        else: score_parts.append(f'GMV同比下降{_fmt_chg(mom_gmv_chg)}，需要重点关注')
+    if yoy_gmv_chg is not None:
+        if yoy_gmv_chg >= 0: score_parts.append(f'同比去年增长{_fmt_chg(yoy_gmv_chg)}，长期趋势向好')
+        else: score_parts.append(f'同比去年下降{_fmt_chg(yoy_gmv_chg)}，需警惕结构性问题')
+
+    overall_verdict = ''
+    p0_count = sum(1 for a in review_actions if a['p']=='P0')
+    p1_count = sum(1 for a in review_actions if a['p']=='P1')
+    if p0_count == 0 and p1_count == 0:
+        overall_verdict = ('🟢 整体健康', '#22c55e',
+            f'本周期经营状况良好。{'；'.join(score_parts) if score_parts else ''}继续保持现有策略，关注下周数据变化趋势。')
+    elif p0_count == 0 and p1_count <= 2:
+        overall_verdict = ('🟡 需要关注', '#f59e0b',
+            f'本周期存在一些值得关注的问题（{p1_count}项P1任务）。{'；'.join(score_parts) if score_parts else ''}建议在本周内优先完成P1级措施的落地。')
+    else:
+        overall_verdict = ('🔴 需要立即行动', '#ef4444',
+            f'本周期发现{p0_count}项紧急问题和{p1_count}项重要问题。{'；'.join(score_parts) if score_parts else ''}建议立即召开专项会议，优先处理P0任务。')
+
+    rv1, rv2 = st.columns([3, 2])
+    with rv1:
+        st.markdown(
+            f"<div style='background:{overall_verdict[1]}12;border-left:4px solid {overall_verdict[1]};"
+            f"border-radius:10px;padding:16px;'>"
+            f"<strong style='font-size:16px;'>{overall_verdict[0]}</strong>"
+            f"<div style='margin-top:8px;font-size:13.5px;line-height:1.8;color:#374151;'>{overall_verdict[2]}</div></div>",
+            unsafe_allow_html=True)
+    with rv2:
+        next_target_gmv = cur_gmv * 1.08 if mom_gmv_chg and mom_gmv_chg < 0 else cur_gmv * 1.05
+        st.markdown(
+            f"<div style='background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px;'>"
+            f"<strong style='font-size:15px;'>🎯 下期目标建议</strong>"
+            f"<div style='margin-top:8px;font-size:13px;line-height:1.9;color:#1e40af;'>"
+            f"• GMV目标：<b>\u00A5{next_target_gmv:,.0f}</b>（较本期+8%）<br>"
+            f"• 访客目标：<b>{int(cur_vis*1.05):,}</b>（较本期+5%）<br>"
+            f"• 转化率目标：<b>{min(cur_cvr*1.05, mom_cvr or cur_cvr*1.03):.2f}%</b><br>"
+            f"• 待完成任务：P0×{p0_count}项 / P1×{p1_count}项<br>"
+            f"• 下次复盘时间：{(start + datetime.timedelta(days=cur_days)).strftime('%Y-%m-%d')}周期结束后"
+            f"</div></div>", unsafe_allow_html=True)
+
+    # 导出复盘报告
+    if auto_export:
+        rep_data = [{
+            '复盘类型': review_type, '复盘区间': f'{s}~{e}', '生成时间': datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
+            'GMV本期': f'\u00A5{cur_gmv:,.0f}', 'GMV环比': _fmt_chg(mom_gmv_chg), 'GMV同比': _fmt_chg(yoy_gmv_chg),
+            '访客本期': f'{cur_vis:,.0f}', '访客环比': _fmt_chg(mom_vis_chg),
+            '转化率本期': f'{cur_cvr:.2f}%', '转化率环比': _fmt_chg(mom_cvr_chg),
+            '客单价本期': f'\u00A5{cur_aov:,.0f}', '客单价环比': _fmt_chg(mom_aov_chg),
+            '问题数量': len(problems), 'P0任务数': p0_count, 'P1任务数': p1_count,
+            '整体结论': overall_verdict[0],
+        }]
+        for p in problems:
+            rep_data.append({'复盘类型':'', '复盘区间':'', '生成时间':'',
+                'GMV本期':'', 'GMV环比':'', 'GMV同比':'',
+                '访客本期':'', '访客环比':'', '转化率本期':'', '转化率环比':'',
+                '客单价本期':'', '客单价环比':'',
+                '问题数量':'', 'P0任务数':'', 'P1任务数':'', '整体结论':'',
+                '问题领域': p['领域'], '等级': p['等级'], '问题描述': p['问题描述'],
+                '核心根因': p['根因'], '建议措施': p['建议']})
+        for a in review_actions:
+            rep_data.append({'复盘类型':'', '复盘区间':'', '生成时间':'',
+                'GMV本期':'', 'GMV环比':'', 'GMV同比':'',
+                '访客本期':'', '访客环比':'', '转化率本期':'', '转化率环比':'',
+                '客单价本期':'', '客单价环比':'',
+                '问题数量':'', 'P0任务数':'', 'P1任务数':'', '整体结论':'',
+                '措施优先级': a['p'], '措施标题': a['t'], '负责人': a['o'],
+                '截止时间': a['dl'], '量化目标': a['kpi']})
+        st.download_button('📥 下载复盘报告 CSV',
+            rows_to_csv(rep_data, list(rep_data[0].keys())),
+            file_name=f'review_{s.replace("-","")}_{e.replace("-","")}.csv', mime='text/csv')
