@@ -1395,7 +1395,7 @@ with tabs[5]:
     # ══════════════════════════════════════
     # E. 一键下载诊断报告（修复列错乱问题）
     # ══════════════════════════════════════
-    st.markdown("<hr style='margin:18px 0;border:none;border-top:1px dashed #cbd5e1;'>")
+    st.markdown("<hr style='margin:18px 0;border:none;border-top:1px dashed #cbd5e1;'>", unsafe_allow_html=True)
     rep_header=['\u8BCA\u65AD\u65F6\u95F4','\u8BCA\u65AD\u533A\u95F4','\u5BF9\u6BD4\u533A\u95F4','GMV\u53D8\u5316','\u8BBF\u5BA2\u53D8\u5316',
                '\u8F6C\u5316\u7387\u53D8\u5316','\u5BA2\u5355\u4EF7\u53D8\u5316','\u9000\u6B3E\u7387','\u5065\u5EB7\u8BC4\u5206',
                '\u5F02\u5E38\u578B\u53F7\u6570','\u8F6C\u5316\u9AA4\u964D\u578B\u53F7\u6570','\u7206\u6B3E\u6389\u91CF\u6570','\u65B0\u661F\u589E\u957F\u6570',
@@ -1459,16 +1459,20 @@ with tabs[6]:
     except ValueError:
         yoy_end = end.replace(year=end.year - 1, day=28)
 
+    # 本期数据（已按筛选条件过滤）
     cur_rows_all = filter_rows(data['daily'], '日期')
-    prev_rows_all = filter_rows(data['daily'], '日期',
-                                 channel=channel if channel != '全部' else None,
-                                 store=store if store != '全部' else None,
-                                 category=category if category != '全部' else None,
-                                 model=model if model != '全部' else None)
+    
+    # 环比数据（上月同期）— 注意：用 mom_start 不是 yoy_start
+    _ms, _me = str(mom_start.date()) if hasattr(mom_start, 'date') else str(mom_start).split()[0], \
+               str(mom_end.date()) if hasattr(mom_end, 'date') else str(mom_end).split()[0]
     mom_rows = [r for r in data['daily'] if r.get('日期')
-                and str(yoy_start) <= str(r['日期']) <= str(mom_end)]
+                and _ms <= str(r['日期']).split()[0] <= _me]
+
+    # 同比数据（去年同期）
+    _ys, _ye = str(yoy_start.date()) if hasattr(yoy_start, 'date') else str(yoy_start).split()[0], \
+               str(yoy_end.date()) if hasattr(yoy_end, 'date') else str(yoy_end).split()[0]
     yoy_rows = [r for r in data['daily'] if r.get('日期')
-                and str(yoy_start) <= str(r['日期']) <= str(yoy_end)]
+                and _ys <= str(r['日期']).split()[0] <= _ye]
 
     def _safe_sum(rows, key):
         return sum(_num(r.get(key)) for r in rows) if rows else 0
@@ -1533,8 +1537,16 @@ with tabs[6]:
     for col,(name,cv,mv,yv,mc,yc,pfx) in zip([m1,m2,m3,m4,m5],metrics_review):
         with col:
             cv_s = f'{pfx}{cv:,.0f}' if name not in ['转化率%','退款率%'] else f'{cv:.2f}%'
-            mom_s = f'{_fmt_chg(mc)}<br><span style="font-size:10px;color:#94a3b8;">vs上月 {pfx}{mv:,.0f}</span>' if mc is not None else '<span style="color:#94a3b8;">--</span>'
-            yoy_s = f'<br>{_fmt_chg(yc)}<span style="font-size:10px;color:#94a3b8;">vs去年{pfx}{yv:,.0f}</span>' if yc is not None else ''
+            # 安全格式化环比/同比，处理 None 和 0
+            mom_s = ''
+            if mc is not None:
+                mv_fmt = f'{pfx}{mv:,.0f}' if mv is not None else '--'
+                mom_s = f'{_fmt_chg(mc)}<br><span style="font-size:10px;color:#94a3b8;">vs上月 {mv_fmt}</span>'
+            else:
+                mom_s = '<span style="color:#94a3b8;">--</span>'
+            yoy_s = ''
+            if yc is not None and yv is not None:
+                yoy_s = f'<br>{_fmt_chg(yc)}<span style="font-size:10px;color:#94a3b8;">vs去年{pfx}{yv:,.0f}</span>'
             bg = '#fef2f2' if (mc is not None and mc < -0.05) or (yc is not None and yc < -0.10) else '#f0fdf4'
             border = '#fca5a5' if (mc is not None and mc < -0.05) or (yc is not None and yc < -0.10) else '#86efac'
             st.markdown(
