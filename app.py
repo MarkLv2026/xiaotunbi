@@ -326,7 +326,7 @@ def period_delta_text(metric_key):
 
 
 def _html_table(rows, col_widths=None, height=None):
-    """将dict列表渲染为带样式的HTML表格，支持单元格内HTML标签"""
+    """Render dict list as styled HTML table, supports HTML tags inside cells"""
     if not rows:
         return '<div style="color:#94a3b8;padding:10px;">暂无数据</div>'
     cols = list(rows[0].keys())
