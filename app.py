@@ -121,13 +121,13 @@ with fc:
     with c2:
         end = st.date_input('结束日期', value=datetime.date.fromisoformat(meta['dateRange'][1]))
     with c3:
-        channel = st.selectbox('渠道', ['全部'] + data['filters']['channels'])
+        channel = st.multiselect('渠道', data['filters']['channels'], default=data['filters']['channels'])
     with c4:
-        store = st.selectbox('店铺', ['全部'] + data['filters']['stores'])
+        store = st.multiselect('店铺', data['filters']['stores'], default=data['filters']['stores'])
     with c5:
-        category = st.selectbox('品类', ['全部'] + data['filters']['categories'])
+        category = st.multiselect('品类', data['filters']['categories'], default=data['filters']['categories'])
     with c6:
-        model = st.selectbox('型号', ['全部'] + data['filters']['models'])
+        model = st.multiselect('型号', data['filters']['models'], default=data['filters']['models'])
 
 s = str(start)
 e = str(end)
@@ -153,13 +153,13 @@ def filter_rows(rows, date_key='日期'):
             d = d + '-01'
         if d and (d < s or d > e):
             continue
-        if channel != '全部' and r.get('渠道') != channel:
+        if channel and r.get('渠道') not in channel:
             continue
-        if store != '全部' and r.get('店铺') != store:
+        if store and r.get('店铺') not in store:
             continue
-        if category != '全部' and r.get('品类') != category:
+        if category and r.get('品类') not in category:
             continue
-        if model != '全部' and r.get('型号') != model:
+        if model and r.get('型号') not in model:
             continue
         out.append(r)
     return out
@@ -217,16 +217,18 @@ def _period_sum(metric_key, s0, e0, apply_filter=True):
         if not d or not (s0 <= d <= e0):
             continue
         if apply_filter:
-            if channel != '全部' and r.get('渠道') != channel:
+            if channel and r.get('渠道') not in channel:
                 continue
-            if store != '全部' and r.get('店铺') != store:
+            if store and r.get('店铺') not in store:
                 continue
-            if category != '全部' and r.get('品类') != category:
+            if category and r.get('品类') not in category:
                 continue
-            if model != '全部' and r.get('型号') != model:
+            if model and r.get('型号') not in model:
                 continue
         rows.append(r)
     return summarize(rows)
+
+
 
 def period_delta_text(metric_key):
     """基于当前选定时间段计算环比和同比，返回展示文本"""
@@ -428,13 +430,13 @@ with tabs[1]:
                 d = d + '-01'
             if not d or not (s0 <= d <= e0):
                 continue
-            if channel != '全部' and r.get('渠道') != channel:
+            if channel and r.get('渠道') not in channel:
                 continue
-            if store != '全部' and r.get('店铺') != store:
+            if store and r.get('店铺') not in store:
                 continue
-            if category != '全部' and r.get('品类') != category:
+            if category and r.get('品类') not in category:
                 continue
-            if model != '全部' and r.get('型号') != model:
+            if model and r.get('型号') not in model:
                 continue
             rows.append(r)
         return summarize(rows)
@@ -903,10 +905,10 @@ with tabs[4]:
 # ═══════════════════════════════════════════════════════════════
 # 构建筛选标签文字
 _filter_parts = []
-if channel != '全部': _filter_parts.append(f'渠道={channel}')
-if store != '全部': _filter_parts.append(f'店铺={store}')
-if category != '全部': _filter_parts.append(f'品类={category}')
-if model != '全部': _filter_parts.append(f'型号={model}')
+if channel: _filter_parts.append(f'渠道={"+".join(channel)}')
+if store: _filter_parts.append(f'店铺={"+".join(store)}')
+if category: _filter_parts.append(f'品类={"+".join(category)}')
+if model: _filter_parts.append(f'型号={"+".join(model)}')
 _filter_label = ' | '.join(_filter_parts) if _filter_parts else '全域'
 
 with tabs[5]:
@@ -947,13 +949,13 @@ with tabs[5]:
     # 对比期数据也应用同样的筛选条件
     prev_rows_all = []
     for r in prev_rows_all_raw:
-        if channel != '全部' and r.get('渠道') != channel:
+        if channel and r.get('渠道') not in channel:
             continue
-        if store != '全部' and r.get('店铺') != store:
+        if store and r.get('店铺') not in store:
             continue
-        if category != '全部' and r.get('品类') != category:
+        if category and r.get('品类') not in category:
             continue
-        if model != '全部' and r.get('型号') != model:
+        if model and r.get('型号') not in model:
             continue
         prev_rows_all.append(r)
 
@@ -1481,18 +1483,32 @@ with tabs[6]:
 
     # 本期数据（已按筛选条件过滤）
     cur_rows_all = filter_rows(data['daily'], '日期')
-    
-    # 环比数据（上月同期）— 注意：用 mom_start 不是 yoy_start
+
+    # 环比数据（上月同期）— 应用相同筛选条件
     _ms, _me = str(mom_start.date()) if hasattr(mom_start, 'date') else str(mom_start).split()[0], \
                str(mom_end.date()) if hasattr(mom_end, 'date') else str(mom_end).split()[0]
-    mom_rows = [r for r in data['daily'] if r.get('日期')
+    mom_raw = [r for r in data['daily'] if r.get('日期')
                 and _ms <= str(r['日期']).split()[0] <= _me]
+    mom_rows = []
+    for r in mom_raw:
+        if channel and r.get('渠道') not in channel: continue
+        if store and r.get('店铺') not in store: continue
+        if category and r.get('品类') not in category: continue
+        if model and r.get('型号') not in model: continue
+        mom_rows.append(r)
 
-    # 同比数据（去年同期）
+    # 同比数据（去年同期）— 应用相同筛选条件
     _ys, _ye = str(yoy_start.date()) if hasattr(yoy_start, 'date') else str(yoy_start).split()[0], \
                str(yoy_end.date()) if hasattr(yoy_end, 'date') else str(yoy_end).split()[0]
-    yoy_rows = [r for r in data['daily'] if r.get('日期')
+    yoy_raw = [r for r in data['daily'] if r.get('日期')
                 and _ys <= str(r['日期']).split()[0] <= _ye]
+    yoy_rows = []
+    for r in yoy_raw:
+        if channel and r.get('渠道') not in channel: continue
+        if store and r.get('店铺') not in store: continue
+        if category and r.get('品类') not in category: continue
+        if model and r.get('型号') not in model: continue
+        yoy_rows.append(r)
 
     def _num(v):
         try: return float(v) if v not in (None,'','N/A','-') else 0.0
@@ -1671,15 +1687,16 @@ with tabs[6]:
 
     # --- 品类/型号问题 ---
     model_issues = []
-    for mk_key, mv in _agg_by_dims(cur_rows_all, ['渠道','品类','型号']).items():
+    cur_by_model = _agg_by_dims(cur_rows_all, ['渠道','品类','型号'])
+    for mk_key, mv in cur_by_model.items():
+        # mk_key is a tuple: (渠道, 品类, 型号)
+        _ch, _cat, _mod = mk_key[0], mk_key[1], mk_key[2]
         pv_list = [r for r in mom_rows
-                    if r.get('渠道')==mk_key.split('|')[0] if len(mk_key.split('|'))>1
-                    and r.get('品类')==mk_key.split('|')[1]
-                    and r.get('型号')==mk_key.split('|')[2]] if len(mk_key.split('|'))==3 else []
+                    if r.get('渠道') == _ch and r.get('品类') == _cat and r.get('型号') == _mod]
         mc = mv.get('支付金额', 0)
         mp = sum(_num(r.get('支付金额')) for r in pv_list) if pv_list else 0
         if mp > 2000 and mc < mp * 0.6:
-            model_issues.append({'key': mk_key, 'cur': mc, 'prev': mp, 'drop': (mc-mp)/mp})
+            model_issues.append({'key': f'{_ch}|{_cat}|{_mod}', 'cur': mc, 'prev': mp, 'drop': (mc-mp)/mp})
     model_issues.sort(key=lambda x: x['drop'])
     for mi in model_issues[:3]:
         problems.append({
