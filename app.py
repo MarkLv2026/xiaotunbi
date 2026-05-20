@@ -203,7 +203,7 @@ e = str(end)
 METRICS = ['商品访客数', '商品浏览量', '商品加购人数', '商品加购件数', '支付买家数', '支付件数', '支付金额', '成功退款金额']
 
 def get_period_rows(all_rows, s0: str, e0: str, date_key='日期'):
-    """从 all_rows 中取出日期在 [s0, e0] 的行（不受全局渠道/店铺/品类/型号筛选影响）"""
+    """Extract rows from all_rows where date is between s0 and e0 (ignoring global channel/store/category/model filters)"""
     out = []
     for r in all_rows:
         d = r.get(date_key, '')
@@ -276,7 +276,7 @@ def delta_badge(d):
 # 基于选定时间段计算同比/环比
 # ──────────────────────────────────────────────
 def _period_sum(metric_key, s0, e0, apply_filter=True):
-    """计算 [s0,e0] 内某指标汇总（apply_filter=True 时还应用渠道/店铺/品类/型号筛选）"""
+    """Calculate metric sum within [s0,e0]; if apply_filter=True, apply channel/store/category/model filters"""
     rows = []
     for r in data['daily']:
         d = r.get('日期', '')
