@@ -17,77 +17,25 @@ _CACHE_DIR = pathlib.Path(__file__).parent / '.data_cache'
 _CACHE_DIR.mkdir(exist_ok=True)
 _CACHE_FILE = _CACHE_DIR / 'last_upload.xlsx'
 
-def _slicer(label, options, key, max_show=6):
-    """Excel slicer: capsule buttons, click to toggle, collapse to more"""
+def _slicer(label, options, key):
+    """Multi-select dropdown, default all selected"""
     sk = f'slicer_{key}'
     if sk not in st.session_state or not isinstance(st.session_state.get(sk), list):
         st.session_state[sk] = list(options)
-    selected = st.session_state[sk]
-    
     # 空选项防护
     if not options:
         st.caption(f'{label}: 无可用选项')
         return []
-    
-    # 少量选项: 直接横排按钮
-    if len(options) <= max_show:
-        btns = st.columns(len(options) + 1)
-        for i, opt in enumerate(options):
-            with btns[i]:
-                is_sel = opt in selected
-                if st.button(
-                    f"{'✓ ' if is_sel else ''}{opt}",
-                    key=f'{sk}_{i}',
-                    use_container_width=True,
-                    type='primary' if is_sel else 'secondary'
-                ):
-                    if is_sel and len(selected) > 1:
-                        selected.remove(opt)
-                    elif not is_sel:
-                        selected.append(opt)
-                    st.session_state[sk] = selected
-                    st.rerun()
-        # 全选/清空
-        with btns[len(options)]:
-            all_on = (len(selected) == len(options))
-            if st.button('✓全选' if all_on else '全选', key=f'{sk}_all', use_container_width=True):
-                st.session_state[sk] = [] if all_on else list(options)
-                st.rerun()
-    else:
-        # 多选项: 前N个 + 更多弹窗
-        shown = options[:max_show - 1]
-        more = options[max_show - 1:]
-        hidden_sel = [o for o in selected if o in more]
-        
-        cols = st.columns(max_show + 1)
-        for i, opt in enumerate(shown):
-            with cols[i]:
-                is_sel = opt in selected
-                if st.button(
-                    f"{'✓ ' if is_sel else ''}{opt}",
-                    key=f'{sk}_{i}',
-                    use_container_width=True,
-                    type='primary' if is_sel else 'secondary'
-                ):
-                    if is_sel and len(selected) > 1: selected.remove(opt)
-                    elif not is_sel: selected.append(opt)
-                    st.session_state[sk] = selected; st.rerun()
-        # 全选按钮
-        with cols[max_show - 1]:
-            all_on = (len(selected) == len(options))
-            if st.button('✓全部' if all_on else '全选', key=f'{sk}_all', use_container_width=True):
-                st.session_state[sk] = [] if all_on else list(options); st.rerun()
-        # 更多弹窗
-        with cols[max_show]:
-            more_label = f'更多({len(more)})'
-            if hidden_sel:
-                more_label += f' ✓{len(hidden_sel)}'
-            with st.popover(more_label, use_container_width=True):
-                ms = st.multiselect('选择', more, default=hidden_sel, key=f'{sk}_more', label_visibility='collapsed')
-                final = [o for o in selected if o in shown] + ms
-                if set(final) != set(selected):
-                    st.session_state[sk] = final; st.rerun()
-    return st.session_state[sk]
+    sel = st.multiselect(
+        label,
+        options=list(options),
+        default=st.session_state[sk],
+        key=sk
+    )
+    if sel:
+        st.session_state[sk] = list(sel)
+        return list(sel)
+    return list(options)
 
 
 st.set_page_config(page_title='小豚当家BI看板', layout='wide', initial_sidebar_state='expanded')
