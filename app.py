@@ -1024,6 +1024,11 @@ with tabs[5]:
             icon={'danger':'🔴','warn':'🟡','ok':'🟢'}[lvl]
             cv_s=f'{cv:,.0f}' if not ispct else f'{cv:.2f}%'
             pv_s=f'{pv:,.0f}' if not ispct else f'{pv:.2f}%'
+            # 确保数值有效，避免显示 {}
+            try:
+                _ = float(cv); _ = float(pv)
+            except:
+                cv_s='-'; pv_s='-'
             ch_s=_pct(mch)
             bg={'danger':'#fef2f2','warn':'#fff7ed','ok':'#f0fdf4'}[lvl]
             border={'danger':'#fca5a5','warn':'#fdba74','ok':'#86efac'}[lvl]
@@ -1047,7 +1052,7 @@ with tabs[5]:
     # ══════════════════════════════════════
     # C. 第二层：根因下钻 — 型号级定位（增强归因）
     # ══════════════════════════════════════
-    st.markdown('<hr style="margin:18px 0;border:none;border-top:1px dashed #cbd5e1;">')
+    st.markdown('<hr style="margin:18px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🎯 根因定位：下钻到型号级</div>', unsafe_allow_html=True)
     st.caption('展示各维度中「环比下滑最严重」的具体型号。归因列使用多因子加权分析，自动识别主要衰退驱动因素。')
 
@@ -1249,7 +1254,7 @@ with tabs[5]:
     # ══════════════════════════════════════
     # D. 第三层：具体可执行的优化措施（绑定真实数据值）
     # ══════════════════════════════════════
-    st.markdown('<hr style="margin:18px 0;border:none;border-top:1px dashed #cbd5e1;">')
+    st.markdown('<hr style="margin:18px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🛠️ 具体执行措施清单</div>',unsafe_allow_html=True)
     st.caption(f"以下根据上述诊断结果自动生成（共识别 {len(ch_model_issues)} 个异常型号）。每条措施绑定实际数据值。")
 
@@ -1456,10 +1461,10 @@ with tabs[6]:
 
     cur_rows_all = filter_rows(data['daily'], '日期')
     prev_rows_all = filter_rows(data['daily'], '日期',
-                                 channel=sel_channel if sel_channel != '全部' else None,
-                                 store=sel_store if sel_store != '全部' else None,
-                                 category=sel_category if sel_category != '全部' else None,
-                                 model=sel_model if sel_model != '全部' else None)
+                                 channel=channel if channel != '全部' else None,
+                                 store=store if store != '全部' else None,
+                                 category=category if category != '全部' else None,
+                                 model=model if model != '全部' else None)
     mom_rows = [r for r in data['daily'] if r.get('日期')
                 and str(yoy_start) <= str(r['日期']) <= str(mom_end)]
     yoy_rows = [r for r in data['daily'] if r.get('日期')
