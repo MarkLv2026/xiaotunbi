@@ -18,13 +18,13 @@ _CACHE_DIR.mkdir(exist_ok=True)
 _CACHE_FILE = _CACHE_DIR / 'last_upload.xlsx'
 
 def _slicer(label, options, key, max_show=6):
-    """Excel切片器风格筛选：横向胶囊按钮，点击选中/取消，选项多时折叠到'更多'"
+    """Excel slicer: capsule buttons, click to toggle, collapse to more"""
     sk = f'slicer_{key}'
     if sk not in st.session_state or not isinstance(st.session_state.get(sk), list):
         st.session_state[sk] = list(options)
     selected = st.session_state[sk]
     
-    # 少量选项：直接横排按钮
+    # 少量选项: 直接横排按钮
     if len(options) <= max_show:
         btns = st.columns(len(options) + 1)
         for i, opt in enumerate(options):
@@ -49,7 +49,7 @@ def _slicer(label, options, key, max_show=6):
                 st.session_state[sk] = [] if all_on else list(options)
                 st.rerun()
     else:
-        # 多选项：前N个 + 更多弹窗
+        # 多选项: 前N个 + 更多弹窗
         shown = options[:max_show - 1]
         more = options[max_show - 1:]
         hidden_sel = [o for o in selected if o in more]
@@ -136,7 +136,7 @@ CSS = '''
 </style>
 '''
 st.markdown(CSS, unsafe_allow_html=True)
-st.markdown('''<div class="hero"><div><span class="badge">影锋BI风格</span><span class="badge">全域电商经营驾驶舱</span><span class="badge">上传即更新</span></div><h1 class="hero-title">小豚当家销售经营BI看板</h1><div class="hero-sub">经营总览 · 时间段对比 · 趋势分析 · 渠道矩阵 · 商品诊断 · 智能诊断，一页完成日常复盘。</div></div>''', unsafe_allow_html=True)
+st.markdown('''<div class="hero"><div><span class="badge">影锋BI风格</span><span class="badge">全域电商经营驾驶舱</span><span class="badge">上传即更新</span></div><h1 class="hero-title">小豚当家销售经营BI看板</h1><div class="hero-sub">经营总览 · 时间段对比 · 趋势分析 · 渠道矩阵 · 商品诊断 · 智能诊断, 一页完成日常复盘。</div></div>''', unsafe_allow_html=True)
 
 with st.sidebar:
     st.header('数据源更新')
@@ -304,7 +304,7 @@ def period_delta_text(metric_key):
     # MoM: same-length prior period
     mom_end = start - datetime.timedelta(days=1)
     mom_start = mom_end - datetime.timedelta(days=cur_days - 1)
-    # 同比：去年同期
+    # 同比: 去年同期
     try:
         yoy_start = start.replace(year=start.year - 1)
     except ValueError:
@@ -355,7 +355,7 @@ totals = summarize(daily)
 
 # Monthly data (with dimensions, for channel trend)
 monthly_raw = data.get('monthly', [])
-# all_months：仅月份维度汇总
+# all_months: 仅月份维度汇总
 all_months = data.get('all_months', [])
 mm = {r['月份']: r for r in all_months}
 
@@ -734,13 +734,13 @@ with tabs[2]:
 with tabs[3]:
     st.markdown('<div class="section-title">渠道矩阵分析</div>', unsafe_allow_html=True)
 
-    # 渠道表现：基于已过滤 daily 数据
+    # 渠道表现: 基于已过滤 daily 数据
     ch_all = group(daily, '渠道')
     if ch_all:
         ch_display = []
         for r in ch_all:
             ch_name = r['渠道']
-            # 计算环比：取选定时间段等长的上一期
+            # 计算环比: 取选定时间段等长的上一期
             cur_days = (end - start).days + 1
             mom_end = start - datetime.timedelta(days=1)
             mom_start = mom_end - datetime.timedelta(days=cur_days - 1)
@@ -860,7 +860,7 @@ with tabs[4]:
             (category == '全部' or r.get('品类') == category) and
             (model == '全部' or r.get('型号') == model)]
     if not prod:
-        # 降级：从 daily 按商品聚合
+        # 降级: 从 daily 按商品聚合
         prod_dict = {}
         for r in daily:
             pname = r.get('商品名称') or r.get('款式') or r.get('型号') or '未知商品'
@@ -1007,7 +1007,7 @@ with tabs[5]:
             v['退款率'] = v['成功退款金额'] / v['支付金额'] if v['支付金额'] else 0
         return out
 
-    # 关键修改：使用已筛选的 daily 数据，而非全量 data['daily']
+    # 关键修改: 使用已筛选的 daily 数据, 而非全量 data['daily']
     cur_rows_all = list(daily)
     prev_rows_all_raw = []
     for r in data['daily']:
@@ -1078,7 +1078,7 @@ with tabs[5]:
         st.metric('异常型号数', f'{len([m for m in cur_by_model.values()])}' if False else '-', delta=None)
 
     # ══════════════════════════════════════
-    # B. 第一层：全局健康度总览（5卡片 + 归因提示）
+    # B. 第一层: 全局健康度总览（5卡片 + 归因提示）
     # ══════════════════════════════════════
     s1,s2,s3,s4,s5 = st.columns(5)
     metrics_info = [
@@ -1094,7 +1094,7 @@ with tabs[5]:
             icon={'danger':'🔴','warn':'🟡','ok':'🟢'}[lvl]
             cv_s=f'{cv:,.0f}' if not ispct else f'{cv:.2f}%'
             pv_s=f'{pv:,.0f}' if not ispct else f'{pv:.2f}%'
-            # 确保数值有效，避免显示 {}
+            # 确保数值有效, 避免显示 {}
             try:
                 _ = float(cv); _ = float(pv)
             except:
@@ -1120,7 +1120,7 @@ with tabs[5]:
                 f'<div style="font-size:11px;color:#94a3b8;">vs 上期 {pre}{pv_s} ({ch_s})</div>{cause_hint}</div>', unsafe_allow_html=True)
 
     # ══════════════════════════════════════
-    # C. 第二层：根因下钻 — 型号级定位（增强归因）
+    # C. 第二层: 根因下钻 — 型号级定位（增强归因）
     # ══════════════════════════════════════
     st.markdown('<hr style="margin:18px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🎯 根因定位：下钻到型号级</div>', unsafe_allow_html=True)
@@ -1322,7 +1322,7 @@ with tabs[5]:
         st.info('\u2139\ufe0f 本周期未发现显著增长新星（阈值：增速>50% 或 新上榜且GMV>\u00A52000）。')
 
     # ══════════════════════════════════════
-    # D. 第三层：具体可执行的优化措施（绑定真实数据值）
+    # D. 第三层: 具体可执行的优化措施（绑定真实数据值）
     # ══════════════════════════════════════
     st.markdown('<hr style="margin:18px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🛠️ 具体执行措施清单</div>',unsafe_allow_html=True)
@@ -1514,7 +1514,7 @@ with tabs[6]:
         st.markdown('<br>')
         auto_export = st.checkbox('📥 一键导出报告', value=True)
 
-    # 自定义周期时，允许选择对比时间段
+    # 自定义周期时, 允许选择对比时间段
     if review_type == '自定义周期':
         st.markdown('**📅 对比期设置（可选，留空则自动计算环比/同比）**')
         cc1, cc2, cc3, cc4 = st.columns(4)
@@ -1529,7 +1529,7 @@ with tabs[6]:
 
     st.markdown("---")
 
-    # ── 数据准备：本期/上期(环比)/去年同期(同比) ──
+    # ── 数据准备: 本期/上期(环比)/去年同期(同比) ──
     cur_days = (end - start).days + 1
     mom_end = start - datetime.timedelta(days=1)
     mom_start = mom_end - datetime.timedelta(days=cur_days - 1)
@@ -1542,7 +1542,7 @@ with tabs[6]:
     except ValueError:
         yoy_end = end.replace(year=end.year - 1, day=28)
 
-    # 自定义周期：使用用户选择的对比期
+    # 自定义周期: 使用用户选择的对比期
     if review_type == '自定义周期' and '_cs1' in dir():
         if _cs1 and _ce1:
             mom_start = _cs1; mom_end = _ce1
@@ -1648,7 +1648,7 @@ with tabs[6]:
     for col,(name,cv,mv,yv,mc,yc,pfx) in zip([m1,m2,m3,m4,m5],metrics_review):
         with col:
             cv_s = f'{pfx}{cv:,.0f}' if name not in ['转化率%','退款率%'] else f'{cv:.2f}%'
-            # 安全格式化环比/同比，处理 None 和 0
+            # 安全格式化环比/同比, 处理 None 和 0
             mom_s = ''
             if mc is not None:
                 mv_fmt = f'{pfx}{mv:,.0f}' if mv is not None else '--'
