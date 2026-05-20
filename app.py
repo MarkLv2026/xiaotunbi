@@ -20,22 +20,20 @@ _CACHE_FILE = _CACHE_DIR / 'last_upload.xlsx'
 def _slicer(label, options, key):
     """Multi-select dropdown, default all selected"""
     sk = f'slicer_{key}'
-    if sk not in st.session_state or not isinstance(st.session_state.get(sk), list):
-        st.session_state[sk] = list(options)
     # 空选项防护
     if not options:
         st.caption(f'{label}: 无可用选项')
         return []
+    # 初始化session_state（multiselect会自动管理）
+    if sk not in st.session_state:
+        st.session_state[sk] = list(options)
     sel = st.multiselect(
         label,
         options=list(options),
         default=st.session_state[sk],
         key=sk
     )
-    if sel:
-        st.session_state[sk] = list(sel)
-        return list(sel)
-    return list(options)
+    return list(sel) if sel else list(options)
 
 
 st.set_page_config(page_title='小豚当家BI看板', layout='wide', initial_sidebar_state='expanded')
