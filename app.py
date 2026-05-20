@@ -1474,6 +1474,9 @@ with tabs[6]:
     yoy_rows = [r for r in data['daily'] if r.get('日期')
                 and _ys <= str(r['日期']).split()[0] <= _ye]
 
+    def _num(v):
+        try: return float(v) if v not in (None,'','N/A','-') else 0.0
+        except: return 0.0
     def _safe_sum(rows, key):
         return sum(_num(r.get(key)) for r in rows) if rows else 0
 
