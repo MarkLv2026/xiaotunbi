@@ -48,7 +48,7 @@ def _slicer(label, options, key, max_show=6):
                     st.session_state[sk] = selected
                     st.rerun()
         # 全选/清空
-        with btns[max_show]:
+        with btns[len(options)]:
             all_on = (len(selected) == len(options))
             if st.button('✓全选' if all_on else '全选', key=f'{sk}_all', use_container_width=True):
                 st.session_state[sk] = [] if all_on else list(options)
