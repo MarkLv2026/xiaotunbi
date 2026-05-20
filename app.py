@@ -24,6 +24,11 @@ def _slicer(label, options, key, max_show=6):
         st.session_state[sk] = list(options)
     selected = st.session_state[sk]
     
+    # 空选项防护
+    if not options:
+        st.caption(f'{label}: 无可用选项')
+        return []
+    
     # 少量选项: 直接横排按钮
     if len(options) <= max_show:
         btns = st.columns(len(options) + 1)
