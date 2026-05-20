@@ -1665,11 +1665,11 @@ with tabs[6]:
     st.markdown('#### 🛠️ 三、可执行提升方案（按优先级排序）')
 
     review_actions = []
-    action_id = 0
+    _aid = [0]  # 用list做计数器避免nonlocal问题
 
     def _ra(priority, title, detail, owner, deadline, target_kpi):
-        nonlocal action_id; action_id += 1
-        review_actions.append({'id': action_id, 'p': priority, 't': title,
+        _aid[0] += 1
+        review_actions.append({'id': _aid[0], 'p': priority, 't': title,
                               'd': detail, 'o': owner, 'dl': deadline, 'kpi': target_kpi})
 
     # 根据问题生成措施
