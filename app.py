@@ -869,12 +869,20 @@ with tabs[4]:
 # ═══════════════════════════════════════════════════════════════
 # TAB 6: 智能诊断 V2（多因子归因 + 健康评分 + 可执行措施 + 正向亮点）
 # ═══════════════════════════════════════════════════════════════
+# 构建筛选标签文字
+_filter_parts = []
+if channel != '全部': _filter_parts.append(f'渠道={channel}')
+if store != '全部': _filter_parts.append(f'店铺={store}')
+if category != '全部': _filter_parts.append(f'品类={category}')
+if model != '全部': _filter_parts.append(f'型号={model}')
+_filter_label = ' | '.join(_filter_parts) if _filter_parts else '全域'
+
 with tabs[5]:
     st.markdown('<div class="section-title">🔍 智能问题定位诊断 & 优化措施</div>', unsafe_allow_html=True)
-    st.caption(f'诊断区间：{s} ~ {e} | 对比区间：相同天数的上一期 | 下钻维度：渠道 → 品类 → 型号')
+    st.caption(f'诊断区间：{s} ~ {e} | 筛选范围：{_filter_label} | 对比区间：相同天数的上一期')
 
     # ══════════════════════════════════════
-    # A. 核心数据准备
+    # A. 核心数据准备（基于当前筛选条件）
     # ══════════════════════════════════════
     cur_days = (end - start).days + 1
     mom_end_dt = start - datetime.timedelta(days=1)
@@ -897,12 +905,25 @@ with tabs[5]:
             v['退款率'] = v['成功退款金额'] / v['支付金额'] if v['支付金额'] else 0
         return out
 
-    cur_rows_all = [r for r in data['daily']]
-    prev_rows_all = []
+    # 关键修改：使用已筛选的 daily 数据，而非全量 data['daily']
+    cur_rows_all = list(daily)
+    prev_rows_all_raw = []
     for r in data['daily']:
         d = r.get('日期', '')
         if len(d) == 7: d = d + '-01'
-        if prev_s_d <= d <= prev_e_d: prev_rows_all.append(r)
+        if prev_s_d <= d <= prev_e_d: prev_rows_all_raw.append(r)
+    # 对比期数据也应用同样的筛选条件
+    prev_rows_all = []
+    for r in prev_rows_all_raw:
+        if channel != '全部' and r.get('渠道') != channel:
+            continue
+        if store != '全部' and r.get('店铺') != store:
+            continue
+        if category != '全部' and r.get('品类') != category:
+            continue
+        if model != '全部' and r.get('型号') != model:
+            continue
+        prev_rows_all.append(r)
 
     cur_by_model   = _agg_by_dims(cur_rows_all, ['渠道','品类','型号'])
     cur_by_cat     = _agg_by_dims(cur_rows_all, ['渠道','品类'])
