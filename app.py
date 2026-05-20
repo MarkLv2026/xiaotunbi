@@ -299,9 +299,9 @@ def _period_sum(metric_key, s0, e0, apply_filter=True):
 
 
 def period_delta_text(metric_key):
-    """基于当前选定时间段计算环比和同比，返回展示文本"""
+    """Calculate MoM and YoY delta for given metric, return display text"""
     cur_days = (end - start).days + 1
-    # 环比：相同天数的前一段
+    # MoM: same-length prior period
     mom_end = start - datetime.timedelta(days=1)
     mom_start = mom_end - datetime.timedelta(days=cur_days - 1)
     # 同比：去年同期
@@ -353,7 +353,7 @@ def _html_table(rows, col_widths=None, height=None):
 daily = filter_rows(data['daily'], '日期')
 totals = summarize(daily)
 
-# 月度数据（带维度，用于渠道趋势）
+# Monthly data (with dimensions, for channel trend)
 monthly_raw = data.get('monthly', [])
 # all_months：仅月份维度汇总
 all_months = data.get('all_months', [])
@@ -448,12 +448,12 @@ with tabs[0]:
 with tabs[1]:
     st.markdown('<div class="section-title">时间段对比分析</div>', unsafe_allow_html=True)
 
-    comp_mode = st.radio('对比模式', ['本期 vs 上期（环比）', '本期 vs 去年同期（同比）', '自定义时间段对比'], horizontal=True)
+    comp_mode = st.radio('对比模式', ['本期 vs 上期(环比)', '本期 vs 去年同期(同比)', '自定义时间段对比'], horizontal=True)
 
     today_s = str(start)
     today_e = str(end)
 
-    if comp_mode == '本期 vs 上期（环比）':
+    if comp_mode == '本期 vs 上期(环比)':
         cur_days = (end - start).days + 1
         b_end = start - datetime.timedelta(days=1)
         b_start = b_end - datetime.timedelta(days=cur_days - 1)
@@ -461,7 +461,7 @@ with tabs[1]:
         prev_e = str(b_end)
         label_a = f'本期 {today_s} ~ {today_e}'
         label_b = f'上期 {prev_s} ~ {prev_e}'
-    elif comp_mode == '本期 vs 去年同期（同比）':
+    elif comp_mode == '本期 vs 去年同期(同比)':
         try:
             y_start = start.replace(year=start.year - 1)
         except ValueError:
