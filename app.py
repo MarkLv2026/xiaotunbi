@@ -1444,6 +1444,19 @@ with tabs[6]:
         st.markdown('<br>')
         auto_export = st.checkbox('📥 一键导出报告', value=True)
 
+    # 自定义周期时，允许选择对比时间段
+    if review_type == '自定义周期':
+        st.markdown('**📅 对比期设置（可选，留空则自动计算环比/同比）**')
+        cc1, cc2, cc3, cc4 = st.columns(4)
+        with cc1:
+            _cs1 = st.date_input('环比开始', value=None)
+        with cc2:
+            _ce1 = st.date_input('环比结束', value=None)
+        with cc3:
+            _ys1 = st.date_input('同比开始', value=None)
+        with cc4:
+            _ye1 = st.date_input('同比结束', value=None)
+
     st.markdown("---")
 
     # ── 数据准备：本期/上期(环比)/去年同期(同比) ──
@@ -1458,6 +1471,13 @@ with tabs[6]:
         yoy_end = end.replace(year=end.year - 1)
     except ValueError:
         yoy_end = end.replace(year=end.year - 1, day=28)
+
+    # 自定义周期：使用用户选择的对比期
+    if review_type == '自定义周期' and '_cs1' in dir():
+        if _cs1 and _ce1:
+            mom_start = _cs1; mom_end = _ce1
+        if _ys1 and _ye1:
+            yoy_start = _ys1; yoy_end = _ye1
 
     # 本期数据（已按筛选条件过滤）
     cur_rows_all = filter_rows(data['daily'], '日期')
@@ -1523,6 +1543,10 @@ with tabs[6]:
     # ══════════════════════════════════
     st.markdown('#### 📌 一、经营总览 — 本期 vs 环比 vs 同比')
 
+    # 构建对比日期标签
+    _mom_label = f'{mom_start.strftime("%m/%d")}-{mom_end.strftime("%m/%d")}' if 'mom_start' in dir() else ''
+    _yoy_label = f'{yoy_start.strftime("%m/%d")}-{yoy_end.strftime("%m/%d")}' if ('yoy_start' in dir() or 'yoo_start' in dir()) else ''
+
     def _fmt_chg(v):
         if v is None: return '--'
         c = '#22c55e' if v >= 0 else '#ef4444'
@@ -1544,12 +1568,12 @@ with tabs[6]:
             mom_s = ''
             if mc is not None:
                 mv_fmt = f'{pfx}{mv:,.0f}' if mv is not None else '--'
-                mom_s = f'{_fmt_chg(mc)}<br><span style="font-size:10px;color:#94a3b8;">vs上月 {mv_fmt}</span>'
+                mom_s = f'{_fmt_chg(mc)}<br><span style="font-size:10px;color:#94a3b8;">vs {_mom_label} {mv_fmt}</span>'
             else:
                 mom_s = '<span style="color:#94a3b8;">--</span>'
             yoy_s = ''
             if yc is not None and yv is not None:
-                yoy_s = f'<br>{_fmt_chg(yc)}<span style="font-size:10px;color:#94a3b8;">vs去年{pfx}{yv:,.0f}</span>'
+                yoy_s = f'<br>{_fmt_chg(yc)}<span style="font-size:10px;color:#94a3b8;">vs {_yoy_label} {pfx}{yv:,.0f}</span>'
             bg = '#fef2f2' if (mc is not None and mc < -0.05) or (yc is not None and yc < -0.10) else '#f0fdf4'
             border = '#fca5a5' if (mc is not None and mc < -0.05) or (yc is not None and yc < -0.10) else '#86efac'
             st.markdown(
@@ -1647,7 +1671,7 @@ with tabs[6]:
 
     # --- 品类/型号问题 ---
     model_issues = []
-    for mk_key, mv in group(cur_rows_all, '渠道+品类+型号').items():
+    for mk_key, mv in _agg_by_dims(cur_rows_all, ['渠道','品类','型号']).items():
         pv_list = [r for r in mom_rows
                     if r.get('渠道')==mk_key.split('|')[0] if len(mk_key.split('|'))>1
                     and r.get('品类')==mk_key.split('|')[1]
