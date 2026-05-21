@@ -91,42 +91,148 @@ st.markdown('''<div class="hero"><div><span class="badge">影锋BI风格</span><
 
 with st.sidebar:
     st.header('数据源更新')
-    uploaded = st.file_uploader('上传最新 Excel 数据源', type=['xlsx'])
-    if uploaded is not None:
-        _CACHE_FILE.write_bytes(uploaded.getvalue())
-        st.caption('✅ 已保存，下次打开自动加载此文件。')
-    elif _CACHE_FILE.exists():
-        mtime = datetime.datetime.fromtimestamp(_CACHE_FILE.stat().st_mtime)
-        st.caption(f'📂 自动加载上次数据（{mtime.strftime("%Y-%m-%d %H:%M")} 更新）')
+    data_type = st.radio('数据类型', ['销售数据', '推广数据', '流量渠道（预留）', '销售目标（预留）'], horizontal=True)
+    if data_type == '销售数据':
+        _CACHE_SALES = _CACHE_DIR / 'last_sales.xlsx'
+        uploaded_sales = st.file_uploader('上传销售 Excel 数据源', type=['xlsx'], key='sales_up')
+        if uploaded_sales is not None:
+            _CACHE_SALES.write_bytes(uploaded_sales.getvalue())
+            st.caption('✅ 销售数据已保存')
+        elif _CACHE_SALES.exists():
+            mtime = datetime.datetime.fromtimestamp(_CACHE_SALES.stat().st_mtime)
+            st.caption(f'📂 销售数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
+        else:
+            st.caption('请上传销售数据')
+        st.markdown('**建议工作表**')
+        st.caption('天猫数据源 / 京东抖音数据源')
+    elif data_type == '推广数据':
+        _CACHE_PROMO = _CACHE_DIR / 'last_promo.xlsx'
+        uploaded_promo = st.file_uploader('上传推广 Excel（含京东/天猫推广sheet）', type=['xlsx'], key='promo_up')
+        if uploaded_promo is not None:
+            _CACHE_PROMO.write_bytes(uploaded_promo.getvalue())
+            st.caption('✅ 推广数据已保存')
+        elif _CACHE_PROMO.exists():
+            mtime = datetime.datetime.fromtimestamp(_CACHE_PROMO.stat().st_mtime)
+            st.caption(f'📂 推广数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
+        else:
+            st.caption('请上传推广数据（京东+天猫）')
+        st.markdown('**建议工作表**')
+        st.caption('京东推广数据源 / 天猫推广数据源')
     else:
-        st.caption('上传后自动刷新全页，并记住数据方便下次使用。')
-    st.divider()
-    st.markdown('**建议数据源工作表**')
-    st.caption('天猫数据源 / 京东抖音数据源')
-    st.markdown('**核心口径**')
-    st.caption('转化率=支付买家数/商品访客数；客单价=支付金额/支付买家数。')
+        st.info('🚧 入口已预留，后续开放')
+    if data_type in ('销售数据', '推广数据'):
+        st.divider()
+        st.markdown('**核心口径**')
+        st.caption('转化率=支付买家数/商品访客数；客单价=支付金额/支付买家数；ROI=总订单金额/花费')
 
 @st.cache_data(show_spinner=False)
 def load_data(file_bytes: bytes):
     return parse_sales_workbook(file_bytes)
 
-if uploaded is not None:
-    _file_bytes = uploaded.getvalue()
-elif _CACHE_FILE.exists():
-    _file_bytes = _CACHE_FILE.read_bytes()
-else:
-    _file_bytes = None
+@st.cache_data(show_spinner=False)
+def load_promo_data(file_bytes: bytes):
+    """Parse 京东推广数据源 + 天猫推广数据源 sheets"""
+    import io
+    wb = None
+    # Try openpyxl first
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    except Exception:
+        try:
+            import xlrd
+            wb = xlrd.open_workbook(file_name=None, file_contents=file_bytes)
+        except Exception:
+            return []
+    rows = []
+    for sheet_name in ['京东推广数据源', '天猫推广数据源']:
+        try:
+            if hasattr(wb, 'get_sheet_by_name'):
+                ws = wb.get_sheet_by_name(sheet_name)
+            else:
+                if sheet_name not in wb.sheetnames:
+                    continue
+                ws = wb[sheet_name]
+        except Exception:
+            continue
+        # Read header
+        if hasattr(ws, 'iter_rows'):
+            all_rows = list(ws.iter_rows(values_only=True))
+        else:
+            all_rows = [ws.row_values(i) for i in range(ws.nrows)]
+        if not all_rows:
+            continue
+        header = [str(c).strip() if c is not None else '' for c in all_rows[0]]
+        for raw in all_rows[1:]:
+            r = {}
+            for i, h in enumerate(header):
+                if i >= len(raw):
+                    r[h] = ''
+                else:
+                    v = raw[i]
+                    r[h] = v if v is not None else ''
+            # Normalize common fields
+            date_val = r.get('日期', '')
+            if hasattr(date_val, 'strftime'):
+                date_str = date_val.strftime('%Y-%m-%d')
+            else:
+                date_str = str(date_val)[:10]
+            r['_date'] = date_str
+            r['_店铺'] = r.get('店铺', '')
+            r['_渠道'] = r.get('渠道', '')
+            r['_品类'] = r.get('品类', '')
+            r['_型号'] = r.get('型号', '')
+            # Amount fields - try both possible names
+            spend = r.get('花费', None) or r.get('花费', 0)
+            r['_花费'] = float(spend) if spend not in (None, '') else 0.0
+            impress = r.get('展现数', None) or r.get('展现数', 0)
+            r['_展现数'] = float(impress) if impress not in (None, '') else 0.0
+            clicks = r.get('点击数', None) or r.get('点击数', 0)
+            r['_点击数'] = float(clicks) if clicks not in (None, '') else 0.0
+            direct_amt = r.get('直接订单金额', None) or r.get('直接订单金额', 0)
+            indirect_amt = r.get('间接订单金额', None) or r.get('间接订单金额', 0)
+            total_amt = r.get('总订单金额', None) or r.get('总订单金额', 0)
+            r['_直接订单金额'] = float(direct_amt) if direct_amt not in (None, '') else 0.0
+            r['_间接订单金额'] = float(indirect_amt) if indirect_amt not in (None, '') else 0.0
+            r['_总订单金额'] = float(total_amt) if total_amt not in (None, '') else 0.0
+            r['_总加购数'] = float(r.get('总加购数', 0) or 0)
+            roi = r.get('投产比', None) or r.get('投产比', 0)
+            r['_投产比'] = float(roi) if roi not in (None, '') else 0.0
+            rows.append(r)
+    return rows
 
-if not _file_bytes:
-    st.info('请在左侧上传最新 Excel 数据源。上传后，这个页面会直接变成可筛选、可导出的 BI 看板。')
+# Load sales data
+_sales_bytes = None
+if _CACHE_SALES.exists():
+    _sales_bytes = _CACHE_SALES.read_bytes()
+
+# Load promotion data
+_promo_bytes = None
+if _CACHE_PROMO.exists():
+    _promo_bytes = _CACHE_PROMO.read_bytes()
+
+if not _sales_bytes:
+    st.info('请在左侧上传销售数据。上传后，页面会生成可筛选、可导出的 BI 看板。')
     st.stop()
 
 try:
-    with st.spinner('正在解析 Excel 并生成经营看板...'):
-        data = load_data(_file_bytes)
+    with st.spinner('正在解析销售数据...'):
+        data = load_data(_sales_bytes)
 except Exception as e:
-    st.error(f'解析失败：{e}')
+    st.error(f'销售数据解析失败：{e}')
     st.stop()
+
+promo_rows = []
+if _promo_bytes:
+    try:
+        with st.spinner('正在解析推广数据...'):
+            promo_rows = load_promo_data(_promo_bytes)
+        st.success(f'推广数据已加载：{len(promo_rows):,} 行')
+    except Exception as e:
+        st.warning(f'推广数据解析失败：{e}')
+
+meta = data['meta']
+st.success(f"销售数据已更新：{meta['dateRange'][0]} 至 {meta['dateRange'][1]}，共 {meta['rows']:,} 行；解析工作表：{'、'.join(meta.get('usedSheets', []))}")
 
 meta = data['meta']
 st.success(f"数据已更新：{meta['dateRange'][0]} 至 {meta['dateRange'][1]}，共 {meta['rows']:,} 行；解析工作表：{'、'.join(meta.get('usedSheets', []))}")
@@ -326,6 +432,29 @@ def _html_table(rows, col_widths=None, height=None):
 daily = filter_rows(data['daily'], '日期')
 totals = summarize(daily)
 
+# 推广费汇总（从 promo_rows 按日期+筛选条件过滤）
+promo_filtered = []
+for r in promo_rows:
+    d = r.get('_date', '')
+    if not d or d < s or d > e:
+        continue
+    if channel and r.get('_渠道', '') not in channel:
+        continue
+    if store and r.get('_店铺', '') not in store:
+        continue
+    if category and r.get('_品类', '') not in category:
+        continue
+    if model and r.get('_型号', '') not in model:
+        continue
+    promo_filtered.append(r)
+
+promo_spend = sum(r.get('_花费', 0) for r in promo_filtered)
+promo_order_amt = sum(r.get('_总订单金额', 0) for r in promo_filtered)
+promo_roi = promo_order_amt / promo_spend if promo_spend else 0
+promo_impress = sum(r.get('_展现数', 0) for r in promo_filtered)
+promo_clicks = sum(r.get('_点击数', 0) for r in promo_filtered)
+promo_cpc = promo_spend / promo_clicks if promo_clicks else 0
+
 # 全时段同条件筛选数据（用于同比查询，不受日期范围限制）
 daily_all_filtered = []
 for r in data['daily']:
@@ -416,14 +545,14 @@ daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
 # ─────────────────────────────────────────────────────────────
-tabs = st.tabs(['经营总览', '时间段对比', '趋势分析', '渠道矩阵', '商品诊断', '🔍 智能诊断'])
+tabs = st.tabs(['经营总览', '📢 推广分析', '时间段对比', '趋势分析', '渠道矩阵', '商品诊断', '🔍 智能诊断'])
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 1: 经营总览
 # ═══════════════════════════════════════════════════════════════
 with tabs[0]:
     st.markdown('<div class="section-title">经营总览</div>', unsafe_allow_html=True)
-    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
+    k1, k2, k3, k4, k5, k6, k7, k8, k9 = st.columns(9)
     k1.metric('支付金额', f"¥{_wan(totals['支付金额'])}万", period_delta_text('支付金额'))
     k2.metric('支付件数', f"{totals['支付件数']:,.0f}", period_delta_text('支付件数'))
     k3.metric('支付买家', f"{totals['支付买家数']:,.0f}", period_delta_text('支付买家数'))
@@ -431,6 +560,156 @@ with tabs[0]:
     k5.metric('支付转化率', f"{totals['支付转化率']*100:.2f}%", period_delta_text('支付转化率'))
     k6.metric('客单价', f"¥{totals['客单价']:,.0f}", period_delta_text('客单价'))
     k7.metric('加购率', f"{totals['加购率']*100:.2f}%", period_delta_text('加购率'))
+    _promo_spend_wan = round(promo_spend / 10000, 1) if promo_spend else 0
+    k8.metric('推广费', f"¥{_promo_spend_wan}万" if promo_spend >= 10000 else f"¥{promo_spend:,.0f}", None if not promo_rows else None)
+    k9.metric('ROI', f"{promo_roi:.2f}" if promo_roi else '--', None if not promo_rows else None)
+
+
+# ═════════════════════════════════════════════════════════════
+# TAB 2: 📢 推广分析
+# ═════════════════════════════════════════════════════════════
+with tabs[1]:
+    st.markdown('<div class="section-title">📢 推广分析</div>', unsafe_allow_html=True)
+    if not promo_rows:
+        st.info('请先在左侧选择「推广数据」，然后上传含「京东推广数据源」和「天猫推广数据源」工作表的Excel文件。')
+    else:
+        # ── KPI 指标 ──
+        pk1, pk2, pk3, pk4, pk5 = st.columns(5)
+        _ps = promo_spend
+        _ro = promo_roi
+        pk1.metric('推广花费', f"¥{_wan(_ps)}万" if _ps >= 10000 else f"¥{_ps:,.0f}")
+        pk2.metric('ROI', f"{_ro:.2f}" if _ro else '--')
+        _imp = sum(r.get('_展现数', 0) for r in promo_filtered)
+        _clk = sum(r.get('_点击数', 0) for r in promo_filtered)
+        _ctr = _clk / _imp if _imp else 0
+        pk3.metric('点击率', f"{_ctr*100:.2f}%" if _imp else '--')
+        _cpc = _ps / _clk if _clk else 0
+        pk4.metric('平均点击成本', f"¥{_cpc:.2f}" if _clk else '--')
+        _da = sum(r.get('_直接订单金额', 0) for r in promo_filtered)
+        pk5.metric('直接成交金额', f"¥{_wan(_da)}万" if _da >= 10000 else f"¥{_da:,.0f}")
+
+        # ── 推广费趋势（日/月）──
+        st.markdown('<div class="section-title">推广费 & 成交金额趋势</div>', unsafe_allow_html=True)
+        promo_gran = st.radio('粒度', ['按日', '按月'], horizontal=True, key='promo_gran')
+        _pr = {}
+        for r in promo_filtered:
+            dt = r.get('_date', '')
+            if not dt:
+                continue
+            key = dt if promo_gran == '按日' else dt[:7]
+            _pr.setdefault(key, {'花费': 0, '总订单金额': 0})
+            _pr[key]['花费'] += r.get('_花费', 0)
+            _pr[key]['总订单金额'] += r.get('_总订单金额', 0)
+        _pr_s = sorted(_pr.items())
+        if _pr_s:
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=[x[0] for x in _pr_s], y=[x[1]['花费']/10000 for x in _pr_s],
+                                  name='推广费(万)', marker_color='#f59e0b', opacity=0.85))
+            fig.add_trace(go.Scatter(x=[x[0] for x in _pr_s], y=[x[1]['总订单金额']/10000 for x in _pr_s],
+                                     name='总订单金额(万)', yaxis='y2', line=dict(color='#10b981', width=2)))
+            fig.update_layout(height=360, template='plotly_white', legend=dict(orientation='h'),
+                                  yaxis_title='推广费(万)', yaxis2=dict(title='订单金额(万)', overlaying='y', side='right'))
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ── ROI 趋势（按月）──
+        st.markdown('<div class="section-title">ROI 趋势（月度）</div>', unsafe_allow_html=True)
+        _roi_m = {}
+        for r in promo_filtered:
+            dt = r.get('_date', '')
+            if not dt or len(dt) < 7:
+                continue
+            mk = dt[:7]
+            _roi_m.setdefault(mk, {'花费': 0, '总订单金额': 0})
+            _roi_m[mk]['花费'] += r.get('_花费', 0)
+            _roi_m[mk]['总订单金额'] += r.get('_总订单金额', 0)
+        _roi_s = sorted(_roi_m.items())
+        if _roi_s:
+            _roi_v = [{'月份': x[0], 'ROI': x[1]['总订单金额']/x[1]['花费'] if x[1]['花费'] else 0} for x in _roi_s]
+            fig = px.line(pd.DataFrame(_roi_v), x='月份', y='ROI', markers=True,
+                              title='月度ROI趋势', line_shape='spline')
+            fig.update_layout(height=320, template='plotly_white', yaxis_title='ROI')
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ── 推广效率矩阵：花费 vs 成交金额（散点图）──
+        st.markdown('<div class="section-title">推广效率矩阵（花费 vs 成交金额）</div>', unsafe_allow_html=True)
+        _pl = {}
+        for r in promo_filtered:
+            pn = r.get('推广计划', '') or r.get('计划ID', '') or '未标注'
+            _pl.setdefault(pn, {'花费': 0, '总订单金额': 0})
+            _pl[pn]['花费'] += r.get('_花费', 0)
+            _pl[pn]['总订单金额'] += r.get('_总订单金额', 0)
+        _pl_r = [{'推广计划': k, '花费': v['花费'], '总订单金额': v['总订单金额'],
+                    'ROI': v['总订单金额']/v['花费'] if v['花费'] else 0} for k, v in _pl.items()]
+        if _pl_r:
+            _df = pd.DataFrame(_pl_r)
+            fig = px.scatter(_df, x='花费', y='总订单金额', size='总订单金额',
+                                     hover_data=['推广计划', 'ROI'], title='推广计划效率矩阵（花费 vs 成交金额）',
+                                     color='ROI', color_continuous_scale='RdYlGn')
+            fig.update_layout(height=400, template='plotly_white')
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ── 产品线推广占比 ──
+        st.markdown('<div class="section-title">产品线推广占比</div>', unsafe_allow_html=True)
+        _ln = {}
+        for r in promo_filtered:
+            ln = r.get('产品线', '') or r.get('营销场景', '') or '未标注'
+            _ln[ln] = _ln.get(ln, 0) + r.get('_花费', 0)
+        _ln_r = [{'产品线': k, '花费': v} for k, v in _ln.items() if v > 0]
+        if _ln_r:
+            fig = px.pie(pd.DataFrame(_ln_r), names='产品线', values='花费', hole=.45,
+                              color_discrete_sequence=px.colors.qualitative.Set2)
+            fig.update_traces(text=[f"{k}<br>¥{v/10000:.1f}万" for k, v in _ln.items() if v > 0],
+                                 hovertemplate='%{label}<br>花费：¥%{value:,.0f}<extra></extra>')
+            fig.update_layout(height=380, margin=dict(l=10, r=10, t=35, b=10), title='产品线推广费占比')
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ── TOP10 推广计划（按花费）──
+        st.markdown('<div class="section-title">TOP10 推广计划（按花费）</div>', unsafe_allow_html=True)
+        _tp = sorted(_pl_r, key=lambda x: x['花费'], reverse=True)[:10]
+        if _tp:
+            fig = go.Figure(go.Bar(
+                x=[x['花费']/10000 for x in _tp],
+                y=[x['推广计划'][:20] for x in _tp],
+                orientation='h',
+                text=[f"¥{x['花费']/10000:.1f}万" for x in _tp],
+                textposition='outside',
+                marker=dict(color=px.colors.qualitative.Bold[:len(_tp)])))
+            fig.update_layout(height=400, margin=dict(l=10, r=80, t=35, b=10),
+                               title='TOP10 推广计划（按花费）', template='plotly_white',
+                               yaxis=dict(categoryorder='total ascending'),
+                               xaxis=dict(title='花费(万)', showgrid=True))
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ── 推广明细表 ──
+        st.markdown('<div class="section-title">推广明细（按日聚合）</div>', unsafe_allow_html=True)
+        _dp = {}
+        for r in promo_filtered:
+            dt = r.get('_date', '')
+            if not dt:
+                continue
+            _dp.setdefault(dt, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '总加购数': 0})
+            _dp[dt]['花费'] += r.get('_花费', 0)
+            _dp[dt]['展现数'] += r.get('_展现数', 0)
+            _dp[dt]['点击数'] += r.get('_点击数', 0)
+            _dp[dt]['总订单金额'] += r.get('_总订单金额', 0)
+            _dp[dt]['总加购数'] += r.get('_总加购数', 0)
+        _pt = []
+        for dt in sorted(_dp.keys()):
+            v = _dp[dt]
+            _imp = v['展现数']
+            _clk = v['点击数']
+            _ctr = _clk / _imp if _imp else 0
+            _roi = v['总订单金额'] / v['花费'] if v['花费'] else 0
+            _pt.append({
+                '日期': dt, '花费(万)': round(v['花费']/10000, 1), '展现数': f"{int(_imp):,}",
+                '点击数': f"{int(_clk):,}", '点击率': f"{_ctr*100:.2f}%",
+                '总订单金额(万)': round(v['总订单金额']/10000, 1), 'ROI': f"{_roi:.2f}",
+                '总加购数': f"{int(v['总加购数']):,}"
+            })
+        if _pt:
+            st.dataframe(pd.DataFrame(_pt), use_container_width=True, hide_index=True, height=400)
+            _csv = rows_to_csv(_pt, list(_pt[0].keys())).encode('utf-8-sig')
+            st.download_button('下载推广明细 CSV', _csv, file_name='promo_daily.csv', mime='text/csv')
 
     # ── 日趋势（最近30天）──
     st.markdown('<div class="section-title">日趋势（最近30天）</div>', unsafe_allow_html=True)
@@ -600,7 +879,7 @@ with tabs[0]:
 # ═══════════════════════════════════════════════════════════════
 # TAB 2: 时间段对比
 # ═══════════════════════════════════════════════════════════════
-with tabs[1]:
+with tabs[2]:
     st.markdown('<div class="section-title">时间段对比分析</div>', unsafe_allow_html=True)
 
     comp_mode = st.radio('对比模式', ['本期 vs 上期(环比)', '本期 vs 去年同期(同比)', '自定义时间段对比'], horizontal=True)
@@ -769,7 +1048,7 @@ with tabs[1]:
 # ═══════════════════════════════════════════════════════════════
 # TAB 3: 趋势分析
 # ═══════════════════════════════════════════════════════════════
-with tabs[2]:
+with tabs[3]:
     st.markdown('<div class="section-title">趋势分析</div>', unsafe_allow_html=True)
     gran = st.radio('趋势粒度', ['月度', '周度', '日度'], horizontal=True, key='granularity')
 
@@ -1046,7 +1325,7 @@ with tabs[2]:
 # ═══════════════════════════════════════════════════════════════
 # TAB 4: 渠道矩阵
 # ═══════════════════════════════════════════════════════════════
-with tabs[3]:
+with tabs[4]:
     st.markdown('<div class="section-title">渠道矩阵分析</div>', unsafe_allow_html=True)
 
     # 渠道表现: 基于已过滤 daily 数据
@@ -1163,7 +1442,7 @@ with tabs[3]:
 # ═══════════════════════════════════════════════════════════════
 # TAB 5: 商品诊断
 # ═══════════════════════════════════════════════════════════════
-with tabs[4]:
+with tabs[5]:
     st.markdown('<div class="section-title">商品诊断</div>', unsafe_allow_html=True)
 
     products = data.get('products', [])
@@ -1298,7 +1577,7 @@ if category: _filter_parts.append(f'品类={"+".join(category)}')
 if model: _filter_parts.append(f'型号={"+".join(model)}')
 _filter_label = ' | '.join(_filter_parts) if _filter_parts else '全域'
 
-with tabs[5]:
+with tabs[6]:
     st.markdown('<div class="section-title">🔍 智能问题定位诊断 & 优化措施</div>', unsafe_allow_html=True)
     st.caption(f'诊断区间：{s} ~ {e} | 筛选范围：{_filter_label} | 对比区间：相同天数的上一期')
 
