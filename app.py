@@ -929,13 +929,17 @@ with tabs[2]:
             ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'],
             ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'])
     with tab_monthly:
-        mm_all = {r['月份']: r for r in all_months}
-        total_vis_m = sum(r['商品访客数'] for r in all_months)
-        total_amt_m = sum(r['支付金额'] for r in all_months)
-        total_buyers_m = sum(r['支付买家数'] for r in all_months)
-        total_cart_m = sum(r['商品加购人数'] for r in all_months)
+        # 月度表格从 filtered daily 聚合（受筛选器控制）
+        filtered_monthly_list = build_monthly(daily)
+        # 同比查找表：从全时段同条件数据聚合，用于查找去年同期的月度汇总
+        full_mm_list = build_monthly(daily_all_filtered)
+        mm_all = {r['月份']: r for r in full_mm_list}
+        total_vis_m = sum(r['商品访客数'] for r in filtered_monthly_list)
+        total_amt_m = sum(r['支付金额'] for r in filtered_monthly_list)
+        total_buyers_m = sum(r['支付买家数'] for r in filtered_monthly_list)
+        total_cart_m = sum(r['商品加购人数'] for r in filtered_monthly_list)
         monthly_tbl = []
-        for r in all_months:
+        for r in filtered_monthly_list:
             m = r['月份']
             vis = r['商品访客数']
             amt = r['支付金额']
@@ -964,7 +968,7 @@ with tabs[2]:
         if monthly_tbl:
             monthly_tbl.append({
                 '月份': '总计', '访客数': f"{int(total_vis_m):,}", '访客占比': '100.00%',
-                '买家数': f"{int(total_buyers_m):,}", '支付件数': f"{int(sum(r['支付件数'] for r in all_months)):,}",
+                '买家数': f"{int(total_buyers_m):,}", '支付件数': f"{int(sum(r['支付件数'] for r in filtered_monthly_list)):,}",
                 '成交金额(万)': round(total_amt_m/10000, 1), '成交占比': '100.00%',
                 '转化率': f"{total_buyers_m/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
                 '加购人数': f"{int(total_cart_m):,}",
