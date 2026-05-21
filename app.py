@@ -142,11 +142,11 @@ with fc:
     with c3:
         channel = _slicer('渠道', data['filters']['channels'], 'ch')
     with c4:
-        store = _slicer('店铺', data['filters']['stores'], 'st', max_show=5)
+        store = _slicer('店铺', data['filters']['stores'], 'st')
     with c5:
-        category = _slicer('品类', data['filters']['categories'], 'cat', max_show=6)
+        category = _slicer('品类', data['filters']['categories'], 'cat')
     with c6:
-        model = _slicer('型号', data['filters']['models'], 'mdl', max_show=5)
+        model = _slicer('型号', data['filters']['models'], 'mdl')
 
 s = str(start)
 e = str(end)
