@@ -17,6 +17,8 @@ from dashboard_core import parse_sales_workbook, month_shift, rows_to_csv
 _CACHE_DIR = pathlib.Path(__file__).parent / '.data_cache'
 _CACHE_DIR.mkdir(exist_ok=True)
 _CACHE_FILE = _CACHE_DIR / 'last_upload.xlsx'
+_CACHE_SALES = _CACHE_DIR / 'last_sales.xlsx'
+_CACHE_PROMO = _CACHE_DIR / 'last_promo.xlsx'
 
 def _slicer(label, options, key):
     """Empty=select all, click item in dropdown to choose"""
@@ -93,7 +95,6 @@ with st.sidebar:
     st.header('数据源更新')
     data_type = st.radio('数据类型', ['销售数据', '推广数据', '流量渠道（预留）', '销售目标（预留）'], horizontal=True)
     if data_type == '销售数据':
-        _CACHE_SALES = _CACHE_DIR / 'last_sales.xlsx'
         uploaded_sales = st.file_uploader('上传销售 Excel 数据源', type=['xlsx'], key='sales_up')
         if uploaded_sales is not None:
             _CACHE_SALES.write_bytes(uploaded_sales.getvalue())
@@ -106,7 +107,6 @@ with st.sidebar:
         st.markdown('**建议工作表**')
         st.caption('天猫数据源 / 京东抖音数据源')
     elif data_type == '推广数据':
-        _CACHE_PROMO = _CACHE_DIR / 'last_promo.xlsx'
         uploaded_promo = st.file_uploader('上传推广 Excel（含京东/天猫推广sheet）', type=['xlsx'], key='promo_up')
         if uploaded_promo is not None:
             _CACHE_PROMO.write_bytes(uploaded_promo.getvalue())
