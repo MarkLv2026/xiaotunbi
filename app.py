@@ -229,6 +229,15 @@ def df(rows):
         return rows
     return pd.DataFrame(rows)
 
+def _wan(v):
+    return round(v / 10000, 1) if v else 0
+
+def _pct(v):
+    return f'{v*100:.2f}%' if v else '0.00%'
+
+def _uv(v_amt, v_vis):
+    return round(v_amt / v_vis, 1) if v_vis else 0
+
 def delta_badge(d):
     if d is None:
         return '--'
@@ -380,13 +389,44 @@ tabs = st.tabs(['经营总览', '时间段对比', '趋势分析', '渠道矩阵
 with tabs[0]:
     st.markdown('<div class="section-title">经营总览</div>', unsafe_allow_html=True)
     k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
-    k1.metric('支付金额', f"¥{totals['支付金额']:,.0f}", period_delta_text('支付金额'))
+    k1.metric('支付金额', f"¥{_wan(totals['支付金额'])}万", period_delta_text('支付金额'))
     k2.metric('支付件数', f"{totals['支付件数']:,.0f}", period_delta_text('支付件数'))
     k3.metric('支付买家', f"{totals['支付买家数']:,.0f}", period_delta_text('支付买家数'))
     k4.metric('访客数', f"{totals['商品访客数']:,.0f}", period_delta_text('商品访客数'))
     k5.metric('支付转化率', f"{totals['支付转化率']*100:.2f}%", period_delta_text('支付转化率'))
     k6.metric('客单价', f"¥{totals['客单价']:,.0f}", period_delta_text('客单价'))
     k7.metric('退款率', f"{totals['退款率']*100:.2f}%", period_delta_text('退款率'))
+
+    # ── 日趋势（最近30天）──
+    st.markdown('<div class="section-title">日趋势（最近30天）</div>', unsafe_allow_html=True)
+    if daily_trend:
+        fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1,
+                             subplot_titles=('支付金额(万) & 访客数', '支付转化率(%)'),
+                             row_heights=[0.65, 0.35])
+        fig2.add_trace(go.Bar(x=[r['日期'] for r in daily_trend],
+                              y=[_wan(r['支付金额']) for r in daily_trend],
+                              text=[f"{_wan(r['支付金额'])}万" for r in daily_trend],
+                              textposition='outside',
+                              name='支付金额', marker_color='#3b82f6', showlegend=True), row=1, col=1)
+        fig2.add_trace(go.Scatter(x=[r['日期'] for r in daily_trend],
+                                  y=[r['商品访客数'] for r in daily_trend],
+                                  text=[f"{int(r['商品访客数'])}" for r in daily_trend],
+                                  textposition='top center',
+                                  name='访客数', line=dict(color='#06b6d4', width=2), showlegend=True), row=1, col=1)
+        fig2.add_trace(go.Scatter(x=[r['日期'] for r in daily_trend],
+                                  y=[r['支付转化率']*100 for r in daily_trend],
+                                  text=[f"{r['支付转化率']*100:.1f}%" for r in daily_trend],
+                                  textposition='top center',
+                                  name='转化率(%)', line=dict(color='#f59e0b', width=2),
+                                  fill='tozeroy', fillcolor='rgba(245,158,11,0.15)', showlegend=True), row=2, col=1)
+        fig2.update_layout(height=420, template='plotly_white', margin=dict(l=20, r=20, t=50, b=20),
+                           legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1))
+        fig2.update_yaxes(title_text='支付金额(万)', row=1, col=1)
+        fig2.update_yaxes(title_text='访客数', overlaying='y', side='right', row=1, col=1)
+        fig2.update_yaxes(title_text='转化率(%)', row=2, col=1)
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.info('当前筛选条件下，最近30天无日趋势数据')
 
     st.markdown('<div class="section-title">全域趋势与结构</div>', unsafe_allow_html=True)
     trend = [{'月份': r['月份'], '支付金额': r['支付金额'], '访客数': r['商品访客数'],
@@ -395,66 +435,49 @@ with tabs[0]:
     with a_col:
         fig = go.Figure()
         if trend:
-            fig.add_trace(go.Bar(x=[r['月份'] for r in trend], y=[r['支付金额'] for r in trend],
-                                  name='支付金额', marker_color='#1d4ed8'))
-            fig.add_trace(go.Scatter(x=[r['月份'] for r in trend], y=[r['访客数'] for r in trend],
+            fig.add_trace(go.Bar(x=[r['月份'][:4]+'/'+r['月份'][5:7] for r in trend], y=[_wan(r['支付金额']) for r in trend],
+                                  text=[f"{_wan(r['支付金额'])}万" for r in trend], textposition='outside',
+                                  name='支付金额(万)', marker_color='#1d4ed8'))
+            fig.add_trace(go.Scatter(x=[r['月份'][:4]+'/'+r['月份'][5:7] for r in trend], y=[r['访客数'] for r in trend],
                                       name='访客数', yaxis='y2', line=dict(color='#06b6d4', width=3)))
-            fig.add_trace(go.Scatter(x=[r['月份'] for r in trend], y=[r['支付件数'] for r in trend],
+            fig.add_trace(go.Scatter(x=[r['月份'][:4]+'/'+r['月份'][5:7] for r in trend], y=[r['支付件数'] for r in trend],
                                       name='支付件数', yaxis='y2', line=dict(color='#22c55e', width=3)))
         fig.update_layout(height=390, template='plotly_white', margin=dict(l=20, r=20, t=35, b=20),
-                          legend=dict(orientation='h'), yaxis_title='支付金额',
+                          legend=dict(orientation='h'), yaxis_title='支付金额(万)',
                           yaxis2=dict(title='流量/销量', overlaying='y', side='right'))
         st.plotly_chart(fig, use_container_width=True)
     with b_col:
-        fig = px.pie(df(ch_rows[:8]), names='渠道', values='支付金额', hole=.55,
+        ch_pie = [{'渠道': r['渠道'], '支付金额': r['支付金额']} for r in ch_rows[:8]]
+        fig = px.pie(df(ch_pie), names='渠道', values='支付金额', hole=.55,
                      color_discrete_sequence=px.colors.qualitative.Set2)
+        fig.update_traces(text=[f"{r['渠道']}<br>¥{_wan(r['支付金额'])}万" for r in ch_rows[:8]],
+                          hovertemplate='%{label}<br>¥%{value:,.0f}<extra></extra>')
         fig.update_layout(height=390, margin=dict(l=10, r=10, t=35, b=10), title='渠道销售占比')
         st.plotly_chart(fig, use_container_width=True)
 
     c_col, d_col, e_col = st.columns(3)
     with c_col:
-        fig = px.bar(df(store_rows[:12]), x='支付金额', y='店铺', orientation='h',
-                     title='店铺销售排行', color='支付转化率', color_continuous_scale='Blues')
-        fig.update_layout(height=430, template='plotly_white', yaxis={'categoryorder': 'total ascending'})
+        fig = px.pie(df(store_rows[:12]), names='店铺', values='支付金额', hole=.55,
+                     color_discrete_sequence=px.colors.qualitative.Bold)
+        fig.update_traces(text=[f"{r['店铺']}<br>¥{_wan(r['支付金额'])}万" for r in store_rows[:12]],
+                          hovertemplate='%{label}<br>¥%{value:,.0f}<extra></extra>')
+        fig.update_layout(height=430, margin=dict(l=10, r=10, t=35, b=10), title='店铺销售排行')
         st.plotly_chart(fig, use_container_width=True)
     with d_col:
-        fig = px.bar(df(cat_rows[:12]), x='支付金额', y='品类', orientation='h',
-                     title='品类销售排行', color='加购率', color_continuous_scale='Teal')
-        fig.update_layout(height=430, template='plotly_white', yaxis={'categoryorder': 'total ascending'})
+        fig = px.pie(df(cat_rows[:12]), names='品类', values='支付金额', hole=.55,
+                     color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig.update_traces(text=[f"{r['品类']}<br>¥{_wan(r['支付金额'])}万" for r in cat_rows[:12]],
+                          hovertemplate='%{label}<br>¥%{value:,.0f}<extra></extra>')
+        fig.update_layout(height=430, margin=dict(l=10, r=10, t=35, b=10), title='品类销售排行')
         st.plotly_chart(fig, use_container_width=True)
     with e_col:
-        bubble = [{'品类': r['品类'], '支付金额': r['支付金额'], '访客数': r['商品访客数'],
-                   '转化率': r['支付转化率'], '客单价': r['客单价'],
-                   'size_val': max(abs(r['支付金额']), 0) or 1} for r in cat_rows[:20]]
-        fig = px.scatter(df(bubble), x='访客数', y='转化率', size='size_val',
-                         color='品类', hover_data=['客单价', '支付金额'], title='品类流量-转化矩阵')
-        fig.update_layout(height=430, template='plotly_white')
+        model_rows = group(daily, '型号')[:10]
+        fig = px.pie(df(model_rows), names='型号', values='支付金额', hole=.55,
+                     color_discrete_sequence=px.colors.qualitative.Set2)
+        fig.update_traces(text=[f"{r['型号']}<br>¥{_wan(r['支付金额'])}万" for r in model_rows],
+                          hovertemplate='%{label}<br>¥%{value:,.0f}<extra></extra>')
+        fig.update_layout(height=430, margin=dict(l=10, r=10, t=35, b=10), title='销额TOP10单品')
         st.plotly_chart(fig, use_container_width=True)
-
-    # ── 日趋势（最近30天）──
-    st.markdown('<div class="section-title">日趋势（最近30天）</div>', unsafe_allow_html=True)
-    if daily_trend:
-        fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1,
-                             subplot_titles=('支付金额 & 访客数', '支付转化率'),
-                             row_heights=[0.65, 0.35])
-        fig2.add_trace(go.Bar(x=[r['日期'] for r in daily_trend],
-                              y=[r['支付金额'] for r in daily_trend],
-                              name='支付金额', marker_color='#3b82f6', showlegend=True), row=1, col=1)
-        fig2.add_trace(go.Scatter(x=[r['日期'] for r in daily_trend],
-                                  y=[r['商品访客数'] for r in daily_trend],
-                                  name='访客数', line=dict(color='#06b6d4', width=2), showlegend=True), row=1, col=1)
-        fig2.add_trace(go.Scatter(x=[r['日期'] for r in daily_trend],
-                                  y=[r['支付转化率']*100 for r in daily_trend],
-                                  name='转化率(%)', line=dict(color='#f59e0b', width=2),
-                                  fill='tozeroy', fillcolor='rgba(245,158,11,0.15)', showlegend=True), row=2, col=1)
-        fig2.update_layout(height=420, template='plotly_white', margin=dict(l=20, r=20, t=50, b=20),
-                           legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1))
-        fig2.update_yaxes(title_text='支付金额', row=1, col=1)
-        fig2.update_yaxes(title_text='访客数', overlaying='y', side='right', row=1, col=1)
-        fig2.update_yaxes(title_text='转化率(%)', row=2, col=1)
-        st.plotly_chart(fig2, use_container_width=True)
-    else:
-        st.info('当前筛选条件下，最近30天无日趋势数据')
 
     st.markdown('<div class="section-title">导出与留档</div>', unsafe_allow_html=True)
     d1, d2 = st.columns(2)
@@ -464,12 +487,12 @@ with tabs[0]:
             prev = mm_f.get(month_shift(r['月份'], -1))
             ly = mm_f.get(month_shift(r['月份'], -12))
             comp.append({
-                '月份': r['月份'], '支付金额': round(r['支付金额'], 2), '支付件数': round(r['支付件数'], 0),
+                '月份': r['月份'], '支付金额': round(_wan(r['支付金额']), 1), '支付件数': round(r['支付件数'], 0),
                 '访客数': round(r['商品访客数'], 0), '转化率': round(r['支付转化率'], 4),
                 '金额环比': None if not prev or not prev['支付金额'] else round((r['支付金额'] - prev['支付金额']) / prev['支付金额'], 4),
                 '金额同比': None if not ly or not ly['支付金额'] else round((r['支付金额'] - ly['支付金额']) / ly['支付金额'], 4),
             })
-        st.download_button('下载月度同比环比 CSV', rows_to_csv(comp, ['月份', '支付金额', '支付件数', '访客数', '转化率', '金额环比', '金额同比']), file_name='monthly_yoy_mom.csv', mime='text/csv')
+        st.download_button('下载月度同比环比 CSV', rows_to_csv(comp, ['月份', '支付金额(万)', '支付件数', '访客数', '转化率', '金额环比', '金额同比']), file_name='monthly_yoy_mom.csv', mime='text/csv')
     with d2:
         st.download_button('下载当前筛选日汇总 CSV', rows_to_csv(daily, ['日期', '渠道', '店铺', '品类', '型号', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价', '退款率']), file_name='filtered_daily_summary.csv', mime='text/csv')
 
@@ -700,16 +723,100 @@ with tabs[2]:
                 '加购率': float(r.get('商品加购人数', 0) or 0) / vis if vis else 0
             })
 
+    # ── 数据表格 ──
+    st.markdown('<div class="section-title">数据明细</div>', unsafe_allow_html=True)
+    tab_daily, tab_monthly = st.tabs(['日度汇总', '月度汇总'])
+    with tab_daily:
+        day_dict = {}
+        for r in daily:
+            dt = r.get('日期', '')
+            if not dt:
+                continue
+            if dt not in day_dict:
+                day_dict[dt] = {m: 0.0 for m in METRICS}
+            for m in METRICS:
+                day_dict[dt][m] += float(r.get(m, 0) or 0)
+        total_vis = sum(v['商品访客数'] for v in day_dict.values())
+        total_amt = sum(v['支付金额'] for v in day_dict.values())
+        total_buyers = sum(v['支付买家数'] for v in day_dict.values())
+        total_cart = sum(v['商品加购人数'] for v in day_dict.values())
+        daily_tbl = []
+        for dt in sorted(day_dict.keys()):
+            v = day_dict[dt]
+            vis = v['商品访客数']
+            amt = v['支付金额']
+            daily_tbl.append({
+                '日期': dt, '访客数': int(vis),
+                '访客占比': f"{vis/total_vis*100:.2f}%" if total_vis else "0.00%",
+                '买家数': int(v['支付买家数']), '支付件数': int(v['支付件数']),
+                '成交金额(万)': round(amt/10000, 1),
+                '成交占比': f"{amt/total_amt*100:.2f}%" if total_amt else "0.00%",
+                '转化率': f"{v['支付买家数']/vis*100:.2f}%" if vis else "0.00%",
+                '加购人数': int(v['商品加购人数']),
+                '加购率': f"{v['商品加购人数']/vis*100:.2f}%" if vis else "0.00%",
+                'UV价值': round(amt/vis, 1) if vis else 0,
+            })
+        if daily_tbl:
+            daily_tbl.append({
+                '日期': '总计', '访客数': int(total_vis), '访客占比': '100.00%',
+                '买家数': int(total_buyers), '支付件数': int(sum(v['支付件数'] for v in day_dict.values())),
+                '成交金额(万)': round(total_amt/10000, 1), '成交占比': '100.00%',
+                '转化率': f"{total_buyers/total_vis*100:.2f}%" if total_vis else "0.00%",
+                '加购人数': int(total_cart),
+                '加购率': f"{total_cart/total_vis*100:.2f}%" if total_vis else "0.00%",
+                'UV价值': round(total_amt/total_vis, 1) if total_vis else 0,
+            })
+        st.dataframe(df(daily_tbl), use_container_width=True, hide_index=True)
+    with tab_monthly:
+        mm_all = {r['月份']: r for r in all_months}
+        total_vis_m = sum(r['商品访客数'] for r in all_months)
+        total_amt_m = sum(r['支付金额'] for r in all_months)
+        total_buyers_m = sum(r['支付买家数'] for r in all_months)
+        total_cart_m = sum(r['商品加购人数'] for r in all_months)
+        monthly_tbl = []
+        for r in all_months:
+            m = r['月份']
+            vis = r['商品访客数']
+            amt = r['支付金额']
+            ly = mm_all.get(month_shift(m, -12), {})
+            ly_amt = ly.get('支付金额', 0)
+            yoy = (amt - ly_amt) / ly_amt if ly_amt else None
+            monthly_tbl.append({
+                '月份': m, '访客数': int(vis),
+                '访客占比': f"{vis/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
+                '买家数': int(r['支付买家数']), '支付件数': int(r['支付件数']),
+                '成交金额(万)': round(amt/10000, 1),
+                '成交占比': f"{amt/total_amt_m*100:.2f}%" if total_amt_m else "0.00%",
+                '转化率': f"{r['支付转化率']*100:.2f}%" if r['支付转化率'] else "0.00%",
+                '加购人数': int(r['商品加购人数']),
+                '加购率': f"{r['加购率']*100:.2f}%" if r['加购率'] else "0.00%",
+                'UV价值': round(amt/vis, 1) if vis else 0,
+                '销额同比': f"{yoy*100:.2f}%" if yoy is not None else '--',
+            })
+        if monthly_tbl:
+            monthly_tbl.append({
+                '月份': '总计', '访客数': int(total_vis_m), '访客占比': '100.00%',
+                '买家数': int(total_buyers_m), '支付件数': int(sum(r['支付件数'] for r in all_months)),
+                '成交金额(万)': round(total_amt_m/10000, 1), '成交占比': '100.00%',
+                '转化率': f"{total_buyers_m/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
+                '加购人数': int(total_cart_m),
+                '加购率': f"{total_cart_m/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
+                'UV价值': round(total_amt_m/total_vis_m, 1) if total_vis_m else 0,
+                '销额同比': '--',
+            })
+        st.dataframe(df(monthly_tbl), use_container_width=True, hide_index=True)
+
     t1, t2 = st.columns(2)
     with t1:
         fig = go.Figure()
         if tr_data:
-            fig.add_trace(go.Bar(x=[r['周期'] for r in tr_data], y=[r['支付金额'] for r in tr_data],
-                                  name='支付金额', marker_color='#1d4ed8', opacity=0.85))
+            fig.add_trace(go.Bar(x=[r['周期'] for r in tr_data], y=[_wan(r['支付金额']) for r in tr_data],
+                                  text=[f"{_wan(r['支付金额'])}万" for r in tr_data], textposition='outside',
+                                  name='支付金额(万)', marker_color='#1d4ed8', opacity=0.85))
             fig.add_trace(go.Scatter(x=[r['周期'] for r in tr_data], y=[r['访客数'] for r in tr_data],
                                       name='访客数', yaxis='y2', line=dict(color='#06b6d4', width=2)))
         fig.update_layout(height=350, template='plotly_white', legend=dict(orientation='h'),
-                          yaxis_title='支付金额', yaxis2=dict(title='访客数', overlaying='y', side='right'))
+                          yaxis_title='支付金额(万)', yaxis2=dict(title='访客数', overlaying='y', side='right'))
         st.plotly_chart(fig, use_container_width=True)
     with t2:
         fig = go.Figure()
@@ -725,12 +832,13 @@ with tabs[2]:
     st.markdown('<div class="section-title">同比趋势叠加（月度）</div>', unsafe_allow_html=True)
     if all_months:
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=[r['月份'] for r in all_months], y=[r['支付金额'] for r in all_months],
+        fig.add_trace(go.Bar(x=[r['月份'] for r in all_months], y=[_wan(r['支付金额']) for r in all_months],
+                              text=[f"{_wan(r['支付金额'])}万" for r in all_months], textposition='outside',
                               name='本期月度金额', marker_color='#1d4ed8'))
         ly_data = [mm.get(month_shift(r['月份'], -12), {}).get('支付金额', 0) for r in all_months]
-        fig.add_trace(go.Scatter(x=[r['月份'] for r in all_months], y=ly_data,
+        fig.add_trace(go.Scatter(x=[r['月份'] for r in all_months], y=[_wan(v) for v in ly_data],
                                   name='去年同期金额', line=dict(color='#f59e0b', width=2, dash='dash')))
-        fig.update_layout(height=380, template='plotly_white', legend=dict(orientation='h'))
+        fig.update_layout(height=380, template='plotly_white', legend=dict(orientation='h'), yaxis_title='支付金额(万)')
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown('---')
@@ -751,11 +859,12 @@ with tabs[2]:
         rows = dow_dict[dow_name]
         if rows:
             sv = summarize(rows)
-            dow_avg.append({'星期': dow_name, '支付金额': sv['支付金额'],
+            dow_avg.append({'星期': dow_name, '支付金额': _wan(sv['支付金额']),
                              '访客数': sv['商品访客数'], '转化率': sv['支付转化率']})
     if dow_avg:
         fig = px.bar(df(dow_avg), x='星期', y='支付金额', color='转化率',
-                     color_continuous_scale='RdYlGn', title='各星期日均支付金额（颜色=转化率）')
+                     color_continuous_scale='RdYlGn', title='各星期日均支付金额（颜色=转化率）',
+                     text=[f"{r['支付金额']}万" for r in dow_avg])
         fig.update_layout(height=340, template='plotly_white')
         st.plotly_chart(fig, use_container_width=True)
 
@@ -781,7 +890,7 @@ with tabs[3]:
             prev_ch_amt = sum(float(x.get('支付金额', 0) or 0) for x in prev_ch_rows)
             mo_chg = (r['支付金额'] - prev_ch_amt) / prev_ch_amt if prev_ch_amt else None
             ch_display.append({
-                '渠道': ch_name, '支付金额': f"¥{r['支付金额']:,.0f}",
+                '渠道': ch_name, '支付金额': f"¥{_wan(r['支付金额'])}万",
                 '支付件数': f"{r['支付件数']:,.0f}", '访客数': f"{r['商品访客数']:,.0f}",
                 '转化率': f"{r['支付转化率']*100:.2f}%", '客单价': f"¥{r['客单价']:,.0f}",
                 '退款率': f"{r['退款率']*100:.2f}%",
@@ -793,8 +902,10 @@ with tabs[3]:
     if ch_all:
         vis1, vis2 = st.columns(2)
         with vis1:
-            fig = px.bar(df(ch_all), x='渠道', y='支付金额', color='渠道',
-                         title='渠道支付金额', color_discrete_sequence=px.colors.qualitative.Set2)
+            ch_all_w = [{**r, '支付金额_万': _wan(r['支付金额'])} for r in ch_all]
+            fig = px.bar(df(ch_all_w), x='渠道', y='支付金额_万', color='渠道',
+                         title='渠道支付金额(万)', color_discrete_sequence=px.colors.qualitative.Set2,
+                         text=[f"{_wan(r['支付金额'])}万" for r in ch_all])
             fig.update_layout(height=340, template='plotly_white', showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
         with vis2:
@@ -819,7 +930,7 @@ with tabs[3]:
                 break
         store_display.append({
             '店铺': r['店铺'], '渠道': ch_of_store,
-            '支付金额': f"¥{r['支付金额']:,.0f}", '支付件数': f"{r['支付件数']:,.0f}",
+            '支付金额': f"¥{_wan(r['支付金额'])}万", '支付件数': f"{r['支付件数']:,.0f}",
             '访客数': f"{r['商品访客数']:,.0f}", '转化率': f"{r['支付转化率']*100:.2f}%",
             '客单价': f"¥{r['客单价']:,.0f}"
         })
@@ -914,7 +1025,7 @@ with tabs[4]:
     prod_display = [{'商品名称': str(r.get('商品名称', ''))[:40],
                      '商品ID': r.get('商品ID', ''),
                      '渠道': r.get('渠道', ''), '品类': r.get('品类', ''), '型号': r.get('型号', ''),
-                     '支付金额': f"¥{r.get('支付金额', 0):,.0f}",
+                     '支付金额': f"¥{_wan(r.get('支付金额', 0))}万",
                      '支付件数': f"{r.get('支付件数', 0):,.0f}",
                      '访客数': f"{r.get('商品访客数', 0):,.0f}",
                      '转化率': f"{r.get('支付转化率', 0)*100:.2f}%",
@@ -939,7 +1050,7 @@ with tabs[4]:
             sty = group(daily, '款式') if any(r.get('款式') for r in daily) else []
         sty_display = [{'款式': r.get('款式', ''), '渠道': r.get('渠道', ''),
                          '品类': r.get('品类', ''), '型号': r.get('型号', ''),
-                         '支付金额': f"¥{r.get('支付金额', 0):,.0f}",
+                         '支付金额': f"¥{_wan(r.get('支付金额', 0))}万",
                          '支付件数': f"{r.get('支付件数', 0):,.0f}",
                          '转化率': f"{r.get('支付转化率', 0)*100:.2f}%",
                          '客单价': f"¥{r.get('客单价', 0):,.0f}"} for r in sty[:300]]
@@ -958,7 +1069,7 @@ with tabs[4]:
             mdl = group(daily, '型号')
         mdl_display = [{'型号': r.get('型号', ''), '渠道': r.get('渠道', ''),
                          '品类': r.get('品类', ''), '店铺': r.get('店铺', ''),
-                         '支付金额': f"¥{r.get('支付金额', 0):,.0f}",
+                         '支付金额': f"¥{_wan(r.get('支付金额', 0))}万",
                          '支付件数': f"{r.get('支付件数', 0):,.0f}",
                          '转化率': f"{r.get('支付转化率', 0)*100:.2f}%",
                          '客单价': f"¥{r.get('客单价', 0):,.0f}"} for r in mdl[:300]]
@@ -972,8 +1083,10 @@ with tabs[4]:
     st.markdown('---')
     st.markdown('<div class="section-title">品类销售额 TOP10</div>', unsafe_allow_html=True)
     if cat_rows:
-        fig = px.bar(df(cat_rows[:10]), x='支付金额', y='品类', orientation='h',
-                     color='支付转化率', color_continuous_scale='Blues', title='品类排行（颜色=转化率）')
+        cat_w = [{**r, '支付金额_万': _wan(r['支付金额'])} for r in cat_rows[:10]]
+        fig = px.bar(df(cat_w), x='支付金额_万', y='品类', orientation='h',
+                     color='支付转化率', color_continuous_scale='Blues', title='品类排行（颜色=转化率）',
+                     text=[f"{_wan(r['支付金额'])}万" for r in cat_rows[:10]])
         fig.update_layout(height=380, template='plotly_white', yaxis={'categoryorder': 'total ascending'})
         st.plotly_chart(fig, use_container_width=True)
 
@@ -992,7 +1105,7 @@ with tabs[4]:
                      (top_mdl == '全部' or r.get('型号') == top_mdl)]
     fp_display = [{'商品名称': str(r.get('商品名称', ''))[:50], '渠道': r.get('渠道', ''),
                    '品类': r.get('品类', ''), '型号': r.get('型号', ''),
-                   '支付金额': f"¥{r.get('支付金额', 0):,.0f}",
+                   '支付金额': f"¥{_wan(r.get('支付金额', 0))}万",
                    '转化率': f"{r.get('支付转化率', 0)*100:.2f}%",
                    '客单价': f"¥{r.get('客单价', 0):,.0f}"} for r in filtered_prod[:100]]
     if fp_display:
