@@ -372,7 +372,26 @@ def build_daily_trend(rows, limit=30):
         v['支付转化率'] = v['支付买家数'] / v['商品访客数'] if v['商品访客数'] else 0
         out.append(v)
     out = sorted(out, key=lambda x: x['日期'])
-    return out[-limit:] if len(out) > limit else out
+    result = out[-limit:] if len(out) > limit else out
+    # 同比：去年同期同一天
+    for r in result:
+        dt = r['日期']
+        try:
+            dt_obj = datetime.datetime.strptime(dt, '%Y-%m-%d').date()
+            ly = dt_obj.replace(year=dt_obj.year - 1)
+            ly_dt = str(ly)
+        except ValueError:
+            ly = datetime.date(dt_obj.year - 1, dt_obj.month, 28)
+            ly_dt = str(ly)
+        ly_rows = [x for x in rows if x.get('日期') == ly_dt]
+        if ly_rows:
+            ly_sum = summarize(ly_rows)
+            r['支付金额_同比'] = (r['支付金额'] - ly_sum['支付金额']) / ly_sum['支付金额'] if ly_sum['支付金额'] else None
+            r['支付转化率_同比'] = (r['支付转化率'] - ly_sum['支付转化率']) / ly_sum['支付转化率'] if ly_sum['支付转化率'] else None
+        else:
+            r['支付金额_同比'] = None
+            r['支付转化率_同比'] = None
+    return result
 
 filtered_monthly = build_monthly(daily)
 mm_f = {r['月份']: r for r in filtered_monthly}
@@ -400,28 +419,54 @@ with tabs[0]:
     # ── 日趋势（最近30天）──
     st.markdown('<div class="section-title">日趋势（最近30天）</div>', unsafe_allow_html=True)
     if daily_trend:
+        # 自适应单位
+        max_amt = max(r['支付金额'] for r in daily_trend)
+        use_wan = max_amt >= 10000
+        def _amt_label(v):
+            return f"{v/10000:.1f}万" if use_wan else f"{v:,.0f}"
+        def _amt_y(v):
+            return v/10000 if use_wan else v
+        amt_unit = '万' if use_wan else '元'
+
         fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1,
-                             subplot_titles=('支付金额(万) & 访客数', '支付转化率(%)'),
+                             subplot_titles=(f'支付金额({amt_unit}) & 访客数', '支付转化率(%)'),
                              row_heights=[0.65, 0.35])
+        # 销额柱图 + 同比标签
+        bar_texts = []
+        for r in daily_trend:
+            t = _amt_label(r['支付金额'])
+            if r['支付金额_同比'] is not None:
+                sign = '+' if r['支付金额_同比'] >= 0 else ''
+                t += f"<br><span style='font-size:10px'>{sign}{r['支付金额_同比']*100:.1f}%</span>"
+            bar_texts.append(t)
         fig2.add_trace(go.Bar(x=[r['日期'] for r in daily_trend],
-                              y=[_wan(r['支付金额']) for r in daily_trend],
-                              text=[f"{_wan(r['支付金额'])}万" for r in daily_trend],
+                              y=[_amt_y(r['支付金额']) for r in daily_trend],
+                              text=bar_texts,
                               textposition='outside',
                               name='支付金额', marker_color='#3b82f6', showlegend=True), row=1, col=1)
+        # 访客数折线
         fig2.add_trace(go.Scatter(x=[r['日期'] for r in daily_trend],
                                   y=[r['商品访客数'] for r in daily_trend],
                                   text=[f"{int(r['商品访客数'])}" for r in daily_trend],
                                   textposition='top center',
                                   name='访客数', line=dict(color='#06b6d4', width=2), showlegend=True), row=1, col=1)
+        # 转化率折线 + 同比标注（hover）
+        cvr_texts = []
+        for r in daily_trend:
+            t = f"{r['支付转化率']*100:.1f}%"
+            if r['支付转化率_同比'] is not None:
+                sign = '+' if r['支付转化率_同比'] >= 0 else ''
+                t += f"<br>{sign}{r['支付转化率_同比']*100:.1f}%"
+            cvr_texts.append(t)
         fig2.add_trace(go.Scatter(x=[r['日期'] for r in daily_trend],
                                   y=[r['支付转化率']*100 for r in daily_trend],
-                                  text=[f"{r['支付转化率']*100:.1f}%" for r in daily_trend],
+                                  text=cvr_texts,
                                   textposition='top center',
                                   name='转化率(%)', line=dict(color='#f59e0b', width=2),
                                   fill='tozeroy', fillcolor='rgba(245,158,11,0.15)', showlegend=True), row=2, col=1)
         fig2.update_layout(height=420, template='plotly_white', margin=dict(l=20, r=20, t=50, b=20),
                            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1))
-        fig2.update_yaxes(title_text='支付金额(万)', row=1, col=1)
+        fig2.update_yaxes(title_text=f'支付金额({amt_unit})', row=1, col=1)
         fig2.update_yaxes(title_text='访客数', overlaying='y', side='right', row=1, col=1)
         fig2.update_yaxes(title_text='转化率(%)', row=2, col=1)
         st.plotly_chart(fig2, use_container_width=True)
@@ -457,26 +502,49 @@ with tabs[0]:
 
     c_col, d_col, e_col = st.columns(3)
     with c_col:
-        fig = px.pie(df(store_rows[:12]), names='店铺', values='支付金额', hole=.55,
-                     color_discrete_sequence=px.colors.qualitative.Bold)
-        fig.update_traces(text=[f"{r['店铺']}<br>¥{_wan(r['支付金额'])}万" for r in store_rows[:12]],
-                          hovertemplate='%{label}<br>¥%{value:,.0f}<extra></extra>')
-        fig.update_layout(height=430, margin=dict(l=10, r=10, t=35, b=10), title='店铺销售排行')
+        # 店铺销售排行 → 柱状图
+        sr = store_rows[:12]
+        fig = go.Figure(go.Bar(
+            x=[r['支付金额'] for r in sr],
+            y=[r['店铺'] for r in sr],
+            orientation='h',
+            text=[f"¥{_wan(r['支付金额'])}万" for r in sr],
+            textposition='outside',
+            marker=dict(color=px.colors.qualitative.Bold[:len(sr)])))
+        fig.update_layout(height=430, margin=dict(l=10, r=80, t=35, b=10),
+                          title='店铺销售排行', template='plotly_white',
+                          yaxis=dict(categoryorder='total ascending'),
+                          xaxis=dict(title='支付金额(万)', showgrid=True))
         st.plotly_chart(fig, use_container_width=True)
     with d_col:
-        fig = px.pie(df(cat_rows[:12]), names='品类', values='支付金额', hole=.55,
-                     color_discrete_sequence=px.colors.qualitative.Pastel)
-        fig.update_traces(text=[f"{r['品类']}<br>¥{_wan(r['支付金额'])}万" for r in cat_rows[:12]],
-                          hovertemplate='%{label}<br>¥%{value:,.0f}<extra></extra>')
-        fig.update_layout(height=430, margin=dict(l=10, r=10, t=35, b=10), title='品类销售排行')
+        # 品类销售排行 → 柱状图
+        cr = cat_rows[:12]
+        fig = go.Figure(go.Bar(
+            x=[r['支付金额'] for r in cr],
+            y=[r['品类'] for r in cr],
+            orientation='h',
+            text=[f"¥{_wan(r['支付金额'])}万" for r in cr],
+            textposition='outside',
+            marker=dict(color=px.colors.qualitative.Pastel[:len(cr)])))
+        fig.update_layout(height=430, margin=dict(l=10, r=80, t=35, b=10),
+                          title='品类销售排行', template='plotly_white',
+                          yaxis=dict(categoryorder='total ascending'),
+                          xaxis=dict(title='支付金额(万)', showgrid=True))
         st.plotly_chart(fig, use_container_width=True)
     with e_col:
+        # TOP10单品 → 横向条形图
         model_rows = group(daily, '型号')[:10]
-        fig = px.pie(df(model_rows), names='型号', values='支付金额', hole=.55,
-                     color_discrete_sequence=px.colors.qualitative.Set2)
-        fig.update_traces(text=[f"{r['型号']}<br>¥{_wan(r['支付金额'])}万" for r in model_rows],
-                          hovertemplate='%{label}<br>¥%{value:,.0f}<extra></extra>')
-        fig.update_layout(height=430, margin=dict(l=10, r=10, t=35, b=10), title='销额TOP10单品')
+        fig = go.Figure(go.Bar(
+            x=[r['支付金额'] for r in model_rows],
+            y=[r['型号'] for r in model_rows],
+            orientation='h',
+            text=[f"¥{_wan(r['支付金额'])}万" for r in model_rows],
+            textposition='outside',
+            marker=dict(color=px.colors.qualitative.Set2[:len(model_rows)])))
+        fig.update_layout(height=430, margin=dict(l=10, r=80, t=35, b=10),
+                          title='销额TOP10单品', template='plotly_white',
+                          yaxis=dict(categoryorder='total ascending'),
+                          xaxis=dict(title='支付金额(万)', showgrid=True))
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown('<div class="section-title">导出与留档</div>', unsafe_allow_html=True)
