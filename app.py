@@ -24,7 +24,14 @@ def _slicer(label, options, key):
         st.caption(f'{label}: 无可用选项')
         return []
     all_opts = list(options)
-    sel = st.multiselect(label, options=all_opts, default=[], key=sk)
+    # Clean stale values from session_state if options changed
+    if sk in st.session_state:
+        saved = st.session_state[sk]
+        if isinstance(saved, list):
+            valid = [v for v in saved if v in all_opts]
+            if len(valid) != len(saved):
+                st.session_state[sk] = valid
+    sel = st.multiselect(label, options=all_opts, default=[], key=sk, placeholder='全选')
     return list(sel) if sel else all_opts
 
 
@@ -131,14 +138,27 @@ with fc:
         start = st.date_input('开始日期', value=datetime.date.fromisoformat(meta['dateRange'][0]))
     with c2:
         end = st.date_input('结束日期', value=datetime.date.fromisoformat(meta['dateRange'][1]))
+
+    # 联动筛选：渠道 → 店铺 → 品类 → 型号
+    all_rows = data['daily']
     with c3:
-        channel = _slicer('渠道', data['filters']['channels'], 'ch')
+        ch_opts = sorted({r.get('渠道', '') for r in all_rows if r.get('渠道')})
+        channel = _slicer('渠道', ch_opts, 'ch')
+    filtered_ch = [r for r in all_rows if r.get('渠道', '') in channel]
+
     with c4:
-        store = _slicer('店铺', data['filters']['stores'], 'st')
+        st_opts = sorted({r.get('店铺', '') for r in filtered_ch if r.get('店铺')})
+        store = _slicer('店铺', st_opts, 'st')
+    filtered_st = [r for r in filtered_ch if r.get('店铺', '') in store]
+
     with c5:
-        category = _slicer('品类', data['filters']['categories'], 'cat')
+        cat_opts = sorted({r.get('品类', '') for r in filtered_st if r.get('品类')})
+        category = _slicer('品类', cat_opts, 'cat')
+    filtered_cat = [r for r in filtered_st if r.get('品类', '') in category]
+
     with c6:
-        model = _slicer('型号', data['filters']['models'], 'mdl')
+        mdl_opts = sorted({r.get('型号', '') for r in filtered_cat if r.get('型号')})
+        model = _slicer('型号', mdl_opts, 'mdl')
 
 s = str(start)
 e = str(end)
