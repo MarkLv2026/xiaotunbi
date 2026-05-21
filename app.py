@@ -387,9 +387,11 @@ def build_daily_trend(rows, limit=30):
         if ly_rows:
             ly_sum = summarize(ly_rows)
             r['支付金额_同比'] = (r['支付金额'] - ly_sum['支付金额']) / ly_sum['支付金额'] if ly_sum['支付金额'] else None
+            r['商品访客数_同比'] = (r['商品访客数'] - ly_sum['商品访客数']) / ly_sum['商品访客数'] if ly_sum['商品访客数'] else None
             r['支付转化率_同比'] = (r['支付转化率'] - ly_sum['支付转化率']) / ly_sum['支付转化率'] if ly_sum['支付转化率'] else None
         else:
             r['支付金额_同比'] = None
+            r['商品访客数_同比'] = None
             r['支付转化率_同比'] = None
     return result
 
@@ -414,7 +416,7 @@ with tabs[0]:
     k4.metric('访客数', f"{totals['商品访客数']:,.0f}", period_delta_text('商品访客数'))
     k5.metric('支付转化率', f"{totals['支付转化率']*100:.2f}%", period_delta_text('支付转化率'))
     k6.metric('客单价', f"¥{totals['客单价']:,.0f}", period_delta_text('客单价'))
-    k7.metric('退款率', f"{totals['退款率']*100:.2f}%", period_delta_text('退款率'))
+    k7.metric('加购率', f"{totals['加购率']*100:.2f}%", period_delta_text('加购率'))
 
     # ── 日趋势（最近30天）──
     st.markdown('<div class="section-title">日趋势（最近30天）</div>', unsafe_allow_html=True)
@@ -428,10 +430,8 @@ with tabs[0]:
             return v/10000 if use_wan else v
         amt_unit = '万' if use_wan else '元'
 
-        fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1,
-                             subplot_titles=(f'支付金额({amt_unit}) & 访客数', '支付转化率(%)'),
-                             row_heights=[0.65, 0.35])
-        # 销额柱图 + 同比标签
+        c1, c2, c3 = st.columns(3)
+        # 1) 支付金额趋势
         bar_texts = []
         for r in daily_trend:
             t = _amt_label(r['支付金额'])
@@ -439,37 +439,60 @@ with tabs[0]:
                 sign = '+' if r['支付金额_同比'] >= 0 else ''
                 t += f"<br><span style='font-size:10px'>{sign}{r['支付金额_同比']*100:.1f}%</span>"
             bar_texts.append(t)
-        fig2.add_trace(go.Bar(x=[r['日期'] for r in daily_trend],
-                              y=[_amt_y(r['支付金额']) for r in daily_trend],
-                              text=bar_texts,
-                              textposition='outside',
-                              name='支付金额', marker_color='#3b82f6', showlegend=True), row=1, col=1)
-        # 访客数折线
-        fig2.add_trace(go.Scatter(x=[r['日期'] for r in daily_trend],
-                                  y=[r['商品访客数'] for r in daily_trend],
-                                  text=[f"{int(r['商品访客数'])}" for r in daily_trend],
-                                  textposition='top center',
-                                  name='访客数', line=dict(color='#06b6d4', width=2), showlegend=True), row=1, col=1)
-        # 转化率折线 + 同比标注（hover）
+        fig_a = go.Figure(go.Bar(
+            x=[r['日期'] for r in daily_trend],
+            y=[_amt_y(r['支付金额']) for r in daily_trend],
+            text=bar_texts, textposition='outside',
+            marker_color='#3b82f6'))
+        fig_a.update_layout(
+            title='支付金额趋势', height=320, template='plotly_white',
+            margin=dict(l=20, r=20, t=40, b=20),
+            yaxis_title=f'支付金额({amt_unit})', showlegend=False)
+        with c1:
+            st.plotly_chart(fig_a, use_container_width=True)
+
+        # 2) 访客数趋势
+        vis_texts = []
+        for r in daily_trend:
+            t = f"{int(r['商品访客数']):,}"
+            if r['商品访客数_同比'] is not None:
+                sign = '+' if r['商品访客数_同比'] >= 0 else ''
+                t += f"<br><span style='font-size:10px'>{sign}{r['商品访客数_同比']*100:.1f}%</span>"
+            vis_texts.append(t)
+        fig_b = go.Figure(go.Scatter(
+            x=[r['日期'] for r in daily_trend],
+            y=[r['商品访客数'] for r in daily_trend],
+            text=vis_texts, textposition='top center', mode='lines+markers+text',
+            line=dict(color='#06b6d4', width=2),
+            marker=dict(size=5)))
+        fig_b.update_layout(
+            title='访客数趋势', height=320, template='plotly_white',
+            margin=dict(l=20, r=20, t=40, b=20),
+            yaxis_title='访客数', showlegend=False)
+        with c2:
+            st.plotly_chart(fig_b, use_container_width=True)
+
+        # 3) 转化率趋势
         cvr_texts = []
         for r in daily_trend:
-            t = f"{r['支付转化率']*100:.1f}%"
+            t = f"{r['支付转化率']*100:.2f}%"
             if r['支付转化率_同比'] is not None:
                 sign = '+' if r['支付转化率_同比'] >= 0 else ''
-                t += f"<br>{sign}{r['支付转化率_同比']*100:.1f}%"
+                t += f"<br><span style='font-size:10px'>{sign}{r['支付转化率_同比']*100:.1f}%</span>"
             cvr_texts.append(t)
-        fig2.add_trace(go.Scatter(x=[r['日期'] for r in daily_trend],
-                                  y=[r['支付转化率']*100 for r in daily_trend],
-                                  text=cvr_texts,
-                                  textposition='top center',
-                                  name='转化率(%)', line=dict(color='#f59e0b', width=2),
-                                  fill='tozeroy', fillcolor='rgba(245,158,11,0.15)', showlegend=True), row=2, col=1)
-        fig2.update_layout(height=420, template='plotly_white', margin=dict(l=20, r=20, t=50, b=20),
-                           legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1))
-        fig2.update_yaxes(title_text=f'支付金额({amt_unit})', row=1, col=1)
-        fig2.update_yaxes(title_text='访客数', overlaying='y', side='right', row=1, col=1)
-        fig2.update_yaxes(title_text='转化率(%)', row=2, col=1)
-        st.plotly_chart(fig2, use_container_width=True)
+        fig_c = go.Figure(go.Scatter(
+            x=[r['日期'] for r in daily_trend],
+            y=[r['支付转化率']*100 for r in daily_trend],
+            text=cvr_texts, textposition='top center', mode='lines+markers+text',
+            line=dict(color='#f59e0b', width=2),
+            fill='tozeroy', fillcolor='rgba(245,158,11,0.15)',
+            marker=dict(size=5)))
+        fig_c.update_layout(
+            title='支付转化率趋势', height=320, template='plotly_white',
+            margin=dict(l=20, r=20, t=40, b=20),
+            yaxis_title='转化率(%)', showlegend=False)
+        with c3:
+            st.plotly_chart(fig_c, use_container_width=True)
     else:
         st.info('当前筛选条件下，最近30天无日趋势数据')
 
@@ -641,7 +664,7 @@ with tabs[1]:
         ('访客数', '商品访客数', '', False),
         ('转化率', '支付转化率', '', True),
         ('客单价', '客单价', '¥', False),
-        ('退款率', '退款率', '', True),
+        ('加购率', '加购率', '', True),
     ]
 
     st.markdown('---')
@@ -792,6 +815,32 @@ with tabs[2]:
             })
 
     # ── 数据表格 ──
+    def _yoy_color(v):
+        if v is None or v == '--':
+            return '#64748b'
+        return '#22c55e' if v >= 0 else '#ef4444'
+
+    def _render_html_table(rows, headers, keys, align='center'):
+        th = ''.join(f'<th style="text-align:{align}">{h}</th>' for h in headers)
+        body = ''
+        for r in rows:
+            tr = ''
+            for k in keys:
+                v = r.get(k, '')
+                style = f"text-align:{align};padding:7px 10px;border-bottom:1px solid #e5e7eb;"
+                if k in ('销额同比','访客同比','转化率同比') and r.get('日期') != '总计' and r.get('月份') != '总计':
+                    try:
+                        nv = float(v.replace('%',''))
+                        color = _yoy_color(nv/100)
+                        style += f"color:{color};font-weight:700;"
+                    except Exception:
+                        pass
+                tr += f'<td style="{style}">{v}</td>'
+            body += f'<tr>{tr}</tr>'
+        html = (f'<div class="styled-table-wrap"><table class="styled-table">'
+                f'<thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>')
+        st.markdown(html, unsafe_allow_html=True)
+
     st.markdown('<div class="section-title">数据明细</div>', unsafe_allow_html=True)
     tab_daily, tab_monthly = st.tabs(['日度汇总', '月度汇总'])
     with tab_daily:
@@ -808,33 +857,58 @@ with tabs[2]:
         total_amt = sum(v['支付金额'] for v in day_dict.values())
         total_buyers = sum(v['支付买家数'] for v in day_dict.values())
         total_cart = sum(v['商品加购人数'] for v in day_dict.values())
+        # 预计算每日同比（去年同期同一天）
+        ly_day_dict = {}
+        for dt, v in day_dict.items():
+            try:
+                dt_obj = datetime.datetime.strptime(dt, '%Y-%m-%d').date()
+                ly_dt_obj = dt_obj.replace(year=dt_obj.year - 1)
+                ly_dt = str(ly_dt_obj)
+            except ValueError:
+                ly_dt_obj = datetime.date(dt_obj.year - 1, dt_obj.month, 28)
+                ly_dt = str(ly_dt_obj)
+            ly_day_dict[dt] = day_dict.get(ly_dt)
         daily_tbl = []
         for dt in sorted(day_dict.keys()):
             v = day_dict[dt]
             vis = v['商品访客数']
             amt = v['支付金额']
+            ly_v = ly_day_dict.get(dt)
+            yoy_amt = (amt - ly_v['支付金额']) / ly_v['支付金额'] if ly_v and ly_v['支付金额'] else None
+            yoy_vis = (vis - ly_v['商品访客数']) / ly_v['商品访客数'] if ly_v and ly_v['商品访客数'] else None
+            cvr = v['支付买家数'] / vis if vis else 0
+            ly_cvr = ly_v['支付买家数'] / ly_v['商品访客数'] if ly_v and ly_v['商品访客数'] else None
+            yoy_cvr = (cvr - ly_cvr) / ly_cvr if ly_cvr else None
             daily_tbl.append({
-                '日期': dt, '访客数': int(vis),
+                '日期': dt, '访客数': f"{int(vis):,}",
                 '访客占比': f"{vis/total_vis*100:.2f}%" if total_vis else "0.00%",
-                '买家数': int(v['支付买家数']), '支付件数': int(v['支付件数']),
+                '买家数': f"{int(v['支付买家数']):,}", '支付件数': f"{int(v['支付件数']):,}",
                 '成交金额(万)': round(amt/10000, 1),
                 '成交占比': f"{amt/total_amt*100:.2f}%" if total_amt else "0.00%",
                 '转化率': f"{v['支付买家数']/vis*100:.2f}%" if vis else "0.00%",
-                '加购人数': int(v['商品加购人数']),
+                '加购人数': f"{int(v['商品加购人数']):,}",
                 '加购率': f"{v['商品加购人数']/vis*100:.2f}%" if vis else "0.00%",
                 'UV价值': round(amt/vis, 1) if vis else 0,
+                '销额同比': f"{yoy_amt*100:+.2f}%" if yoy_amt is not None else '--',
+                '访客同比': f"{yoy_vis*100:+.2f}%" if yoy_vis is not None else '--',
+                '转化率同比': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
             })
         if daily_tbl:
+            ly_total = ly_day_dict.get('')
             daily_tbl.append({
-                '日期': '总计', '访客数': int(total_vis), '访客占比': '100.00%',
-                '买家数': int(total_buyers), '支付件数': int(sum(v['支付件数'] for v in day_dict.values())),
+                '日期': '总计', '访客数': f"{int(total_vis):,}", '访客占比': '100.00%',
+                '买家数': f"{int(total_buyers):,}", '支付件数': f"{int(sum(v['支付件数'] for v in day_dict.values())):,}",
                 '成交金额(万)': round(total_amt/10000, 1), '成交占比': '100.00%',
                 '转化率': f"{total_buyers/total_vis*100:.2f}%" if total_vis else "0.00%",
-                '加购人数': int(total_cart),
+                '加购人数': f"{int(total_cart):,}",
                 '加购率': f"{total_cart/total_vis*100:.2f}%" if total_vis else "0.00%",
                 'UV价值': round(total_amt/total_vis, 1) if total_vis else 0,
+                '销额同比': '--', '访客同比': '--', '转化率同比': '--',
             })
-        st.dataframe(df(daily_tbl), use_container_width=True, hide_index=True)
+        _render_html_table(
+            daily_tbl,
+            ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'],
+            ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'])
     with tab_monthly:
         mm_all = {r['月份']: r for r in all_months}
         total_vis_m = sum(r['商品访客数'] for r in all_months)
@@ -848,31 +922,41 @@ with tabs[2]:
             amt = r['支付金额']
             ly = mm_all.get(month_shift(m, -12), {})
             ly_amt = ly.get('支付金额', 0)
-            yoy = (amt - ly_amt) / ly_amt if ly_amt else None
+            yoy_amt = (amt - ly_amt) / ly_amt if ly_amt else None
+            ly_vis = ly.get('商品访客数', 0)
+            yoy_vis = (vis - ly_vis) / ly_vis if ly_vis else None
+            cvr = r['支付转化率'] or 0
+            ly_cvr = ly.get('支付转化率', 0)
+            yoy_cvr = (cvr - ly_cvr) / ly_cvr if ly_cvr else None
             monthly_tbl.append({
-                '月份': m, '访客数': int(vis),
+                '月份': m, '访客数': f"{int(vis):,}",
                 '访客占比': f"{vis/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
-                '买家数': int(r['支付买家数']), '支付件数': int(r['支付件数']),
+                '买家数': f"{int(r['支付买家数']):,}", '支付件数': f"{int(r['支付件数']):,}",
                 '成交金额(万)': round(amt/10000, 1),
                 '成交占比': f"{amt/total_amt_m*100:.2f}%" if total_amt_m else "0.00%",
                 '转化率': f"{r['支付转化率']*100:.2f}%" if r['支付转化率'] else "0.00%",
-                '加购人数': int(r['商品加购人数']),
+                '加购人数': f"{int(r['商品加购人数']):,}",
                 '加购率': f"{r['加购率']*100:.2f}%" if r['加购率'] else "0.00%",
                 'UV价值': round(amt/vis, 1) if vis else 0,
-                '销额同比': f"{yoy*100:.2f}%" if yoy is not None else '--',
+                '销额同比': f"{yoy_amt*100:+.2f}%" if yoy_amt is not None else '--',
+                '访客同比': f"{yoy_vis*100:+.2f}%" if yoy_vis is not None else '--',
+                '转化率同比': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
             })
         if monthly_tbl:
             monthly_tbl.append({
-                '月份': '总计', '访客数': int(total_vis_m), '访客占比': '100.00%',
-                '买家数': int(total_buyers_m), '支付件数': int(sum(r['支付件数'] for r in all_months)),
+                '月份': '总计', '访客数': f"{int(total_vis_m):,}", '访客占比': '100.00%',
+                '买家数': f"{int(total_buyers_m):,}", '支付件数': f"{int(sum(r['支付件数'] for r in all_months)):,}",
                 '成交金额(万)': round(total_amt_m/10000, 1), '成交占比': '100.00%',
                 '转化率': f"{total_buyers_m/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
-                '加购人数': int(total_cart_m),
+                '加购人数': f"{int(total_cart_m):,}",
                 '加购率': f"{total_cart_m/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
                 'UV价值': round(total_amt_m/total_vis_m, 1) if total_vis_m else 0,
-                '销额同比': '--',
+                '销额同比': '--', '访客同比': '--', '转化率同比': '--',
             })
-        st.dataframe(df(monthly_tbl), use_container_width=True, hide_index=True)
+        _render_html_table(
+            monthly_tbl,
+            ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'],
+            ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'])
 
     t1, t2 = st.columns(2)
     with t1:
