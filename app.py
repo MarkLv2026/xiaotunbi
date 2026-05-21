@@ -18,22 +18,38 @@ _CACHE_DIR.mkdir(exist_ok=True)
 _CACHE_FILE = _CACHE_DIR / 'last_upload.xlsx'
 
 def _slicer(label, options, key):
-    """Multi-select dropdown, default all selected"""
+    """Excel slicer style: default all, click one = exclusive select, supports multi-select"""
     sk = f'slicer_{key}'
-    # 空选项防护
+    wk = f'{sk}_w'
     if not options:
         st.caption(f'{label}: 无可用选项')
         return []
-    # 初始化session_state（multiselect会自动管理）
+    all_opts = list(options)
     if sk not in st.session_state:
-        st.session_state[sk] = list(options)
-    sel = st.multiselect(
-        label,
-        options=list(options),
-        default=st.session_state[sk],
-        key=sk
-    )
-    return list(sel) if sel else list(options)
+        st.session_state[sk] = all_opts
+    # After widget interaction, apply exclusive-select logic
+    if wk in st.session_state:
+        cur = set(st.session_state[wk])
+        prev = set(st.session_state[sk])
+        removed = prev - cur
+        if len(prev) == len(all_opts) and len(removed) == 1 and len(all_opts) > 1:
+            st.session_state[sk] = list(removed)
+            del st.session_state[wk]
+            st.rerun()
+        st.session_state[sk] = list(st.session_state[wk]) if st.session_state[wk] else all_opts
+    # Layout: reset button + multiselect
+    col1, col2 = st.columns([1, 20])
+    with col1:
+        if st.button('↺', key=f'{sk}_rst', help='重置为全选'):
+            st.session_state[sk] = all_opts
+            if wk in st.session_state:
+                del st.session_state[wk]
+            st.rerun()
+    with col2:
+        sel = st.multiselect(label, options=all_opts, default=st.session_state[sk], key=wk)
+    result = list(sel) if sel else all_opts
+    st.session_state[sk] = result
+    return result
 
 
 st.set_page_config(page_title='小豚当家BI看板', layout='wide', initial_sidebar_state='expanded')
