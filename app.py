@@ -326,6 +326,19 @@ def _html_table(rows, col_widths=None, height=None):
 daily = filter_rows(data['daily'], '日期')
 totals = summarize(daily)
 
+# 全时段同条件筛选数据（用于同比查询，不受日期范围限制）
+daily_all_filtered = []
+for r in data['daily']:
+    if channel and r.get('渠道') not in channel:
+        continue
+    if store and r.get('店铺') not in store:
+        continue
+    if category and r.get('品类') not in category:
+        continue
+    if model and r.get('型号') not in model:
+        continue
+    daily_all_filtered.append(r)
+
 # Monthly data (with dimensions, for channel trend)
 monthly_raw = data.get('monthly', [])
 # all_months: 仅月份维度汇总
@@ -356,7 +369,7 @@ def build_monthly(rows):
         out.append(v)
     return sorted(out, key=lambda x: x['月份'])
 
-def build_daily_trend(rows, limit=30):
+def build_daily_trend(rows, all_rows, limit=30):
     d = {}
     for r in rows:
         dt = r.get('日期', '')
@@ -373,7 +386,7 @@ def build_daily_trend(rows, limit=30):
         out.append(v)
     out = sorted(out, key=lambda x: x['日期'])
     result = out[-limit:] if len(out) > limit else out
-    # 同比：去年同期同一天
+    # 同比：去年同期同一天（从 all_rows 查询，不受当前日期范围限制）
     for r in result:
         dt = r['日期']
         try:
@@ -383,7 +396,7 @@ def build_daily_trend(rows, limit=30):
         except ValueError:
             ly = datetime.date(dt_obj.year - 1, dt_obj.month, 28)
             ly_dt = str(ly)
-        ly_rows = [x for x in rows if x.get('日期') == ly_dt]
+        ly_rows = [x for x in all_rows if x.get('日期') == ly_dt]
         if ly_rows:
             ly_sum = summarize(ly_rows)
             r['支付金额_同比'] = (r['支付金额'] - ly_sum['支付金额']) / ly_sum['支付金额'] if ly_sum['支付金额'] else None
@@ -397,7 +410,8 @@ def build_daily_trend(rows, limit=30):
 
 filtered_monthly = build_monthly(daily)
 mm_f = {r['月份']: r for r in filtered_monthly}
-daily_trend = build_daily_trend(daily, 30)
+unique_days = len(set(r['日期'] for r in daily))
+daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
 
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
@@ -430,7 +444,6 @@ with tabs[0]:
             return v/10000 if use_wan else v
         amt_unit = '万' if use_wan else '元'
 
-        c1, c2, c3 = st.columns(3)
         # 1) 支付金额趋势
         bar_texts = []
         for r in daily_trend:
@@ -445,11 +458,10 @@ with tabs[0]:
             text=bar_texts, textposition='outside',
             marker_color='#3b82f6'))
         fig_a.update_layout(
-            title='支付金额趋势', height=320, template='plotly_white',
-            margin=dict(l=20, r=20, t=40, b=20),
+            title='支付金额趋势', height=340, template='plotly_white',
+            margin=dict(l=20, r=20, t=45, b=20),
             yaxis_title=f'支付金额({amt_unit})', showlegend=False)
-        with c1:
-            st.plotly_chart(fig_a, use_container_width=True)
+        st.plotly_chart(fig_a, use_container_width=True)
 
         # 2) 访客数趋势
         vis_texts = []
@@ -466,11 +478,10 @@ with tabs[0]:
             line=dict(color='#06b6d4', width=2),
             marker=dict(size=5)))
         fig_b.update_layout(
-            title='访客数趋势', height=320, template='plotly_white',
-            margin=dict(l=20, r=20, t=40, b=20),
+            title='访客数趋势', height=340, template='plotly_white',
+            margin=dict(l=20, r=20, t=45, b=20),
             yaxis_title='访客数', showlegend=False)
-        with c2:
-            st.plotly_chart(fig_b, use_container_width=True)
+        st.plotly_chart(fig_b, use_container_width=True)
 
         # 3) 转化率趋势
         cvr_texts = []
@@ -488,11 +499,10 @@ with tabs[0]:
             fill='tozeroy', fillcolor='rgba(245,158,11,0.15)',
             marker=dict(size=5)))
         fig_c.update_layout(
-            title='支付转化率趋势', height=320, template='plotly_white',
-            margin=dict(l=20, r=20, t=40, b=20),
+            title='支付转化率趋势', height=340, template='plotly_white',
+            margin=dict(l=20, r=20, t=45, b=20),
             yaxis_title='转化率(%)', showlegend=False)
-        with c3:
-            st.plotly_chart(fig_c, use_container_width=True)
+        st.plotly_chart(fig_c, use_container_width=True)
     else:
         st.info('当前筛选条件下，最近30天无日趋势数据')
 
@@ -820,7 +830,7 @@ with tabs[2]:
             return '#64748b'
         return '#22c55e' if v >= 0 else '#ef4444'
 
-    def _render_html_table(rows, headers, keys, align='center'):
+    def _render_html_table(rows, headers, keys, align='center', height=520):
         th = ''.join(f'<th style="text-align:{align}">{h}</th>' for h in headers)
         body = ''
         for r in rows:
@@ -837,7 +847,7 @@ with tabs[2]:
                         pass
                 tr += f'<td style="{style}">{v}</td>'
             body += f'<tr>{tr}</tr>'
-        html = (f'<div class="styled-table-wrap"><table class="styled-table">'
+        html = (f'<div class="styled-table-wrap" style="max-height:{height}px;overflow-y:auto;"><table class="styled-table">'
                 f'<thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>')
         st.markdown(html, unsafe_allow_html=True)
 
@@ -857,7 +867,16 @@ with tabs[2]:
         total_amt = sum(v['支付金额'] for v in day_dict.values())
         total_buyers = sum(v['支付买家数'] for v in day_dict.values())
         total_cart = sum(v['商品加购人数'] for v in day_dict.values())
-        # 预计算每日同比（去年同期同一天）
+        # 预计算每日同比（去年同期同一天）——从全时段同条件数据查询
+        full_day_dict = {}
+        for r in daily_all_filtered:
+            dt_full = r.get('日期', '')
+            if not dt_full:
+                continue
+            if dt_full not in full_day_dict:
+                full_day_dict[dt_full] = {m: 0.0 for m in METRICS}
+            for m in METRICS:
+                full_day_dict[dt_full][m] += float(r.get(m, 0) or 0)
         ly_day_dict = {}
         for dt, v in day_dict.items():
             try:
@@ -867,7 +886,7 @@ with tabs[2]:
             except ValueError:
                 ly_dt_obj = datetime.date(dt_obj.year - 1, dt_obj.month, 28)
                 ly_dt = str(ly_dt_obj)
-            ly_day_dict[dt] = day_dict.get(ly_dt)
+            ly_day_dict[dt] = full_day_dict.get(ly_dt)
         daily_tbl = []
         for dt in sorted(day_dict.keys()):
             v = day_dict[dt]
