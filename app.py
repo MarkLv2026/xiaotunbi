@@ -10,6 +10,7 @@ except Exception:
     pd = None
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from dashboard_core import parse_sales_workbook, month_shift, rows_to_csv
 
 # 上次数据缓存路径
@@ -326,6 +327,48 @@ ch_rows = group(daily, '渠道')
 cat_rows = group(daily, '品类')
 store_rows = group(daily, '店铺')
 
+# Build monthly/daily trend from filtered daily data
+def build_monthly(rows):
+    d = {}
+    for r in rows:
+        m = r.get('月份') or (r.get('日期', '')[:7] if len(r.get('日期', '')) >= 7 else '')
+        if not m:
+            continue
+        d.setdefault(m, {k: 0.0 for k in METRICS})
+        for k in METRICS:
+            d[m][k] += float(r.get(k, 0) or 0)
+    out = []
+    for m, v in d.items():
+        v['月份'] = m
+        v['客单价'] = v['支付金额'] / v['支付买家数'] if v['支付买家数'] else 0
+        v['支付转化率'] = v['支付买家数'] / v['商品访客数'] if v['商品访客数'] else 0
+        v['加购率'] = v['商品加购人数'] / v['商品访客数'] if v['商品访客数'] else 0
+        v['退款率'] = v['成功退款金额'] / v['支付金额'] if v['支付金额'] else 0
+        out.append(v)
+    return sorted(out, key=lambda x: x['月份'])
+
+def build_daily_trend(rows, limit=30):
+    d = {}
+    for r in rows:
+        dt = r.get('日期', '')
+        if not dt:
+            continue
+        d.setdefault(dt, {k: 0.0 for k in METRICS})
+        for k in METRICS:
+            d[dt][k] += float(r.get(k, 0) or 0)
+    out = []
+    for dt, v in d.items():
+        v['日期'] = dt
+        v['客单价'] = v['支付金额'] / v['支付买家数'] if v['支付买家数'] else 0
+        v['支付转化率'] = v['支付买家数'] / v['商品访客数'] if v['商品访客数'] else 0
+        out.append(v)
+    out = sorted(out, key=lambda x: x['日期'])
+    return out[-limit:] if len(out) > limit else out
+
+filtered_monthly = build_monthly(daily)
+mm_f = {r['月份']: r for r in filtered_monthly}
+daily_trend = build_daily_trend(daily, 30)
+
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
 # ─────────────────────────────────────────────────────────────
@@ -347,7 +390,7 @@ with tabs[0]:
 
     st.markdown('<div class="section-title">全域趋势与结构</div>', unsafe_allow_html=True)
     trend = [{'月份': r['月份'], '支付金额': r['支付金额'], '访客数': r['商品访客数'],
-               '支付件数': r['支付件数'], '转化率': r['支付转化率']} for r in all_months]
+               '支付件数': r['支付件数'], '转化率': r['支付转化率']} for r in filtered_monthly]
     a_col, b_col = st.columns([2, 1])
     with a_col:
         fig = go.Figure()
@@ -388,13 +431,38 @@ with tabs[0]:
         fig.update_layout(height=430, template='plotly_white')
         st.plotly_chart(fig, use_container_width=True)
 
+    # ── 日趋势（最近30天）──
+    st.markdown('<div class="section-title">日趋势（最近30天）</div>', unsafe_allow_html=True)
+    if daily_trend:
+        fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1,
+                             subplot_titles=('支付金额 & 访客数', '支付转化率'),
+                             row_heights=[0.65, 0.35])
+        fig2.add_trace(go.Bar(x=[r['日期'] for r in daily_trend],
+                              y=[r['支付金额'] for r in daily_trend],
+                              name='支付金额', marker_color='#3b82f6', showlegend=True), row=1, col=1)
+        fig2.add_trace(go.Scatter(x=[r['日期'] for r in daily_trend],
+                                  y=[r['商品访客数'] for r in daily_trend],
+                                  name='访客数', line=dict(color='#06b6d4', width=2), showlegend=True), row=1, col=1)
+        fig2.add_trace(go.Scatter(x=[r['日期'] for r in daily_trend],
+                                  y=[r['支付转化率']*100 for r in daily_trend],
+                                  name='转化率(%)', line=dict(color='#f59e0b', width=2),
+                                  fill='tozeroy', fillcolor='rgba(245,158,11,0.15)', showlegend=True), row=2, col=1)
+        fig2.update_layout(height=420, template='plotly_white', margin=dict(l=20, r=20, t=50, b=20),
+                           legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1))
+        fig2.update_yaxes(title_text='支付金额', row=1, col=1)
+        fig2.update_yaxes(title_text='访客数', overlaying='y', side='right', row=1, col=1)
+        fig2.update_yaxes(title_text='转化率(%)', row=2, col=1)
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.info('当前筛选条件下，最近30天无日趋势数据')
+
     st.markdown('<div class="section-title">导出与留档</div>', unsafe_allow_html=True)
     d1, d2 = st.columns(2)
     with d1:
         comp = []
-        for r in reversed(all_months):
-            prev = mm.get(month_shift(r['月份'], -1))
-            ly = mm.get(month_shift(r['月份'], -12))
+        for r in reversed(filtered_monthly):
+            prev = mm_f.get(month_shift(r['月份'], -1))
+            ly = mm_f.get(month_shift(r['月份'], -12))
             comp.append({
                 '月份': r['月份'], '支付金额': round(r['支付金额'], 2), '支付件数': round(r['支付件数'], 0),
                 '访客数': round(r['商品访客数'], 0), '转化率': round(r['支付转化率'], 4),
