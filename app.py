@@ -733,7 +733,7 @@ with tabs[0]:
             prev = mm_f.get(month_shift(r['月份'], -1))
             ly = mm_f.get(month_shift(r['月份'], -12))
             comp.append({
-                '月份': r['月份'], '支付金额': round(_wan(r['支付金额']), 1), '支付件数': round(r['支付件数'], 0),
+                '月份': r['月份'], '支付金额(万)': round(_wan(r['支付金额']), 1), '支付件数': round(r['支付件数'], 0),
                 '访客数': round(r['商品访客数'], 0), '转化率': round(r['支付转化率'], 4),
                 '金额环比': None if not prev or not prev['支付金额'] else round((r['支付金额'] - prev['支付金额']) / prev['支付金额'], 4),
                 '金额同比': None if not ly or not ly['支付金额'] else round((r['支付金额'] - ly['支付金额']) / ly['支付金额'], 4),
@@ -841,6 +841,116 @@ with tabs[1]:
             fig.update_layout(height=380, margin=dict(l=10, r=10, t=35, b=10), title='产品线推广费占比')
             st.plotly_chart(fig, use_container_width=True)
 
+        # ── 店铺推广矩阵 ──
+        st.markdown('<div class="section-title">🏪 店铺推广矩阵</div>', unsafe_allow_html=True)
+        _store_m = {}
+        for r in promo_filtered:
+            sn = r.get('_店铺', '') or r.get('店铺', '') or '未标注'
+            _store_m.setdefault(sn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0})
+            _store_m[sn]['花费'] += r.get('_花费', 0)
+            _store_m[sn]['展现数'] += r.get('_展现数', 0)
+            _store_m[sn]['点击数'] += r.get('_点击数', 0)
+            _store_m[sn]['总订单金额'] += r.get('_总订单金额', 0)
+            _store_m[sn]['直接订单金额'] += r.get('_直接订单金额', 0)
+        _sm_r = []
+        for k, v in sorted(_store_m.items(), key=lambda x: x[1]['花费'], reverse=True):
+            _imp = v['展现数']
+            _clk = v['点击数']
+            _fc = v['花费']
+            _sm_r.append({
+                '店铺': k,
+                '花费(万)': round(_fc / 10000, 2),
+                '展现数': int(_imp),
+                '点击数': int(_clk),
+                '点击率': f"{_clk/_imp*100:.2f}%" if _imp else '--',
+                '点击成本(¥)': round(_fc / _clk, 2) if _clk else '--',
+                '总成交(万)': round(v['总订单金额'] / 10000, 2),
+                '直接成交(万)': round(v['直接订单金额'] / 10000, 2),
+                'ROI': round(v['总订单金额'] / _fc, 2) if _fc else '--',
+                '直接ROI': round(v['直接订单金额'] / _fc, 2) if _fc else '--',
+                '费率': f"{_fc/v['总订单金额']*100:.2f}%" if v['总订单金额'] else '--',
+            })
+        if _sm_r:
+            ma1, ma2 = st.columns(2)
+            with ma1:
+                fig = go.Figure(go.Bar(
+                    x=[x['花费(万)'] for x in _sm_r],
+                    y=[x['店铺'] for x in _sm_r],
+                    orientation='h',
+                    text=[f"¥{x['花费(万)']}万" for x in _sm_r],
+                    textposition='outside',
+                    marker=dict(color=px.colors.qualitative.Pastel[:len(_sm_r)])))
+                fig.update_layout(height=max(280, len(_sm_r)*45), margin=dict(l=10, r=80, t=35, b=10),
+                                   title='各店铺推广花费', template='plotly_white',
+                                   yaxis=dict(categoryorder='total ascending'))
+                st.plotly_chart(fig, use_container_width=True)
+            with ma2:
+                _roi_vals = [x['ROI'] if x['ROI'] != '--' else 0 for x in _sm_r]
+                _colors_roi = ['#22c55e' if v >= 3 else '#f59e0b' if v >= 1 else '#ef4444' for v in _roi_vals]
+                fig = go.Figure(go.Bar(
+                    x=[x['ROI'] if x['ROI'] != '--' else 0 for x in _sm_r],
+                    y=[x['店铺'] for x in _sm_r],
+                    orientation='h',
+                    text=[str(x['ROI']) for x in _sm_r],
+                    textposition='outside',
+                    marker=dict(color=_colors_roi)))
+                fig.update_layout(height=max(280, len(_sm_r)*45), margin=dict(l=10, r=80, t=35, b=10),
+                                   title='各店铺ROI（绿≥3 橙≥1 红<1）', template='plotly_white',
+                                   yaxis=dict(categoryorder='total ascending'))
+                st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(pd.DataFrame(_sm_r), use_container_width=True, hide_index=True)
+
+        # ── 渠道推广矩阵 ──
+        st.markdown('<div class="section-title">📡 渠道推广矩阵</div>', unsafe_allow_html=True)
+        _chan_m = {}
+        for r in promo_filtered:
+            cn = r.get('_渠道', '') or r.get('渠道', '') or '未标注'
+            _chan_m.setdefault(cn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0})
+            _chan_m[cn]['花费'] += r.get('_花费', 0)
+            _chan_m[cn]['展现数'] += r.get('_展现数', 0)
+            _chan_m[cn]['点击数'] += r.get('_点击数', 0)
+            _chan_m[cn]['总订单金额'] += r.get('_总订单金额', 0)
+            _chan_m[cn]['直接订单金额'] += r.get('_直接订单金额', 0)
+        _cm_r = []
+        for k, v in sorted(_chan_m.items(), key=lambda x: x[1]['花费'], reverse=True):
+            _imp = v['展现数']
+            _clk = v['点击数']
+            _fc = v['花费']
+            _cm_r.append({
+                '渠道': k,
+                '花费(万)': round(_fc / 10000, 2),
+                '展现数': int(_imp),
+                '点击数': int(_clk),
+                '点击率': f"{_clk/_imp*100:.2f}%" if _imp else '--',
+                '点击成本(¥)': round(_fc / _clk, 2) if _clk else '--',
+                '总成交(万)': round(v['总订单金额'] / 10000, 2),
+                'ROI': round(v['总订单金额'] / _fc, 2) if _fc else '--',
+                '直接ROI': round(v['直接订单金额'] / _fc, 2) if _fc else '--',
+                '费率': f"{_fc/v['总订单金额']*100:.2f}%" if v['总订单金额'] else '--',
+            })
+        if _cm_r:
+            cb1, cb2 = st.columns(2)
+            with cb1:
+                _fc_pie = [{'渠道': x['渠道'], '花费': x['花费(万)']} for x in _cm_r if x['花费(万)'] > 0]
+                if _fc_pie:
+                    fig = px.pie(pd.DataFrame(_fc_pie), names='渠道', values='花费', hole=.4,
+                                  color_discrete_sequence=px.colors.qualitative.Bold,
+                                  title='渠道推广费占比')
+                    fig.update_traces(texttemplate='%{label}<br>%{percent:.1%}')
+                    fig.update_layout(height=340, margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig, use_container_width=True)
+            with cb2:
+                fig = go.Figure()
+                fig.add_trace(go.Bar(name='ROI', x=[x['渠道'] for x in _cm_r],
+                                      y=[x['ROI'] if x['ROI'] != '--' else 0 for x in _cm_r],
+                                      marker_color='#1d4ed8'))
+                fig.add_trace(go.Bar(name='直接ROI', x=[x['渠道'] for x in _cm_r],
+                                      y=[x['直接ROI'] if x['直接ROI'] != '--' else 0 for x in _cm_r],
+                                      marker_color='#06b6d4'))
+                fig.update_layout(height=340, barmode='group', template='plotly_white', title='渠道ROI对比')
+                st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(pd.DataFrame(_cm_r), use_container_width=True, hide_index=True)
+
         # ── TOP10 推广计划（按花费）──
         st.markdown('<div class="section-title">TOP10 推广计划（按花费）</div>', unsafe_allow_html=True)
         _tp = sorted(_pl_r, key=lambda x: x['花费'], reverse=True)[:10]
@@ -886,7 +996,7 @@ with tabs[1]:
             })
         if _pt:
             st.dataframe(pd.DataFrame(_pt), use_container_width=True, hide_index=True, height=400)
-            _csv = rows_to_csv(_pt, list(_pt[0].keys())).encode('utf-8-sig')
+            _csv = rows_to_csv(_pt, list(_pt[0].keys()))
             st.download_button('下载推广明细 CSV', _csv, file_name='promo_daily.csv', mime='text/csv')
 
 # ═══════════════════════════════════════════════════════════════
