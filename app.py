@@ -988,16 +988,83 @@ with tabs[1]:
             _clk = v['点击数']
             _ctr = _clk / _imp if _imp else 0
             _roi = v['总订单金额'] / v['花费'] if v['花费'] else 0
+            _rate = v['花费'] / v['总订单金额'] * 100 if v['总订单金额'] else None
             _pt.append({
                 '日期': dt, '花费(万)': round(v['花费']/10000, 1), '展现数': f"{int(_imp):,}",
                 '点击数': f"{int(_clk):,}", '点击率': f"{_ctr*100:.2f}%",
                 '总订单金额(万)': round(v['总订单金额']/10000, 1), 'ROI': f"{_roi:.2f}",
+                '费率': f"{_rate:.2f}%" if _rate is not None else '--',
                 '总加购数': f"{int(v['总加购数']):,}"
             })
         if _pt:
             st.dataframe(pd.DataFrame(_pt), use_container_width=True, hide_index=True, height=400)
             _csv = rows_to_csv(_pt, list(_pt[0].keys()))
             st.download_button('下载推广明细 CSV', _csv, file_name='promo_daily.csv', mime='text/csv')
+
+        # ── 单品推广分析表 ──
+        st.markdown('<div class="section-title">📦 单品推广分析</div>', unsafe_allow_html=True)
+        _sku = {}
+        for r in promo_filtered:
+            sku = r.get('_型号', '') or r.get('型号', '') or r.get('SKU', '') or '未标注'
+            _sku.setdefault(sku, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0})
+            _sku[sku]['花费'] += r.get('_花费', 0)
+            _sku[sku]['展现数'] += r.get('_展现数', 0)
+            _sku[sku]['点击数'] += r.get('_点击数', 0)
+            _sku[sku]['总订单金额'] += r.get('_总订单金额', 0)
+            _sku[sku]['直接订单金额'] += r.get('_直接订单金额', 0)
+            _sku[sku]['总加购数'] += r.get('_总加购数', 0)
+        _sku_r = []
+        for k, v in sorted(_sku.items(), key=lambda x: x[1]['花费'], reverse=True):
+            _imp = v['展现数']
+            _clk = v['点击数']
+            _fc = v['花费']
+            _sku_r.append({
+                '型号': k,
+                '花费(万)': round(_fc / 10000, 2),
+                '展现数': f"{int(_imp):,}",
+                '点击数': f"{int(_clk):,}",
+                '点击率': f"{_clk/_imp*100:.2f}%" if _imp else '--',
+                '点击成本(¥)': round(_fc / _clk, 2) if _clk else '--',
+                '总成交(万)': round(v['总订单金额'] / 10000, 2),
+                '直接成交(万)': round(v['直接订单金额'] / 10000, 2),
+                'ROI': round(v['总订单金额'] / _fc, 2) if _fc else '--',
+                '费率': f"{_fc/v['总订单金额']*100:.2f}%" if v['总订单金额'] else '--',
+                '加购数': f"{int(v['总加购数']):,}",
+            })
+        if _sku_r:
+            sku1, sku2 = st.columns(2)
+            with sku1:
+                _top10 = _sku_r[:10]
+                fig = go.Figure(go.Bar(
+                    x=[x['花费(万)'] for x in _top10],
+                    y=[x['型号'] for x in _top10],
+                    orientation='h',
+                    text=[f"¥{x['花费(万)']}万" for x in _top10],
+                    textposition='outside',
+                    marker=dict(color=px.colors.qualitative.Bold[:len(_top10)])))
+                fig.update_layout(height=max(300, len(_top10)*40), margin=dict(l=10, r=80, t=35, b=10),
+                                   title='TOP10 单品推广花费', template='plotly_white',
+                                   yaxis=dict(categoryorder='total ascending'))
+                st.plotly_chart(fig, use_container_width=True)
+            with sku2:
+                _roi_vals = [x['ROI'] if x['ROI'] != '--' else 0 for x in _sku_r[:10]]
+                _colors = ['#22c55e' if v >= 3 else '#f59e0b' if v >= 1 else '#ef4444' for v in _roi_vals]
+                fig = go.Figure(go.Bar(
+                    x=_roi_vals,
+                    y=[x['型号'] for x in _sku_r[:10]],
+                    orientation='h',
+                    text=[str(x['ROI']) for x in _sku_r[:10]],
+                    textposition='outside',
+                    marker=dict(color=_colors)))
+                fig.update_layout(height=max(300, len(_sku_r[:10])*40), margin=dict(l=10, r=80, t=35, b=10),
+                                   title='TOP10 单品ROI（绿≥3 橙≥1 红&lt;1）', template='plotly_white',
+                                   yaxis=dict(categoryorder='total ascending'))
+                st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(pd.DataFrame(_sku_r), use_container_width=True, hide_index=True)
+            _sku_csv = rows_to_csv(_sku_r, list(_sku_r[0].keys()))
+            st.download_button('下载单品推广分析 CSV', _sku_csv, file_name='promo_sku_analysis.csv', mime='text/csv')
+        else:
+            st.info('当前筛选条件下无单品推广数据')
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 2: 时间段对比
@@ -1126,6 +1193,141 @@ with tabs[2]:
             '变化量': diff_str, '变化率(%)': f'{chg*100:+.1f}%' if chg is not None else '--'
         })
     st.dataframe(df(compare_rows), use_container_width=True, hide_index=True)
+
+    # ── 推广数据对比 ──
+    if promo_rows:
+        st.markdown('---')
+        st.markdown('<div class="section-title">📢 推广数据对比</div>', unsafe_allow_html=True)
+
+        def calc_promo_period(s0, e0):
+            rows = []
+            for r in promo_rows:
+                d = r.get('_date', '')
+                if not d or not (s0 <= d <= e0):
+                    continue
+                if channel and r.get('_渠道', '') not in channel:
+                    continue
+                if store and r.get('_店铺', '') not in store:
+                    continue
+                if category and r.get('_品类', '') not in category:
+                    continue
+                if model and r.get('_型号', '') not in model:
+                    continue
+                rows.append(r)
+            return rows
+
+        promo_cur_rows = calc_promo_period(today_s, today_e)
+        promo_prev_rows = calc_promo_period(prev_s, prev_e)
+
+        def promo_sum(rows):
+            s = {}
+            for r in rows:
+                s['_花费'] = s.get('_花费', 0) + r.get('_花费', 0)
+                s['_展现数'] = s.get('_展现数', 0) + r.get('_展现数', 0)
+                s['_点击数'] = s.get('_点击数', 0) + r.get('_点击数', 0)
+                s['_总订单金额'] = s.get('_总订单金额', 0) + r.get('_总订单金额', 0)
+                s['_直接订单金额'] = s.get('_直接订单金额', 0) + r.get('_直接订单金额', 0)
+                s['_总加购数'] = s.get('_总加购数', 0) + r.get('_总加购数', 0)
+            return s
+
+        promo_cur = promo_sum(promo_cur_rows)
+        promo_prev = promo_sum(promo_prev_rows)
+
+        promo_kpis = [
+            ('推广花费', '_花费', '¥', 10000),
+            ('ROI', None, '', 1),
+            ('点击率', None, '', 100),
+            ('直接成交', '_直接订单金额', '¥', 10000),
+            ('加购数', '_总加购数', '', 1),
+            ('展现数', '_展现数', '', 1),
+            ('点击数', '_点击数', '', 1),
+        ]
+
+        promo_cols = st.columns(7)
+        for idx, (k_name, k_key, prefix, divisor) in enumerate(promo_kpis):
+            if k_key:
+                cur_v = promo_cur.get(k_key, 0) / divisor
+                prev_v = promo_prev.get(k_key, 0) / divisor
+            else:
+                # ROI and 点击率 are computed
+                if k_name == 'ROI':
+                    cur_v = promo_cur.get('_总订单金额', 0) / promo_cur.get('_花费', 1)
+                    prev_v = promo_prev.get('_总订单金额', 0) / promo_prev.get('_花费', 1)
+                elif k_name == '点击率':
+                    cur_v = promo_cur.get('_点击数', 0) / promo_cur.get('_展现数', 1) * 100
+                    prev_v = promo_prev.get('_点击数', 0) / promo_prev.get('_展现数', 1) * 100
+                else:
+                    cur_v = prev_v = 0
+            delta_v = (cur_v - prev_v) / prev_v if prev_v else None
+
+            if k_name == '点击率':
+                cur_str = f"{cur_v:.2f}%"
+                prev_str = f"{prev_v:.2f}%"
+                diff_pp = cur_v - prev_v
+                sign = '+' if diff_pp >= 0 else ''
+                cls = 'delta-up' if diff_pp >= 0 else 'delta-down'
+                delta_label = f'<span class="{cls}">{sign}{diff_pp:.2f}pp</span>'
+            elif k_name == 'ROI':
+                cur_str = f"{cur_v:.2f}"
+                prev_str = f"{prev_v:.2f}"
+                delta_label = delta_badge(delta_v)
+            elif divisor >= 10000:
+                cur_str = f"{prefix}{cur_v:.1f}万"
+                prev_str = f"{prefix}{prev_v:.1f}万"
+                delta_label = delta_badge(delta_v)
+            else:
+                cur_str = f"{prefix}{cur_v:,.0f}"
+                prev_str = f"{prefix}{prev_v:,.0f}"
+                delta_label = delta_badge(delta_v)
+
+            with promo_cols[idx]:
+                st.markdown(
+                    f'<p style="font-weight:800;color:#f59e0b;font-size:13px;margin:0 0 6px 0;text-align:center;">{k_name}</p>'
+                    f'<div class="comp-card" style="padding:10px;"><div class="comp-period">{label_a[:16]}</div><div class="comp-value" style="font-size:18px;">{cur_str}</div></div>'
+                    f'<div class="comp-card" style="padding:10px;"><div class="comp-period">{label_b[:16]}</div><div class="comp-value" style="font-size:18px;color:#64748b;">{prev_str}</div></div>'
+                    f'<div class="comp-card" style="padding:10px;background:#fffbeb;"><div class="comp-period">变化率</div><div style="font-size:16px;font-weight:700;">{delta_label}</div></div>',
+                    unsafe_allow_html=True
+                )
+
+        # 推广对比详情表
+        promo_compare_rows = []
+        for k_name, k_key, prefix, divisor in promo_kpis:
+            if k_key:
+                cur_v = promo_cur.get(k_key, 0) / divisor
+                prev_v = promo_prev.get(k_key, 0) / divisor
+            else:
+                if k_name == 'ROI':
+                    cur_v = promo_cur.get('_总订单金额', 0) / promo_cur.get('_花费', 1)
+                    prev_v = promo_prev.get('_总订单金额', 0) / promo_prev.get('_花费', 1)
+                elif k_name == '点击率':
+                    cur_v = promo_cur.get('_点击数', 0) / promo_cur.get('_展现数', 1) * 100
+                    prev_v = promo_prev.get('_点击数', 0) / promo_prev.get('_展现数', 1) * 100
+                else:
+                    cur_v = prev_v = 0
+            chg = (cur_v - prev_v) / prev_v if prev_v else None
+            diff = cur_v - prev_v
+
+            if k_name == 'ROI':
+                cur_str = f"{cur_v:.2f}"
+                prev_str = f"{prev_v:.2f}"
+                diff_str = f"{diff:+.2f}"
+            elif k_name == '点击率':
+                cur_str = f"{cur_v:.2f}%"
+                prev_str = f"{prev_v:.2f}%"
+                diff_str = f"{diff:+.2f}pp"
+            elif divisor >= 10000:
+                cur_str = f"{prefix}{cur_v:.1f}万"
+                prev_str = f"{prefix}{prev_v:.1f}万"
+                diff_str = f"{prefix}{diff:+.1f}万"
+            else:
+                cur_str = f"{prefix}{cur_v:,.0f}"
+                prev_str = f"{prefix}{prev_v:,.0f}"
+                diff_str = f"{prefix}{diff:+,.0f}"
+            promo_compare_rows.append({
+                '指标': k_name, '本期数值': cur_str, '对比期数值': prev_str,
+                '变化量': diff_str, '变化率(%)': f'{chg*100:+.1f}%' if chg is not None else '--'
+            })
+        st.dataframe(df(promo_compare_rows), use_container_width=True, hide_index=True)
 
     st.markdown('---')
     p1, p2 = st.columns(2)
