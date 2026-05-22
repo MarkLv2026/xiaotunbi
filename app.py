@@ -457,6 +457,71 @@ promo_rate = promo_spend / totals['支付金额'] * 100 if totals['支付金额'
 promo_direct_roi = promo_direct_amt / promo_spend if promo_spend else 0
 promo_order_cost = promo_spend / totals['支付买家数'] if totals['支付买家数'] else 0
 
+# ── 推广同比数据（去年同期同天数）──
+def _promo_yoy_rows(date_range_start, date_range_end):
+    """过滤指定日期范围内的推广数据，保持与主筛选条件一致"""
+    _s = str(date_range_start); _e = str(date_range_end)
+    out = []
+    for r in promo_rows:
+        d = r.get('_date', '')
+        if not d or d < _s or d > _e:
+            continue
+        if channel and r.get('_渠道', '') not in channel:
+            continue
+        if store and r.get('_店铺', '') not in store:
+            continue
+        if category and r.get('_品类', '') not in category:
+            continue
+        if model and r.get('_型号', '') not in model:
+            continue
+        out.append(r)
+    return out
+
+_yoy_cur = (end - start).days
+try:
+    _ystart = start.replace(year=start.year-1)
+except ValueError:
+    _ystart = start.replace(year=start.year-1, day=28)
+try:
+    _yend = end.replace(year=end.year-1)
+except ValueError:
+    _yend = end.replace(year=end.year-1, day=28)
+
+promo_yoy = _promo_yoy_rows(_ystart, _yend)
+promo_yoy_fc = sum(r.get('_花费', 0) for r in promo_yoy)
+promo_yoy_amt = sum(r.get('_总订单金额', 0) for r in promo_yoy)
+promo_yoy_direct = sum(r.get('_直接订单金额', 0) for r in promo_yoy)
+promo_yoy_impress = sum(r.get('_展现数', 0) for r in promo_yoy)
+promo_yoy_clicks = sum(r.get('_点击数', 0) for r in promo_yoy)
+promo_yoy_roi = promo_yoy_amt / promo_yoy_fc if promo_yoy_fc else 0
+promo_yoy_droi = promo_yoy_direct / promo_yoy_fc if promo_yoy_fc else 0
+promo_yoy_cpc = promo_yoy_fc / promo_yoy_clicks if promo_yoy_clicks else 0
+promo_yoy_ctr = promo_yoy_clicks / promo_yoy_impress if promo_yoy_impress else 0
+
+# YoY 聚合辅助
+def _promo_agg(rows, key_field):
+    """按 key_field 聚合推广数据"""
+    d = {}
+    for r in rows:
+        k = r.get(key_field, '') or '未标注'
+        d.setdefault(k, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0})
+        d[k]['花费'] += r.get('_花费', 0)
+        d[k]['展现数'] += r.get('_展现数', 0)
+        d[k]['点击数'] += r.get('_点击数', 0)
+        d[k]['总订单金额'] += r.get('_总订单金额', 0)
+        d[k]['直接订单金额'] += r.get('_直接订单金额', 0)
+        d[k]['总加购数'] += r.get('_总加购数', 0)
+    return d
+
+def _yoy_text(cur, prev):
+    """返回 同比变化 文本，带颜色"""
+    if prev is None or prev == 0:
+        return '--', ''
+    chg = (cur - prev) / prev * 100
+    color = '#dc2626' if chg < 0 else '#22c55e'
+    sign = '+' if chg >= 0 else ''
+    return f"{sign}{chg:.1f}%", color
+
 # 全时段同条件筛选数据（用于同比查询，不受日期范围限制）
 daily_all_filtered = []
 for r in data['daily']:
@@ -846,35 +911,54 @@ with tabs[1]:
         _store_m = {}
         for r in promo_filtered:
             sn = r.get('_店铺', '') or r.get('店铺', '') or '未标注'
-            _store_m.setdefault(sn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0})
+            _store_m.setdefault(sn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0})
             _store_m[sn]['花费'] += r.get('_花费', 0)
             _store_m[sn]['展现数'] += r.get('_展现数', 0)
             _store_m[sn]['点击数'] += r.get('_点击数', 0)
             _store_m[sn]['总订单金额'] += r.get('_总订单金额', 0)
             _store_m[sn]['直接订单金额'] += r.get('_直接订单金额', 0)
+            _store_m[sn]['总加购数'] += r.get('_总加购数', 0)
+        _store_yoy = _promo_agg(promo_yoy, '_店铺')
         _sm_r = []
         for k, v in sorted(_store_m.items(), key=lambda x: x[1]['花费'], reverse=True):
             _imp = v['展现数']
             _clk = v['点击数']
             _fc = v['花费']
+            _addcart = v['总加购数']
+            _cv = _addcart / _clk * 100 if _clk else None  # 推广转化率
+            _d_roi = v['直接订单金额'] / _fc if _fc else 0
+            _cpc = _fc / _clk if _clk else 0
+            # 同比
+            vy = _store_yoy.get(k, {})
+            _fc_yoy, _ = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
+            _droi_yoy, _ = _yoy_text(_d_roi, (vy.get('直接订单金额', 0) / vy.get('花费', 1)) if vy.get('花费', 0) else None)
+            _cpc_yoy, _ = _yoy_text(_cpc, (vy.get('花费', 0) / vy.get('点击数', 1)) if vy.get('点击数', 0) else None)
+            _yc = vy.get('总加购数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+            _cv_yoy, _ = _yoy_text(_cv, _yc) if _cv and _yc else ('--', '')
             _sm_r.append({
                 '店铺': k,
-                '花费(万)': round(_fc / 10000, 2),
-                '展现数': int(_imp),
-                '点击数': int(_clk),
+                '花费(万)': f"{_fc/10000:.1f}",
+                '展现数': f"{int(_imp):,}",
+                '点击数': f"{int(_clk):,}",
                 '点击率': f"{_clk/_imp*100:.2f}%" if _imp else '--',
-                '点击成本(¥)': round(_fc / _clk, 2) if _clk else '--',
-                '总成交(万)': round(v['总订单金额'] / 10000, 2),
-                '直接成交(万)': round(v['直接订单金额'] / 10000, 2),
-                'ROI': round(v['总订单金额'] / _fc, 2) if _fc else '--',
-                '直接ROI': round(v['直接订单金额'] / _fc, 2) if _fc else '--',
-                '费率': f"{_fc/v['总订单金额']*100:.2f}%" if v['总订单金额'] else '--',
+                '点击成本': f"¥{_cpc:.2f}" if _clk else '--',
+                '总成交(万)': f"{v['总订单金额']/10000:.1f}",
+                '直接成交(万)': f"{v['直接订单金额']/10000:.1f}",
+                'ROI': f"{v['总订单金额']/_fc:.2f}" if _fc else '--',
+                '直接ROI': f"{_d_roi:.2f}" if _fc else '--',
+                '费率': f"{_fc/v['总订单金额']*100:.1f}%" if v['总订单金额'] else '--',
+                '转化率': f"{_cv:.1f}%" if _cv else '--',
+                '花费同比': f"<span style='color:{'#22c55e' if _fc_yoy and '+' in _fc_yoy else '#dc2626' if _fc_yoy and '-' in _fc_yoy else '#94a3b8'}'>{_fc_yoy}</span>",
+                '直接ROI同比': f"<span style='color:{'#22c55e' if _droi_yoy and '+' in _droi_yoy else '#dc2626' if _droi_yoy and '-' in _droi_yoy else '#94a3b8'}'>{_droi_yoy}</span>",
+                'CPC同比': f"<span style='color:{'#22c55e' if _cpc_yoy and '+' in _cpc_yoy else '#dc2626' if _cpc_yoy and '-' in _cpc_yoy else '#94a3b8'}'>{_cpc_yoy}</span>",
+                '转化率同比': f"<span style='color:{'#22c55e' if _cv_yoy and '+' in _cv_yoy else '#dc2626' if _cv_yoy and '-' in _cv_yoy else '#94a3b8'}'>{_cv_yoy}</span>",
             })
         if _sm_r:
             ma1, ma2 = st.columns(2)
             with ma1:
+                _fc_vals = [float(x['花费(万)']) for x in _sm_r]
                 fig = go.Figure(go.Bar(
-                    x=[x['花费(万)'] for x in _sm_r],
+                    x=_fc_vals,
                     y=[x['店铺'] for x in _sm_r],
                     orientation='h',
                     text=[f"¥{x['花费(万)']}万" for x in _sm_r],
@@ -885,10 +969,10 @@ with tabs[1]:
                                    yaxis=dict(categoryorder='total ascending'))
                 st.plotly_chart(fig, use_container_width=True)
             with ma2:
-                _roi_vals = [x['ROI'] if x['ROI'] != '--' else 0 for x in _sm_r]
+                _roi_vals = [float(x['ROI']) if x['ROI'] != '--' else 0 for x in _sm_r]
                 _colors_roi = ['#22c55e' if v >= 3 else '#f59e0b' if v >= 1 else '#ef4444' for v in _roi_vals]
                 fig = go.Figure(go.Bar(
-                    x=[x['ROI'] if x['ROI'] != '--' else 0 for x in _sm_r],
+                    x=[float(x['ROI']) if x['ROI'] != '--' else 0 for x in _sm_r],
                     y=[x['店铺'] for x in _sm_r],
                     orientation='h',
                     text=[str(x['ROI']) for x in _sm_r],
@@ -898,58 +982,75 @@ with tabs[1]:
                                    title='各店铺ROI（绿≥3 橙≥1 红<1）', template='plotly_white',
                                    yaxis=dict(categoryorder='total ascending'))
                 st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(pd.DataFrame(_sm_r), use_container_width=True, hide_index=True)
+            _cols = list(_sm_r[0].keys())
+            st.markdown(_html_table(_sm_r, col_widths={c: '100px' for c in _cols}, height=max(280, len(_sm_r)*34+40)), unsafe_allow_html=True)
 
         # ── 渠道推广矩阵 ──
         st.markdown('<div class="section-title">📡 渠道推广矩阵</div>', unsafe_allow_html=True)
         _chan_m = {}
         for r in promo_filtered:
             cn = r.get('_渠道', '') or r.get('渠道', '') or '未标注'
-            _chan_m.setdefault(cn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0})
+            _chan_m.setdefault(cn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0})
             _chan_m[cn]['花费'] += r.get('_花费', 0)
             _chan_m[cn]['展现数'] += r.get('_展现数', 0)
             _chan_m[cn]['点击数'] += r.get('_点击数', 0)
             _chan_m[cn]['总订单金额'] += r.get('_总订单金额', 0)
             _chan_m[cn]['直接订单金额'] += r.get('_直接订单金额', 0)
+            _chan_m[cn]['总加购数'] += r.get('_总加购数', 0)
+        _chan_yoy = _promo_agg(promo_yoy, '_渠道')
         _cm_r = []
         for k, v in sorted(_chan_m.items(), key=lambda x: x[1]['花费'], reverse=True):
             _imp = v['展现数']
             _clk = v['点击数']
             _fc = v['花费']
+            _addcart = v['总加购数']
+            _cv = _addcart / _clk * 100 if _clk else None
+            _d_roi = v['直接订单金额'] / _fc if _fc else 0
+            _cpc = _fc / _clk if _clk else 0
+            vy = _chan_yoy.get(k, {})
+            _fc_yoy, _ = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
+            _droi_yoy, _ = _yoy_text(_d_roi, (vy.get('直接订单金额', 0) / vy.get('花费', 1)) if vy.get('花费', 0) else None)
+            _cpc_yoy, _ = _yoy_text(_cpc, (vy.get('花费', 0) / vy.get('点击数', 1)) if vy.get('点击数', 0) else None)
+            _yc = vy.get('总加购数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+            _cv_yoy, _ = _yoy_text(_cv, _yc) if _cv and _yc else ('--', '')
             _cm_r.append({
                 '渠道': k,
-                '花费(万)': round(_fc / 10000, 2),
-                '展现数': int(_imp),
-                '点击数': int(_clk),
+                '花费(万)': f"{_fc/10000:.1f}",
+                '展现数': f"{int(_imp):,}",
+                '点击数': f"{int(_clk):,}",
                 '点击率': f"{_clk/_imp*100:.2f}%" if _imp else '--',
-                '点击成本(¥)': round(_fc / _clk, 2) if _clk else '--',
-                '总成交(万)': round(v['总订单金额'] / 10000, 2),
-                'ROI': round(v['总订单金额'] / _fc, 2) if _fc else '--',
-                '直接ROI': round(v['直接订单金额'] / _fc, 2) if _fc else '--',
-                '费率': f"{_fc/v['总订单金额']*100:.2f}%" if v['总订单金额'] else '--',
+                '点击成本': f"¥{_cpc:.2f}" if _clk else '--',
+                '总成交(万)': f"{v['总订单金额']/10000:.1f}",
+                'ROI': f"{v['总订单金额']/_fc:.2f}" if _fc else '--',
+                '直接ROI': f"{_d_roi:.2f}" if _fc else '--',
+                '费率': f"{_fc/v['总订单金额']*100:.1f}%" if v['总订单金额'] else '--',
+                '转化率': f"{_cv:.1f}%" if _cv else '--',
+                '花费同比': f"<span style='color:{'#22c55e' if _fc_yoy and '+' in _fc_yoy else '#dc2626' if _fc_yoy and '-' in _fc_yoy else '#94a3b8'}'>{_fc_yoy}</span>",
+                '直接ROI同比': f"<span style='color:{'#22c55e' if _droi_yoy and '+' in _droi_yoy else '#dc2626' if _droi_yoy and '-' in _droi_yoy else '#94a3b8'}'>{_droi_yoy}</span>",
+                'CPC同比': f"<span style='color:{'#22c55e' if _cpc_yoy and '+' in _cpc_yoy else '#dc2626' if _cpc_yoy and '-' in _cpc_yoy else '#94a3b8'}'>{_cpc_yoy}</span>",
+                '转化率同比': f"<span style='color:{'#22c55e' if _cv_yoy and '+' in _cv_yoy else '#dc2626' if _cv_yoy and '-' in _cv_yoy else '#94a3b8'}'>{_cv_yoy}</span>",
             })
         if _cm_r:
             cb1, cb2 = st.columns(2)
             with cb1:
-                _fc_pie = [{'渠道': x['渠道'], '花费': x['花费(万)']} for x in _cm_r if x['花费(万)'] > 0]
+                _fc_pie = [{'渠道': x['渠道'], '花费(万)': float(x['花费(万)'])} for x in _cm_r if float(x['花费(万)']) > 0]
                 if _fc_pie:
-                    fig = px.pie(pd.DataFrame(_fc_pie), names='渠道', values='花费', hole=.4,
+                    fig = px.pie(pd.DataFrame(_fc_pie), names='渠道', values='花费(万)', hole=.4,
                                   color_discrete_sequence=px.colors.qualitative.Bold,
                                   title='渠道推广费占比')
                     fig.update_traces(texttemplate='%{label}<br>%{percent:.1%}')
                     fig.update_layout(height=340, margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig, use_container_width=True)
             with cb2:
+                _roi_cur = [float(x['ROI']) if x['ROI'] != '--' else 0 for x in _cm_r]
+                _droi_cur = [float(x['直接ROI']) if x['直接ROI'] != '--' else 0 for x in _cm_r]
                 fig = go.Figure()
-                fig.add_trace(go.Bar(name='ROI', x=[x['渠道'] for x in _cm_r],
-                                      y=[x['ROI'] if x['ROI'] != '--' else 0 for x in _cm_r],
-                                      marker_color='#1d4ed8'))
-                fig.add_trace(go.Bar(name='直接ROI', x=[x['渠道'] for x in _cm_r],
-                                      y=[x['直接ROI'] if x['直接ROI'] != '--' else 0 for x in _cm_r],
-                                      marker_color='#06b6d4'))
+                fig.add_trace(go.Bar(name='ROI', x=[x['渠道'] for x in _cm_r], y=_roi_cur, marker_color='#1d4ed8'))
+                fig.add_trace(go.Bar(name='直接ROI', x=[x['渠道'] for x in _cm_r], y=_droi_cur, marker_color='#06b6d4'))
                 fig.update_layout(height=340, barmode='group', template='plotly_white', title='渠道ROI对比')
                 st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(pd.DataFrame(_cm_r), use_container_width=True, hide_index=True)
+            _cols = list(_cm_r[0].keys())
+            st.markdown(_html_table(_cm_r, col_widths={c: '100px' for c in _cols}, height=max(280, len(_cm_r)*34+40)), unsafe_allow_html=True)
 
         # ── TOP10 推广计划（按花费）──
         st.markdown('<div class="section-title">TOP10 推广计划（按花费）</div>', unsafe_allow_html=True)
@@ -1013,30 +1114,46 @@ with tabs[1]:
             _sku[sku]['总订单金额'] += r.get('_总订单金额', 0)
             _sku[sku]['直接订单金额'] += r.get('_直接订单金额', 0)
             _sku[sku]['总加购数'] += r.get('_总加购数', 0)
+        _sku_yoy = _promo_agg(promo_yoy, '_型号')
         _sku_r = []
         for k, v in sorted(_sku.items(), key=lambda x: x[1]['花费'], reverse=True):
             _imp = v['展现数']
             _clk = v['点击数']
             _fc = v['花费']
+            _addcart = v['总加购数']
+            _cv = _addcart / _clk * 100 if _clk else None
+            _d_roi = v['直接订单金额'] / _fc if _fc else 0
+            _cpc = _fc / _clk if _clk else 0
+            vy = _sku_yoy.get(k, {})
+            _fc_yoy, _ = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
+            _droi_yoy, _ = _yoy_text(_d_roi, (vy.get('直接订单金额', 0) / vy.get('花费', 1)) if vy.get('花费', 0) else None)
+            _cpc_yoy, _ = _yoy_text(_cpc, (vy.get('花费', 0) / vy.get('点击数', 1)) if vy.get('点击数', 0) else None)
+            _yc = vy.get('总加购数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+            _cv_yoy, _ = _yoy_text(_cv, _yc) if _cv and _yc else ('--', '')
             _sku_r.append({
                 '型号': k,
-                '花费(万)': round(_fc / 10000, 2),
+                '花费(万)': f"{_fc/10000:.2f}",
                 '展现数': f"{int(_imp):,}",
                 '点击数': f"{int(_clk):,}",
                 '点击率': f"{_clk/_imp*100:.2f}%" if _imp else '--',
-                '点击成本(¥)': round(_fc / _clk, 2) if _clk else '--',
-                '总成交(万)': round(v['总订单金额'] / 10000, 2),
-                '直接成交(万)': round(v['直接订单金额'] / 10000, 2),
-                'ROI': round(v['总订单金额'] / _fc, 2) if _fc else '--',
+                '点击成本': f"¥{_cpc:.2f}" if _clk else '--',
+                '总成交(万)': f"{v['总订单金额']/10000:.2f}",
+                '直接成交(万)': f"{v['直接订单金额']/10000:.2f}",
+                'ROI': f"{v['总订单金额']/_fc:.2f}" if _fc else '--',
+                '直接ROI': f"{_d_roi:.2f}" if _fc else '--',
                 '费率': f"{_fc/v['总订单金额']*100:.2f}%" if v['总订单金额'] else '--',
-                '加购数': f"{int(v['总加购数']):,}",
+                '转化率': f"{_cv:.1f}%" if _cv else '--',
+                '花费同比': f"<span style='color:{'#22c55e' if _fc_yoy and '+' in _fc_yoy else '#dc2626' if _fc_yoy and '-' in _fc_yoy else '#94a3b8'}'>{_fc_yoy}</span>",
+                '直接ROI同比': f"<span style='color:{'#22c55e' if _droi_yoy and '+' in _droi_yoy else '#dc2626' if _droi_yoy and '-' in _droi_yoy else '#94a3b8'}'>{_droi_yoy}</span>",
+                'CPC同比': f"<span style='color:{'#22c55e' if _cpc_yoy and '+' in _cpc_yoy else '#dc2626' if _cpc_yoy and '-' in _cpc_yoy else '#94a3b8'}'>{_cpc_yoy}</span>",
+                '转化率同比': f"<span style='color:{'#22c55e' if _cv_yoy and '+' in _cv_yoy else '#dc2626' if _cv_yoy and '-' in _cv_yoy else '#94a3b8'}'>{_cv_yoy}</span>",
             })
         if _sku_r:
             sku1, sku2 = st.columns(2)
             with sku1:
                 _top10 = _sku_r[:10]
                 fig = go.Figure(go.Bar(
-                    x=[x['花费(万)'] for x in _top10],
+                    x=[float(x['花费(万)']) for x in _top10],
                     y=[x['型号'] for x in _top10],
                     orientation='h',
                     text=[f"¥{x['花费(万)']}万" for x in _top10],
@@ -1047,7 +1164,7 @@ with tabs[1]:
                                    yaxis=dict(categoryorder='total ascending'))
                 st.plotly_chart(fig, use_container_width=True)
             with sku2:
-                _roi_vals = [x['ROI'] if x['ROI'] != '--' else 0 for x in _sku_r[:10]]
+                _roi_vals = [float(x['ROI']) if x['ROI'] != '--' else 0 for x in _sku_r[:10]]
                 _colors = ['#22c55e' if v >= 3 else '#f59e0b' if v >= 1 else '#ef4444' for v in _roi_vals]
                 fig = go.Figure(go.Bar(
                     x=_roi_vals,
@@ -1060,7 +1177,8 @@ with tabs[1]:
                                    title='TOP10 单品ROI（绿≥3 橙≥1 红&lt;1）', template='plotly_white',
                                    yaxis=dict(categoryorder='total ascending'))
                 st.plotly_chart(fig, use_container_width=True)
-            st.dataframe(pd.DataFrame(_sku_r), use_container_width=True, hide_index=True)
+            _cols = list(_sku_r[0].keys())
+            st.markdown(_html_table(_sku_r, col_widths={c: '100px' for c in _cols}, height=max(300, len(_sku_r)*34+40)), unsafe_allow_html=True)
             _sku_csv = rows_to_csv(_sku_r, list(_sku_r[0].keys()))
             st.download_button('下载单品推广分析 CSV', _sku_csv, file_name='promo_sku_analysis.csv', mime='text/csv')
         else:
@@ -1136,6 +1254,9 @@ with tabs[2]:
     cur_sum = calc_period_summary(today_s, today_e)
     prev_sum = calc_period_summary(prev_s, prev_e)
 
+    st.markdown('---')
+    st.markdown('<div class="section-title" style="border-left:4px solid #1d4ed8;padding-left:12px;">📊 销售对比分析</div>', unsafe_allow_html=True)
+
     comp_kpis = [
         ('支付金额', '支付金额', '¥', False),
         ('支付件数', '支付件数', '', False),
@@ -1145,8 +1266,6 @@ with tabs[2]:
         ('客单价', '客单价', '¥', False),
         ('加购率', '加购率', '', True),
     ]
-
-    st.markdown('---')
     kpi_cols = st.columns(7)
     for idx, (k_name, k_key, prefix, is_pct) in enumerate(comp_kpis):
         cur_v = cur_sum.get(k_key, 0)
@@ -1194,10 +1313,12 @@ with tabs[2]:
         })
     st.dataframe(df(compare_rows), use_container_width=True, hide_index=True)
 
-    # ── 推广数据对比 ──
+    # ═══════════════════════════════════════════════════════════════
+    # 推广对比分析
+    # ═══════════════════════════════════════════════════════════════
     if promo_rows:
         st.markdown('---')
-        st.markdown('<div class="section-title">📢 推广数据对比</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title" style="border-left:4px solid #f59e0b;padding-left:12px;">📢 推广对比分析</div>', unsafe_allow_html=True)
 
         def calc_promo_period(s0, e0):
             rows = []
@@ -2245,7 +2366,148 @@ with tabs[6]:
         st.info('\u2139\ufe0f 本周期未发现显著增长新星（阈值：增速>50% 或 新上榜且GMV>\u00A52000）。')
 
     # ══════════════════════════════════════
-    # D. 第三层: 具体可执行的优化措施（绑定真实数据值）
+    # D. 推广数据诊断 & 建议（新增）
+    # ══════════════════════════════════════
+    if promo_rows:
+        st.markdown('<hr style="margin:18px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
+        st.markdown('<div class="section-title" style="border-left:4px solid #f59e0b;padding-left:12px;">📢 推广数据诊断 & 联动分析</div>', unsafe_allow_html=True)
+
+        # 推广环比数据
+        promo_cur_diag = [r for r in promo_rows if s <= r.get('_date', '') <= e]
+        promo_prev_diag = [r for r in promo_rows if prev_s_d <= r.get('_date', '') <= prev_e_d]
+        def _promo_sum(rows):
+            return {
+                '花费': sum(r.get('_花费', 0) for r in rows),
+                '展现数': sum(r.get('_展现数', 0) for r in rows),
+                '点击数': sum(r.get('_点击数', 0) for r in rows),
+                '总订单金额': sum(r.get('_总订单金额', 0) for r in rows),
+                '直接订单金额': sum(r.get('_直接订单金额', 0) for r in rows),
+                '总加购数': sum(r.get('_总加购数', 0) for r in rows),
+            }
+        p_cur = _promo_sum(promo_cur_diag)
+        p_prev = _promo_sum(promo_prev_diag)
+
+        p_fc_g = (p_cur['花费'] - p_prev['花费']) / p_prev['花费'] if p_prev['花费'] else None
+        p_roi_cur = p_cur['总订单金额'] / p_cur['花费'] if p_cur['花费'] else 0
+        p_roi_prev = p_prev['总订单金额'] / p_prev['花费'] if p_prev['花费'] else 0
+        p_roi_g = (p_roi_cur - p_roi_prev) / p_roi_prev if p_roi_prev else None
+        p_ctr_cur = p_cur['点击数'] / p_cur['展现数'] * 100 if p_cur['展现数'] else 0
+        p_ctr_prev = p_prev['点击数'] / p_prev['展现数'] * 100 if p_prev['展现数'] else 0
+        p_ctr_g = (p_ctr_cur - p_ctr_prev) / p_ctr_prev if p_ctr_prev else None
+        p_cpc_cur = p_cur['花费'] / p_cur['点击数'] if p_cur['点击数'] else 0
+        p_cpc_prev = p_prev['花费'] / p_prev['点击数'] if p_prev['点击数'] else 0
+        p_cpc_g = (p_cpc_cur - p_cpc_prev) / p_cpc_prev if p_cpc_prev else None
+        p_rate_cur = p_cur['花费'] / p_cur['总订单金额'] * 100 if p_cur['总订单金额'] else 0
+        p_rate_prev = p_prev['花费'] / p_prev['总订单金额'] * 100 if p_prev['总订单金额'] else 0
+        p_rate_g = (p_rate_cur - p_rate_prev) / p_rate_prev if p_rate_prev else None
+
+        # 推广KPI卡片
+        p1c, p2c, p3c, p4c, p5c = st.columns(5)
+        promo_diag_kpis = [
+            ('💸 推广花费', p_fc_g, f"¥{p_cur['花费']:,.0f}", f"¥{p_prev['花费']:,.0f}", '#fef2f2', '#fca5a5'),
+            ('📈 ROI', p_roi_g, f"{p_roi_cur:.2f}", f"{p_roi_prev:.2f}", '#f0fdf4', '#86efac'),
+            ('🖱️ 点击率', p_ctr_g, f"{p_ctr_cur:.2f}%", f"{p_ctr_prev:.2f}%", '#f0f9ff', '#7dd3fc'),
+            ('💰 点击成本', p_cpc_g, f"¥{p_cpc_cur:.2f}", f"¥{p_cpc_prev:.2f}", '#fffbeb', '#fcd34d'),
+            ('⚖️ 费率', p_rate_g, f"{p_rate_cur:.1f}%", f"{p_rate_prev:.1f}%", '#faf5ff', '#d8b4fe'),
+        ]
+        for col, (name, chg, cur_s, prev_s, bg, border) in zip([p1c, p2c, p3c, p4c, p5c], promo_diag_kpis):
+            with col:
+                chg_s = _pct(chg) if chg is not None else '--'
+                lvl = 'ok' if chg is None or chg > WARN_T else ('warn' if chg > DANGER_T else 'danger')
+                icon = {'danger': '🔴', 'warn': '🟡', 'ok': '🟢'}[lvl]
+                st.markdown(
+                    f'<div style="background:{bg};border:1px solid {border};border-radius:14px;padding:12px;text-align:center;">'
+                    f'<div style="font-size:11.5px;color:#64748b;font-weight:700;">{name}</div>'
+                    f'<div style="font-size:21px;font-weight:900;color:#0f172a;margin:4px 0;">{cur_s}</div>'
+                    f'<div style="font-size:11px;color:#94a3b8;">vs 上期 {prev_s} ({chg_s})</div></div>',
+                    unsafe_allow_html=True
+                )
+
+        # 推广诊断建议
+        promo_suggestions = []
+        # 1. 花费变化
+        if p_fc_g is not None and p_fc_g > 0.20:
+            promo_suggestions.append(('P1', '推广花费激增',
+                f'推广花费较上期增长{_pct(p_fc_g)}，当前¥{p_cur["花费"]:,.0f}。'
+                f'需确认是否为促销期加大投放，或存在计划预算失控。<br>'
+                f'建议：①检查各计划日预算上限 ②核对ROI是否同步提升（当前{p_roi_cur:.2f} vs 上期{p_roi_prev:.2f}）'
+                f' ③若ROI下降，立即暂停低效计划'))
+        elif p_fc_g is not None and p_fc_g < -0.20:
+            promo_suggestions.append(('P0', '推广花费大幅缩减',
+                f'推广花费较上期下降{_pct(p_fc_g)}，当前¥{p_cur["花费"]:,.0f}。'
+                f'可能原因：预算耗尽/计划被限流/推广策略调整。<br>'
+                f'建议：①检查账户余额和计划状态 ②若GMV同步下滑，立即恢复核心计划预算'
+                f' ③排查是否因违规被平台降权'))
+
+        # 2. ROI趋势
+        if p_roi_g is not None and p_roi_g < -0.15:
+            promo_suggestions.append(('P0', '推广ROI显著恶化',
+                f'ROI从{p_roi_prev:.2f}降至{p_roi_cur:.2f}（{_pct(p_roi_g)}）。'
+                f'费效比恶化意味着每投入1元推广费带来的回报减少。<br>'
+                f'建议：①筛选ROI<1的计划暂停或优化 ②检查落地页加载速度和转化路径'
+                f' ③对比竞品价格，确认是否因涨价导致转化下降'))
+        elif p_roi_g is not None and p_roi_g > 0.15:
+            promo_suggestions.append(('P2', '推广ROI表现优异',
+                f'ROI从{p_roi_prev:.2f}提升至{p_roi_cur:.2f}（{_pct(p_roi_g)}）。'
+                f'建议：①加大高ROI计划预算（+30%测试）②复制该计划定向和创意到其他SKU'
+                f' ③分析高ROI时段，集中预算投放黄金时段'))
+
+        # 3. 点击率异常
+        if p_ctr_g is not None and p_ctr_g < -0.20:
+            promo_suggestions.append(('P1', '点击率大幅下滑',
+                f'点击率从{p_ctr_prev:.2f}%降至{p_ctr_cur:.2f}%（{_pct(p_ctr_g)}）。'
+                f'可能原因：创意疲劳/竞品抢量/人群定向偏移。<br>'
+                f'建议：①更换主图/视频创意（A/B测试3组）②检查定向人群是否过于宽泛'
+                f' ③分析展现位置，若首屏占比下降需提高出价'))
+
+        # 4. 点击成本异常
+        if p_cpc_g is not None and p_cpc_g > 0.30:
+            promo_suggestions.append(('P1', '点击成本快速上涨',
+                f'CPC从¥{p_cpc_prev:.2f}涨至¥{p_cpc_cur:.2f}（{_pct(p_cpc_g)}）。'
+                f'竞争加剧或质量分下降导致。<br>'
+                f'建议：①优化关键词/人群包质量分 ②避开高峰时段竞价 ③'
+                f'测试长尾词降低竞争成本'))
+
+        # 5. 费率异常
+        if p_rate_g is not None and p_rate_g > 0.20:
+            promo_suggestions.append(('P1', '推广费率过高',
+                f'费率从{p_rate_prev:.1f}%升至{p_rate_cur:.1f}%（{_pct(p_rate_g)}）。'
+                f'推广费占销售额比例上升，侵蚀利润。<br>'
+                f'建议：①设定费率红线（建议≤15%），超线计划立即优化'
+                f' ②提升客单价或关联销售，稀释费率 ③减少低转化时段投放'))
+
+        # 6. 推广与销售联动
+        if gmv_g is not None and gmv_g < 0 and p_fc_g is not None and p_fc_g < 0:
+            promo_suggestions.append(('P0', '销售&推广双降联动',
+                f'GMV{_pct(gmv_g)}且推广花费{_pct(p_fc_g)}，两者同步下滑。'
+                f'可能存在系统性问题：平台流量大盘下降/类目进入淡季/店铺权重降低。<br>'
+                f'建议：①对比行业大盘数据确认是否为系统性下滑'
+                f' ②检查店铺DSR评分和违规记录 ③启动应急推广计划稳定基本盘'))
+        elif gmv_g is not None and gmv_g < 0 and p_fc_g is not None and p_fc_g > 0:
+            promo_suggestions.append(('P0', '推广增但销售降（效率恶化）',
+                f'推广花费{_pct(p_fc_g)}但GMV{_pct(gmv_g)}，推广效率严重恶化。'
+                f'每多投1元推广反而在亏钱。<br>'
+                f'建议：①立即暂停ROI<0.5的计划 ②全面检查落地页和商品详情页'
+                f' ③排查是否因差评/缺货/涨价导致转化崩塌 ④优先修复转化再恢复投放'))
+        elif gmv_g is not None and gmv_g > 0 and p_fc_g is not None and p_fc_g < -0.10:
+            promo_suggestions.append(('P2', '推广降但销售升（效率提升）',
+                f'推广花费{_pct(p_fc_g)}但GMV{_pct(gmv_g)}，自然流量或复购驱动增长。'
+                f'说明品牌力/搜索权重在提升。<br>'
+                f'建议：①分析自然流量来源，加大SEO和内容投入'
+                f' ②维持当前推广规模，将节省预算投入高ROI新品'))
+
+        if promo_suggestions:
+            st.markdown('#### 📋 推广诊断建议')
+            for pri, title, detail in sorted(promo_suggestions, key=lambda x: ['P0','P1','P2'].index(x[0])):
+                cls = {'P0': 'tag-p0', 'P1': 'tag-p1', 'P2': 'tag-p2'}[pri]
+                tag_html = f"<span class='action-tag {cls}'>{pri}</span>"
+                with st.expander(f"{tag_html} **{title}**", expanded=(pri=='P0')):
+                    st.markdown(detail, unsafe_allow_html=True)
+        else:
+            st.info('✅ 推广数据表现平稳，未发现明显异常。')
+
+    # ══════════════════════════════════════
+    # E. 第三层: 具体可执行的优化措施（绑定真实数据值）
     # ══════════════════════════════════════
     st.markdown('<hr style="margin:18px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🛠️ 具体执行措施清单</div>',unsafe_allow_html=True)
