@@ -89,41 +89,98 @@ CSS = '''
 </style>
 '''
 st.markdown(CSS, unsafe_allow_html=True)
+
+# ── 权限验证 ──
+import hashlib, json as _json_lib
+_USERS_FILE = pathlib.Path(__file__).parent / 'users.json'
+_SALT = 'xiaotun_bi_2026_salt'
+
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+if 'username' not in st.session_state:
+    st.session_state.username = ''
+if 'role' not in st.session_state:
+    st.session_state.role = ''
+
+if not st.session_state.authenticated:
+    col_center = st.columns([1, 2, 1])
+    with col_center[1]:
+        st.markdown('''<div class="hero"><div><span class="badge">影锋BI风格</span><span class="badge">全域电商经营驾驶舱</span></div><h1 class="hero-title">小豚当家销售经营BI看板</h1><div class="hero-sub">请输入账号密码登录</div></div>''', unsafe_allow_html=True)
+        with st.form('login_form'):
+            _lu = st.text_input('用户名')
+            _lp = st.text_input('密码', type='password')
+            _submitted = st.form_submit_button('登录', use_container_width=True)
+            if _submitted:
+                try:
+                    with open(_USERS_FILE, 'r', encoding='utf-8') as _f:
+                        _users_data = _json_lib.load(_f)
+                except Exception:
+                    _users_data = {'users': {}}
+                _user_info = _users_data.get('users', {}).get(_lu.strip())
+                if _user_info:
+                    _h = hashlib.sha256((_SALT + _lp).encode()).hexdigest()
+                    if _h == _user_info.get('password_hash', ''):
+                        st.session_state.authenticated = True
+                        st.session_state.username = _lu.strip()
+                        st.session_state.role = _user_info.get('role', 'viewer')
+                        st.rerun()
+                st.error('❌ 用户名或密码错误，或账号未授权')
+    st.stop()
+
 st.markdown('''<div class="hero"><div><span class="badge">影锋BI风格</span><span class="badge">全域电商经营驾驶舱</span><span class="badge">上传即更新</span></div><h1 class="hero-title">小豚当家销售经营BI看板</h1><div class="hero-sub">经营总览 · 时间段对比 · 趋势分析 · 渠道矩阵 · 商品诊断 · 智能诊断, 一页完成日常复盘。</div></div>''', unsafe_allow_html=True)
 
 with st.sidebar:
-    st.header('数据源更新')
-    data_type = st.radio('数据类型', ['销售数据', '推广数据', '流量渠道（预留）', '销售目标（预留）'], horizontal=True)
-    if data_type == '销售数据':
-        uploaded_sales = st.file_uploader('上传销售 Excel 数据源', type=['xlsx'], key='sales_up')
-        if uploaded_sales is not None:
-            _CACHE_SALES.write_bytes(uploaded_sales.getvalue())
-            st.caption('✅ 销售数据已保存')
-        elif _CACHE_SALES.exists():
-            mtime = datetime.datetime.fromtimestamp(_CACHE_SALES.stat().st_mtime)
-            st.caption(f'📂 销售数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
+    # 用户信息栏
+    _role_label = '管理员' if st.session_state.role == 'admin' else '查看者'
+    st.markdown(f'👤 {st.session_state.username}（{_role_label}）')
+    
+    if st.session_state.role == 'admin':
+        st.header('数据源更新')
+        data_type = st.radio('数据类型', ['销售数据', '推广数据', '流量渠道（预留）', '销售目标（预留）'], horizontal=True)
+        if data_type == '销售数据':
+            uploaded_sales = st.file_uploader('上传销售 Excel 数据源', type=['xlsx'], key='sales_up')
+            if uploaded_sales is not None:
+                _CACHE_SALES.write_bytes(uploaded_sales.getvalue())
+                st.caption('✅ 销售数据已保存')
+            elif _CACHE_SALES.exists():
+                mtime = datetime.datetime.fromtimestamp(_CACHE_SALES.stat().st_mtime)
+                st.caption(f'📂 销售数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
+            else:
+                st.caption('请上传销售数据')
+            st.markdown('**建议工作表**')
+            st.caption('天猫数据源 / 京东抖音数据源')
+        elif data_type == '推广数据':
+            uploaded_promo = st.file_uploader('上传推广 Excel（含京东/天猫推广sheet）', type=['xlsx'], key='promo_up')
+            if uploaded_promo is not None:
+                _CACHE_PROMO.write_bytes(uploaded_promo.getvalue())
+                st.caption('✅ 推广数据已保存')
+            elif _CACHE_PROMO.exists():
+                mtime = datetime.datetime.fromtimestamp(_CACHE_PROMO.stat().st_mtime)
+                st.caption(f'📂 推广数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
+            else:
+                st.caption('请上传推广数据（京东+天猫）')
+            st.markdown('**建议工作表**')
+            st.caption('京东推广数据源 / 天猫推广数据源')
         else:
-            st.caption('请上传销售数据')
-        st.markdown('**建议工作表**')
-        st.caption('天猫数据源 / 京东抖音数据源')
-    elif data_type == '推广数据':
-        uploaded_promo = st.file_uploader('上传推广 Excel（含京东/天猫推广sheet）', type=['xlsx'], key='promo_up')
-        if uploaded_promo is not None:
-            _CACHE_PROMO.write_bytes(uploaded_promo.getvalue())
-            st.caption('✅ 推广数据已保存')
-        elif _CACHE_PROMO.exists():
-            mtime = datetime.datetime.fromtimestamp(_CACHE_PROMO.stat().st_mtime)
-            st.caption(f'📂 推广数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
-        else:
-            st.caption('请上传推广数据（京东+天猫）')
-        st.markdown('**建议工作表**')
-        st.caption('京东推广数据源 / 天猫推广数据源')
+            st.info('🚧 入口已预留，后续开放')
+        if data_type in ('销售数据', '推广数据'):
+            st.divider()
+            st.markdown('**核心口径**')
+            st.caption('转化率=支付买家数/商品访客数；客单价=支付金额/支付买家数；ROI=总订单金额/花费')
     else:
-        st.info('🚧 入口已预留，后续开放')
-    if data_type in ('销售数据', '推广数据'):
-        st.divider()
-        st.markdown('**核心口径**')
-        st.caption('转化率=支付买家数/商品访客数；客单价=支付金额/支付买家数；ROI=总订单金额/花费')
+        st.info('📊 只读模式 — 请联系管理员上传最新数据')
+        if _CACHE_SALES.exists():
+            mtime = datetime.datetime.fromtimestamp(_CACHE_SALES.stat().st_mtime)
+            st.caption(f'📂 销售数据更新：{mtime.strftime("%Y-%m-%d %H:%M")}')
+        if _CACHE_PROMO.exists():
+            mtime = datetime.datetime.fromtimestamp(_CACHE_PROMO.stat().st_mtime)
+            st.caption(f'📂 推广数据更新：{mtime.strftime("%Y-%m-%d %H:%M")}')
+    
+    st.divider()
+    if st.button('🚪 退出登录', use_container_width=True):
+        for _k in ['authenticated', 'username', 'role']:
+            st.session_state[_k] = ''
+        st.rerun()
 
 @st.cache_data(show_spinner=False)
 def load_data(file_bytes: bytes):
@@ -182,6 +239,9 @@ def load_promo_data(file_bytes: bytes):
             r['_渠道'] = r.get('渠道', '')
             r['_品类'] = r.get('品类', '')
             r['_型号'] = r.get('型号', '')
+            # 营销场景 — 尝试多种可能列名，无则用渠道
+            _scene = r.get('营销场景') or r.get('推广场景') or r.get('场景') or r.get('营销渠道') or ''
+            r['_营销场景'] = str(_scene).strip() if _scene else r['_渠道']
             # Amount fields - try both possible names
             spend = r.get('花费', None) or r.get('花费', 0)
             r['_花费'] = float(spend) if spend not in (None, '') else 0.0
@@ -522,6 +582,34 @@ def _yoy_text(cur, prev):
     sign = '+' if chg >= 0 else ''
     return f"{sign}{chg:.1f}%", color
 
+# ── 推广环比数据（上期同天数）──
+_mom_days = (end - start).days
+_mom_end = start - datetime.timedelta(days=1)
+_mom_start = _mom_end - datetime.timedelta(days=_mom_days)
+promo_mom = _promo_yoy_rows(_mom_start, _mom_end)
+promo_mom_fc = sum(r.get('_花费', 0) for r in promo_mom)
+promo_mom_amt = sum(r.get('_总订单金额', 0) for r in promo_mom)
+promo_mom_direct = sum(r.get('_直接订单金额', 0) for r in promo_mom)
+promo_mom_impress = sum(r.get('_展现数', 0) for r in promo_mom)
+promo_mom_clicks = sum(r.get('_点击数', 0) for r in promo_mom)
+promo_mom_roi = promo_mom_amt / promo_mom_fc if promo_mom_fc else 0
+promo_mom_droi = promo_mom_direct / promo_mom_fc if promo_mom_fc else 0
+promo_mom_cpc = promo_mom_fc / promo_mom_clicks if promo_mom_clicks else 0
+promo_mom_ctr = promo_mom_clicks / promo_mom_impress if promo_mom_impress else 0
+promo_mom_rate = promo_mom_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0  # 粗略用当前销售额作分母
+promo_mom_order_cost = promo_mom_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+
+def _promo_delta(cur, mom, yoy, suffix='%'):
+    """推广指标环比/同比delta字符串，格式：'环比 +X% / 同比 +Y%'"""
+    parts = []
+    for label, prev in [('环比', mom), ('同比', yoy)]:
+        if prev is not None and prev != 0:
+            chg = (cur - prev) / prev * 100
+            parts.append(f'{label} {chg:+.1f}{suffix}')
+        else:
+            parts.append(f'{label} --')
+    return ' / '.join(parts)
+
 # 全时段同条件筛选数据（用于同比查询，不受日期范围限制）
 daily_all_filtered = []
 for r in data['daily']:
@@ -631,16 +719,34 @@ with tabs[0]:
     k6.metric('客单价', f"¥{totals['客单价']:,.0f}", period_delta_text('客单价'))
     k7.metric('加购率', f"{totals['加购率']*100:.2f}%", period_delta_text('加购率'))
     _ps_wan = round(promo_spend / 10000, 1) if promo_spend else 0
-    k8.metric('推广费', f"¥{_ps_wan}万" if promo_spend >= 10000 else f"¥{promo_spend:,.0f}", None if not promo_rows else None)
-    k9.metric('ROI', f"{promo_roi:.2f}" if promo_roi else '--', None if not promo_rows else None)
-    k10.metric('费率', f"{promo_rate:.2f}%" if promo_rate else '--', None if not promo_rows else None)
+    # 推广指标环比/同比
+    if promo_rows:
+        _pfc_d = _promo_delta(promo_spend, promo_mom_fc, promo_yoy_fc, '')
+        _proi_d = _promo_delta(promo_roi, promo_mom_roi, promo_yoy_roi, '')
+        _prate_d = _promo_delta(promo_rate, promo_mom_rate, promo_yoy_rate, '%')
+        k8.metric('推广费', f"¥{_ps_wan}万" if promo_spend >= 10000 else f"¥{promo_spend:,.0f}", _pfc_d)
+        k9.metric('ROI', f"{promo_roi:.2f}" if promo_roi else '--', _proi_d)
+        k10.metric('费率', f"{promo_rate:.2f}%", _prate_d)
+    else:
+        k8.metric('推广费', f"¥{_ps_wan}万" if promo_spend >= 10000 else f"¥{promo_spend:,.0f}")
+        k9.metric('ROI', f"{promo_roi:.2f}" if promo_roi else '--')
+        k10.metric('费率', f"{promo_rate:.2f}%" if promo_rate else '--')
     # Row 3: 推广效率指标
     if promo_rows:
-        k11, k12, k13, k14 = st.columns(4)
-        k11.metric('直接ROI', f"{promo_direct_roi:.2f}" if promo_direct_roi else '--')
-        k12.metric('点击率', f"{promo_ctr*100:.2f}%" if promo_impress else '--')
-        k13.metric('点击成本', f"¥{promo_cpc:.2f}" if promo_clicks else '--')
-        k14.metric('订单成本', f"¥{promo_order_cost:.2f}" if totals['支付买家数'] else '--')
+        _pdroi_d = _promo_delta(promo_direct_roi, promo_mom_droi, promo_yoy_droi, '')
+        _pctr_d = _promo_delta(promo_ctr*100, promo_mom_ctr*100, promo_yoy_ctr*100, '%')
+        _pcpc_d = _promo_delta(promo_cpc, promo_mom_cpc, promo_yoy_cpc, '')
+        _poc_d = _promo_delta(promo_order_cost, promo_mom_order_cost, promo_yoy_order_cost, '')
+        _prs = promo_direct_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
+        _prs_m = promo_mom_direct / totals['支付金额'] * 100 if totals['支付金额'] else 0
+        _prs_y = promo_yoy_direct / totals['支付金额'] * 100 if totals['支付金额'] else 0
+        _prs_d = _promo_delta(_prs, _prs_m, _prs_y, '%')
+        k11, k12, k13, k14, k15 = st.columns(5)
+        k11.metric('直接ROI', f"{promo_direct_roi:.2f}" if promo_direct_roi else '--', _pdroi_d)
+        k12.metric('点击率', f"{promo_ctr*100:.2f}%" if promo_impress else '--', _pctr_d)
+        k13.metric('点击成本', f"¥{promo_cpc:.2f}" if promo_clicks else '--', _pcpc_d)
+        k14.metric('订单成本', f"¥{promo_order_cost:.2f}" if totals['支付买家数'] else '--', _poc_d)
+        k15.metric('推广成交占比', f"{_prs:.2f}%", _prs_d)
 
     # ── 日趋势（最近30天）──
     st.markdown('<div class="section-title">日趋势（最近30天）</div>', unsafe_allow_html=True)
@@ -817,19 +923,30 @@ with tabs[1]:
         st.info('请先在左侧选择「推广数据」，然后上传含「京东推广数据源」和「天猫推广数据源」工作表的Excel文件。')
     else:
         # ── KPI 指标 ──
-        pk1, pk2, pk3, pk4, pk5 = st.columns(5)
         _ps = promo_spend
         _ro = promo_roi
-        pk1.metric('推广花费', f"¥{_wan(_ps)}万" if _ps >= 10000 else f"¥{_ps:,.0f}")
-        pk2.metric('ROI', f"{_ro:.2f}" if _ro else '--')
         _imp = sum(r.get('_展现数', 0) for r in promo_filtered)
         _clk = sum(r.get('_点击数', 0) for r in promo_filtered)
         _ctr = _clk / _imp if _imp else 0
-        pk3.metric('点击率', f"{_ctr*100:.2f}%" if _imp else '--')
         _cpc = _ps / _clk if _clk else 0
-        pk4.metric('平均点击成本', f"¥{_cpc:.2f}" if _clk else '--')
         _da = sum(r.get('_直接订单金额', 0) for r in promo_filtered)
-        pk5.metric('直接成交金额', f"¥{_wan(_da)}万" if _da >= 10000 else f"¥{_da:,.0f}")
+        _porders = sum(1 for r in promo_filtered if r.get('_总订单金额', 0) > 0) or totals['支付买家数']
+        _p_order_cost = _ps / _porders if _porders else 0
+        _poc_m = promo_mom_fc / _porders if _porders else 0
+        _poc_y = promo_yoy_fc / _porders if _porders else 0
+        pfc_d = _promo_delta(_ps, promo_mom_fc, promo_yoy_fc, '')
+        proi_d = _promo_delta(_ro, promo_mom_roi, promo_yoy_roi, '')
+        pctr_d = _promo_delta(_ctr*100, promo_mom_ctr*100, promo_yoy_ctr*100, '%')
+        cpc_d = _promo_delta(_cpc, promo_mom_cpc, promo_yoy_cpc, '')
+        pda_d = _promo_delta(_da, promo_mom_direct, promo_yoy_direct, '')
+        poc_d_text = _promo_delta(_p_order_cost, _poc_m, _poc_y, '')
+        pk1, pk2, pk3, pk4, pk5, pk6 = st.columns(6)
+        pk1.metric('推广花费', f"¥{_wan(_ps)}万" if _ps >= 10000 else f"¥{_ps:,.0f}", pfc_d)
+        pk2.metric('ROI', f"{_ro:.2f}" if _ro else '--', proi_d)
+        pk3.metric('点击率', f"{_ctr*100:.2f}%" if _imp else '--', pctr_d)
+        pk4.metric('平均点击成本', f"¥{_cpc:.2f}" if _clk else '--', cpc_d)
+        pk5.metric('直接成交金额', f"¥{_wan(_da)}万" if _da >= 10000 else f"¥{_da:,.0f}", pda_d)
+        pk6.metric('订单成本', f"¥{_p_order_cost:.2f}", poc_d_text)
 
         # ── 推广费趋势（日/月）──
         st.markdown('<div class="section-title">推广费 & 成交金额趋势</div>', unsafe_allow_html=True)
@@ -854,22 +971,24 @@ with tabs[1]:
                                   yaxis_title='推广费(万)', yaxis2=dict(title='订单金额(万)', overlaying='y', side='right'))
             st.plotly_chart(fig, use_container_width=True)
 
-        # ── ROI 趋势（按月）──
-        st.markdown('<div class="section-title">ROI 趋势（月度）</div>', unsafe_allow_html=True)
-        _roi_m = {}
+        # ── ROI 趋势（日/月）──
+        _gran_label = '日度' if promo_gran == '按日' else '月度'
+        st.markdown(f'<div class="section-title">ROI 趋势（{_gran_label}）</div>', unsafe_allow_html=True)
+        _roi_gr = {}
         for r in promo_filtered:
             dt = r.get('_date', '')
-            if not dt or len(dt) < 7:
+            if not dt:
                 continue
-            mk = dt[:7]
-            _roi_m.setdefault(mk, {'花费': 0, '总订单金额': 0})
-            _roi_m[mk]['花费'] += r.get('_花费', 0)
-            _roi_m[mk]['总订单金额'] += r.get('_总订单金额', 0)
-        _roi_s = sorted(_roi_m.items())
+            gk = dt if promo_gran == '按日' else dt[:7]
+            _roi_gr.setdefault(gk, {'花费': 0, '总订单金额': 0})
+            _roi_gr[gk]['花费'] += r.get('_花费', 0)
+            _roi_gr[gk]['总订单金额'] += r.get('_总订单金额', 0)
+        _roi_s = sorted(_roi_gr.items())
         if _roi_s:
-            _roi_v = [{'月份': x[0], 'ROI': x[1]['总订单金额']/x[1]['花费'] if x[1]['花费'] else 0} for x in _roi_s]
-            fig = px.line(pd.DataFrame(_roi_v), x='月份', y='ROI', markers=True,
-                              title='月度ROI趋势', line_shape='spline')
+            _x_label = '日期' if promo_gran == '按日' else '月份'
+            _roi_v = [{_x_label: x[0], 'ROI': x[1]['总订单金额']/x[1]['花费'] if x[1]['花费'] else 0} for x in _roi_s]
+            fig = px.line(pd.DataFrame(_roi_v), x=_x_label, y='ROI', markers=True,
+                              title=f'{_gran_label}ROI趋势', line_shape='spline')
             fig.update_layout(height=320, template='plotly_white', yaxis_title='ROI')
             st.plotly_chart(fig, use_container_width=True)
 
@@ -1183,6 +1302,112 @@ with tabs[1]:
             st.download_button('下载单品推广分析 CSV', _sku_csv, file_name='promo_sku_analysis.csv', mime='text/csv')
         else:
             st.info('当前筛选条件下无单品推广数据')
+
+        # ── 产品线推广矩阵 ──
+        st.markdown('<div class="section-title" style="margin-top:24px;">产品线推广矩阵（按品类）</div>', unsafe_allow_html=True)
+        _cat_agg = _promo_agg(promo_filtered, '_品类')
+        _cat_yoy = _promo_agg(promo_yoy, '_品类')
+        if _cat_agg:
+            _cat_r = []
+            for k in sorted(_cat_agg.keys(), key=lambda k: _cat_agg[k]['花费'], reverse=True):
+                v = _cat_agg[k]
+                _fc = v['花费']
+                _cw = f"¥{_wan(_fc)}万" if _fc >= 10000 else f"¥{_fc:,.0f}"
+                _oa = v['总订单金额']
+                _oa_w = f"¥{_wan(_oa)}万" if _oa >= 10000 else f"¥{_oa:,.0f}"
+                _da = v['直接订单金额']
+                _da_w = f"¥{_wan(_da)}万" if _da >= 10000 else f"¥{_da:,.0f}"
+                _ri = _oa / _fc if _fc else 0
+                _dri = _da / _fc if _fc else 0
+                _rate = _fc / _oa * 100 if _oa else 0
+                _imp = v['展现数'] or 0; _clk = v['点击数'] or 0
+                _ctr_v = _clk / _imp * 100 if _imp else 0
+                _cpc_v = _fc / _clk if _clk else 0
+                _cv = v['总加购数'] / _clk * 100 if _clk else 0
+                vy = _cat_yoy.get(k, {})
+                _fc_yoy, _fc_c = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
+                _y_dri = vy.get('直接订单金额', 0) / vy.get('花费', 1) if vy.get('花费', 0) else None
+                _dri_yoy, _dri_c = _yoy_text(_dri, _y_dri) if _dri and _y_dri else ('--', '')
+                _y_cpc = vy.get('花费', 0) / vy.get('点击数', 1) if vy.get('点击数', 0) else None
+                _cpc_yoy, _cpc_c = _yoy_text(_cpc_v, _y_cpc) if _cpc_v and _y_cpc else ('--', '')
+                _y_cv = vy.get('总加购数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+                _cv_yoy, _cv_c = _yoy_text(_cv, _y_cv) if _cv and _y_cv else ('--', '')
+                _cat_r.append({
+                    '产品线': k,
+                    '花费(万)': _cw,
+                    '展现数': f"{int(_imp):,}",
+                    '点击数': f"{int(_clk):,}",
+                    '点击率': f"{_ctr_v:.2f}%",
+                    '点击成本': f"¥{_cpc_v:.2f}",
+                    '总成交(万)': _oa_w,
+                    '直接成交(万)': _da_w,
+                    'ROI': f"{_ri:.2f}",
+                    '直接ROI': f"{_dri:.2f}",
+                    '费率': f"{_rate:.2f}%",
+                    '转化率': f"{_cv:.2f}%",
+                    '花费同比': f"<span style='color:{_fc_c or '#94a3b8'}'>{_fc_yoy}</span>",
+                    '直接ROI同比': f"<span style='color:{_dri_c or '#94a3b8'}'>{_dri_yoy}</span>",
+                    'CPC同比': f"<span style='color:{_cpc_c or '#94a3b8'}'>{_cpc_yoy}</span>",
+                    '转化率同比': f"<span style='color:{_cv_c or '#94a3b8'}'>{_cv_yoy}</span>",
+                })
+            st.markdown(_html_table(_cat_r, col_widths={c: '105px' for c in _cat_r[0].keys()}, height=max(300, len(_cat_r)*34+40)), unsafe_allow_html=True)
+            _cat_csv = rows_to_csv(_cat_r, list(_cat_r[0].keys()))
+            st.download_button('下载产品线推广矩阵 CSV', _cat_csv, file_name='promo_product_line.csv', mime='text/csv')
+        else:
+            st.info('当前筛选条件下无产品线推广数据')
+
+        # ── 营销场景推广矩阵 ──
+        st.markdown('<div class="section-title" style="margin-top:24px;">营销场景推广矩阵</div>', unsafe_allow_html=True)
+        _scene_agg = _promo_agg(promo_filtered, '_营销场景')
+        _scene_yoy = _promo_agg(promo_yoy, '_营销场景')
+        if _scene_agg:
+            _scene_r = []
+            for k in sorted(_scene_agg.keys(), key=lambda k: _scene_agg[k]['花费'], reverse=True):
+                v = _scene_agg[k]
+                _fc = v['花费']
+                _cw = f"¥{_wan(_fc)}万" if _fc >= 10000 else f"¥{_fc:,.0f}"
+                _oa = v['总订单金额']
+                _oa_w = f"¥{_wan(_oa)}万" if _oa >= 10000 else f"¥{_oa:,.0f}"
+                _da = v['直接订单金额']
+                _da_w = f"¥{_wan(_da)}万" if _da >= 10000 else f"¥{_da:,.0f}"
+                _ri = _oa / _fc if _fc else 0
+                _dri = _da / _fc if _fc else 0
+                _rate = _fc / _oa * 100 if _oa else 0
+                _imp = v['展现数'] or 0; _clk = v['点击数'] or 0
+                _ctr_v = _clk / _imp * 100 if _imp else 0
+                _cpc_v = _fc / _clk if _clk else 0
+                _cv = v['总加购数'] / _clk * 100 if _clk else 0
+                vy = _scene_yoy.get(k, {})
+                _fc_yoy, _fc_c = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
+                _y_dri = vy.get('直接订单金额', 0) / vy.get('花费', 1) if vy.get('花费', 0) else None
+                _dri_yoy, _dri_c = _yoy_text(_dri, _y_dri) if _dri and _y_dri else ('--', '')
+                _y_cpc = vy.get('花费', 0) / vy.get('点击数', 1) if vy.get('点击数', 0) else None
+                _cpc_yoy, _cpc_c = _yoy_text(_cpc_v, _y_cpc) if _cpc_v and _y_cpc else ('--', '')
+                _y_cv = vy.get('总加购数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+                _cv_yoy, _cv_c = _yoy_text(_cv, _y_cv) if _cv and _y_cv else ('--', '')
+                _scene_r.append({
+                    '营销场景': k,
+                    '花费(万)': _cw,
+                    '展现数': f"{int(_imp):,}",
+                    '点击数': f"{int(_clk):,}",
+                    '点击率': f"{_ctr_v:.2f}%",
+                    '点击成本': f"¥{_cpc_v:.2f}",
+                    '总成交(万)': _oa_w,
+                    '直接成交(万)': _da_w,
+                    'ROI': f"{_ri:.2f}",
+                    '直接ROI': f"{_dri:.2f}",
+                    '费率': f"{_rate:.2f}%",
+                    '转化率': f"{_cv:.2f}%",
+                    '花费同比': f"<span style='color:{_fc_c or '#94a3b8'}'>{_fc_yoy}</span>",
+                    '直接ROI同比': f"<span style='color:{_dri_c or '#94a3b8'}'>{_dri_yoy}</span>",
+                    'CPC同比': f"<span style='color:{_cpc_c or '#94a3b8'}'>{_cpc_yoy}</span>",
+                    '转化率同比': f"<span style='color:{_cv_c or '#94a3b8'}'>{_cv_yoy}</span>",
+                })
+            st.markdown(_html_table(_scene_r, col_widths={c: '105px' for c in _scene_r[0].keys()}, height=max(300, len(_scene_r)*34+40)), unsafe_allow_html=True)
+            _scene_csv = rows_to_csv(_scene_r, list(_scene_r[0].keys()))
+            st.download_button('下载营销场景推广矩阵 CSV', _scene_csv, file_name='promo_scene.csv', mime='text/csv')
+        else:
+            st.info('当前筛选条件下无营销场景推广数据')
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 2: 时间段对比

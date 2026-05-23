@@ -1,0 +1,10 @@
+{
+  "admin_email": "gwell@tencent.com",
+  "users": {
+    "gwell": {
+      "password_hash": "b9d059f0d2d7f6935136a15ca328be917e3b24dc009ba56e5a3384cf282d4b02",
+      "role": "admin",
+      "display_name": "管理员"
+    }
+  }
+}
