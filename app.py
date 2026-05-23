@@ -1789,18 +1789,18 @@ with tabs[2]:
         _html = '<div class="styled-table-wrap" style="max-height:400px;overflow-y:auto;"><table class="styled-table"><thead>'
         # 表头第1行：指标分组
         _html += '<tr>'
-        _html += f'<th colspan="2" style="background:#e2e8f0;text-align:center;font-size:12px;">维度信息</th>'
+        _html += f'<th colspan="2" style="background:#e2e8f0;color:#1e293b;text-align:center;font-size:12px;font-weight:600;">维度信息</th>'
         for _ml, _mf, _fmt, _color in _metric_defs:
-            _html += f'<th colspan="3" style="background:{_color};text-align:center;font-size:12px;border-left:2px solid #fff;">{_ml}</th>'
+            _html += f'<th colspan="3" style="background:{_color};color:#1e293b;text-align:center;font-size:12px;font-weight:600;border-left:2px solid #fff;">{_ml}</th>'
         _html += '</tr>'
         # 表头第2行：具体列名
         _html += '<tr>'
-        _html += f'<th style="min-width:110px;background:#e2e8f0;">{_dim_label}</th>'
-        _html += '<th style="min-width:72px;background:#e0f2fe;">占比</th>'
+        _html += f'<th style="min-width:110px;background:#e2e8f0;color:#1e293b;font-weight:600;">{_dim_label}</th>'
+        _html += '<th style="min-width:72px;background:#e0f2fe;color:#1e293b;font-weight:600;">占比</th>'
         for _ml, _mf, _fmt, _color in _metric_defs:
-            _html += f'<th style="min-width:80px;background:{_color};">本期</th>'
-            _html += f'<th style="min-width:80px;background:{_color};">对比期</th>'
-            _html += f'<th style="min-width:72px;background:{_color};">变化率</th>'
+            _html += f'<th style="min-width:80px;background:{_color};color:#1e293b;font-weight:600;">本期</th>'
+            _html += f'<th style="min-width:80px;background:{_color};color:#1e293b;font-weight:600;">对比期</th>'
+            _html += f'<th style="min-width:72px;background:{_color};color:#1e293b;font-weight:600;">变化率</th>'
         _html += '</tr></thead><tbody>'
         # 数据行
         _total_row = len(dim_compare) - 1
