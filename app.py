@@ -1700,15 +1700,31 @@ with tabs[2]:
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown('---')
-    # ── 维度对比分析（受全局筛选影响）──
+    # ── 维度对比分析（受全局维度筛选影响，日期由时间段对比独立控制）──
     st.markdown('<div class="section-title">维度对比分析</div>', unsafe_allow_html=True)
 
     _dim_options = {'渠道': '渠道', '店铺': '店铺', '品类': '品类', '型号': '型号'}
     _dim_label = st.radio('对比维度', list(_dim_options.keys()), horizontal=True, key='dim_compare')
     _dim_field = _dim_options[_dim_label]
 
-    cur_dim = group(get_period_rows(daily, today_s, today_e), _dim_field)
-    prev_dim = group(get_period_rows(daily, prev_s, prev_e), _dim_field)
+    # 只按渠道/店铺/品类/型号过滤，不过滤日期，让get_period_rows独立控制时间段
+    _raw = data['daily']
+    if channel or store or category or model:
+        _filtered = []
+        for r in _raw:
+            if channel and r.get('渠道') not in channel:
+                continue
+            if store and r.get('店铺') not in store:
+                continue
+            if category and r.get('品类') not in category:
+                continue
+            if model and r.get('型号') not in model:
+                continue
+            _filtered.append(r)
+        _raw = _filtered
+
+    cur_dim = group(get_period_rows(_raw, today_s, today_e), _dim_field)
+    prev_dim = group(get_period_rows(_raw, prev_s, prev_e), _dim_field)
     prev_dim_map = {r[_dim_field]: r for r in prev_dim}
 
     _metric_fields = {
