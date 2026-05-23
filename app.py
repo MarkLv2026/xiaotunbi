@@ -371,15 +371,24 @@ def summarize(rows):
     return t
 
 def group(rows, key):
+    is_multi = isinstance(key, list)
     d = {}
     for r in rows:
-        k = r.get(key) or '未标注'
+        if is_multi:
+            k = tuple(str(r.get(f, '') or '未标注') for f in key)
+        else:
+            k = r.get(key) or '未标注'
         d.setdefault(k, {m: 0.0 for m in METRICS})
         for m in METRICS:
             d[k][m] += float(r.get(m, 0) or 0)
     out = []
     for k, v in d.items():
-        v[key] = k
+        if is_multi:
+            for i, f in enumerate(key):
+                v[f] = k[i]
+            v['_compound_key'] = ' | '.join(str(x) for x in k)
+        else:
+            v[key] = k
         v['客单价'] = v['支付金额'] / v['支付买家数'] if v['支付买家数'] else 0
         v['支付转化率'] = v['支付买家数'] / v['商品访客数'] if v['商品访客数'] else 0
         v['加购率'] = v['商品加购人数'] / v['商品访客数'] if v['商品访客数'] else 0
@@ -1704,53 +1713,75 @@ with tabs[2]:
     st.markdown('<div class="section-title">维度对比分析</div>', unsafe_allow_html=True)
 
     _dim_options = {'渠道': '渠道', '店铺': '店铺', '品类': '品类', '型号': '型号'}
-    _dim_label = st.radio('对比维度', list(_dim_options.keys()), horizontal=True, key='dim_compare')
-    _dim_field = _dim_options[_dim_label]
-
-    cur_dim = group(get_period_rows(data['daily'], today_s, today_e), _dim_field)
-    prev_dim = group(get_period_rows(data['daily'], prev_s, prev_e), _dim_field)
-    prev_dim_map = {r[_dim_field]: r for r in prev_dim}
-
-    _metric_fields = {
-        '销售额': '支付金额', '销售件数': '支付件数', '访客数': '商品访客数',
-        '转化率': '支付转化率', '客单价': '客单价',
-    }
-    _metric_format = {
-        '销售额': lambda v: f"¥{v:,.0f}", '销售件数': lambda v: f"{v:,.0f}",
-        '访客数': lambda v: f"{v:,.0f}", '转化率': lambda v: f"{v*100:.2f}%",
-        '客单价': lambda v: f"¥{v:,.2f}",
-    }
+    _dim_labels = st.multiselect('对比维度', list(_dim_options.keys()), default=['渠道'], key='dim_compare', placeholder='可多选维度组合分析')
 
     dim_compare = []
-    for r in cur_dim:
-        name = r[_dim_field]
-        prev_r = prev_dim_map.get(name, {})
-        row = {_dim_label: name}
-        for _ml, _mf in _metric_fields.items():
-            cur_v = r.get(_mf, 0) or 0
-            prev_v = prev_r.get(_mf, 0) or 0
-            _fmt = _metric_format[_ml]
-            _cur_s = _fmt(cur_v)
-            _prev_s = _fmt(prev_v)
-            chg = (cur_v - prev_v) / prev_v if prev_v else None
-            if chg is None:
-                chg_txt = '--'
-                chg_color = '#94a3b8'
+    _dim_cols = []
+
+    if _dim_labels:
+        _dim_fields = [_dim_options[d] for d in _dim_labels]
+        if len(_dim_fields) == 1:
+            _dim_field = _dim_fields[0]
+            _dim_label_display = _dim_labels[0]
+        else:
+            _dim_field = _dim_fields
+            _dim_label_display = '维度'
+
+        cur_dim = group(get_period_rows(data['daily'], today_s, today_e), _dim_field)
+        prev_dim = group(get_period_rows(data['daily'], prev_s, prev_e), _dim_field)
+
+        if isinstance(_dim_field, list):
+            prev_dim_map = {tuple(r.get(f, '') for f in _dim_field): r for r in prev_dim}
+        else:
+            prev_dim_map = {r[_dim_field]: r for r in prev_dim}
+
+        _metric_fields = {
+            '销售额': '支付金额', '销售件数': '支付件数', '访客数': '商品访客数',
+            '转化率': '支付转化率', '客单价': '客单价',
+        }
+        _metric_format = {
+            '销售额': lambda v: f"¥{v:,.0f}", '销售件数': lambda v: f"{v:,.0f}",
+            '访客数': lambda v: f"{v:,.0f}", '转化率': lambda v: f"{v*100:.2f}%",
+            '客单价': lambda v: f"¥{v:,.2f}",
+        }
+
+        for r in cur_dim:
+            if isinstance(_dim_field, list):
+                name = r.get('_compound_key', ' | '.join(str(r.get(f, '')) for f in _dim_field))
+                key = tuple(r.get(f, '') for f in _dim_field)
             else:
-                chg_txt = f"{'+' if chg >= 0 else ''}{chg*100:.1f}%"
-                chg_color = '#22c55e' if chg >= 0 else '#dc2626'
-            row[f'{_ml}(本期)'] = _cur_s
-            row[f'{_ml}(对比期)'] = _prev_s
-            row[f'{_ml}变化率'] = f"<span style='color:{chg_color}'>{chg_txt}</span>"
-        dim_compare.append(row)
+                name = r[_dim_field]
+                key = name
+            prev_r = prev_dim_map.get(key, {})
+            row = {_dim_label_display: name}
+            for _ml, _mf in _metric_fields.items():
+                cur_v = r.get(_mf, 0) or 0
+                prev_v = prev_r.get(_mf, 0) or 0
+                _fmt = _metric_format[_ml]
+                _cur_s = _fmt(cur_v)
+                _prev_s = _fmt(prev_v)
+                chg = (cur_v - prev_v) / prev_v if prev_v else None
+                if chg is None:
+                    chg_txt = '--'
+                    chg_color = '#94a3b8'
+                else:
+                    chg_txt = f"{'+' if chg >= 0 else ''}{chg*100:.1f}%"
+                    chg_color = '#22c55e' if chg >= 0 else '#dc2626'
+                row[f'{_ml}(本期)'] = _cur_s
+                row[f'{_ml}(对比期)'] = _prev_s
+                row[f'{_ml}变化率'] = f"<span style='color:{chg_color}'>{chg_txt}</span>"
+            dim_compare.append(row)
 
-    if dim_compare:
-        _dim_cols = list(dim_compare[0].keys())
-        _dim_w = {c: '95px' for c in _dim_cols}
-        _dim_w[_dim_label] = '120px'
-        st.markdown(_html_table(dim_compare, col_widths=_dim_w, height=max(300, len(dim_compare)*34+40)), unsafe_allow_html=True)
+        if dim_compare:
+            _dim_cols = list(dim_compare[0].keys())
+            _dim_w = {c: '95px' for c in _dim_cols}
+            _dim_w[_dim_label_display] = '180px' if isinstance(_dim_field, list) else '120px'
+            st.markdown(_html_table(dim_compare, col_widths=_dim_w, height=max(300, len(dim_compare)*34+40)), unsafe_allow_html=True)
+    else:
+        st.info('请在上方选择至少一个对比维度')
 
-    st.download_button('下载维度对比 CSV', rows_to_csv(dim_compare, _dim_cols) if dim_compare else '', file_name=f'dimension_compare_{_dim_label}.csv', mime='text/csv')
+    _fname_dim = f'dimension_compare_{"_".join(_dim_labels) if _dim_labels else "all"}.csv'
+    st.download_button('下载维度对比 CSV', rows_to_csv(dim_compare, _dim_cols) if dim_compare else '', file_name=_fname_dim, mime='text/csv')
     st.download_button('下载时间段对比 CSV', rows_to_csv(compare_rows, ['指标', '本期数值', '对比期数值', '变化量', '变化率(%)']), file_name='period_comparison.csv', mime='text/csv')
 
 # ═══════════════════════════════════════════════════════════════
