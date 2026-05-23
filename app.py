@@ -557,6 +557,8 @@ promo_yoy_roi = promo_yoy_amt / promo_yoy_fc if promo_yoy_fc else 0
 promo_yoy_droi = promo_yoy_direct / promo_yoy_fc if promo_yoy_fc else 0
 promo_yoy_cpc = promo_yoy_fc / promo_yoy_clicks if promo_yoy_clicks else 0
 promo_yoy_ctr = promo_yoy_clicks / promo_yoy_impress if promo_yoy_impress else 0
+promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
+promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
 
 # YoY 聚合辅助
 def _promo_agg(rows, key_field):
