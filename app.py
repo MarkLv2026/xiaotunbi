@@ -1727,25 +1727,30 @@ with tabs[2]:
     prev_dim = group(get_period_rows(_raw, prev_s, prev_e), _dim_field)
     prev_dim_map = {r[_dim_field]: r for r in prev_dim}
 
-    _metric_fields = {
-        '销售额': '支付金额', '销售件数': '支付件数', '访客数': '商品访客数',
-        '转化率': '支付转化率', '客单价': '客单价',
-    }
-    _metric_format = {
-        '销售额': lambda v: f"¥{v:,.0f}", '销售件数': lambda v: f"{v:,.0f}",
-        '访客数': lambda v: f"{v:,.0f}", '转化率': lambda v: f"{v*100:.2f}%",
-        '客单价': lambda v: f"¥{v:,.2f}",
-    }
+    _metric_defs = [
+        ('销售额',  '支付金额',   lambda v: f"¥{v:,.0f}",    '#fef3c7'),  # amber
+        ('销售件数','支付件数',   lambda v: f"{v:,.0f}",     '#dbeafe'),  # blue
+        ('访客数',  '商品访客数', lambda v: f"{v:,.0f}",     '#dcfce7'),  # green
+        ('转化率',  '支付转化率', lambda v: f"{v*100:.2f}%", '#f3e8ff'),  # purple
+        ('客单价',  '客单价',     lambda v: f"¥{v:,.2f}",    '#ccfbf1'),  # teal
+    ]
+
+    # 计算本期总销售额（用于占比）
+    _cur_total_amt = sum(r.get('支付金额', 0) or 0 for r in cur_dim)
 
     dim_compare = []
     for r in cur_dim:
         name = r[_dim_field]
         prev_r = prev_dim_map.get(name, {})
-        row = {_dim_label: name}
-        for _ml, _mf in _metric_fields.items():
+        _amt = r.get('支付金额', 0) or 0
+        _share = _amt / _cur_total_amt if _cur_total_amt else 0
+        row = {
+            _dim_label: name,
+            '销售额占比': f"{_share*100:.1f}%",
+        }
+        for _ml, _mf, _fmt, _color in _metric_defs:
             cur_v = r.get(_mf, 0) or 0
             prev_v = prev_r.get(_mf, 0) or 0
-            _fmt = _metric_format[_ml]
             _cur_s = _fmt(cur_v)
             _prev_s = _fmt(prev_v)
             chg = (cur_v - prev_v) / prev_v if prev_v else None
@@ -1760,11 +1765,57 @@ with tabs[2]:
             row[f'{_ml}变化率'] = f"<span style='color:{chg_color}'>{chg_txt}</span>"
         dim_compare.append(row)
 
+    # 合计行
+    if dim_compare:
+        _sum_row = {_dim_label: '<b>合计</b>', '销售额占比': '100%'}
+        for _ml, _mf, _fmt, _color in _metric_defs:
+            _cur_sum = sum(r.get(_mf, 0) or 0 for r in cur_dim)
+            _prev_sum = sum(r.get(_mf, 0) or 0 for r in prev_dim)
+            _sum_row[f'{_ml}(本期)'] = _fmt(_cur_sum)
+            _sum_row[f'{_ml}(对比期)'] = _fmt(_prev_sum)
+            chg = (_cur_sum - _prev_sum) / _prev_sum if _prev_sum else None
+            if chg is None:
+                chg_txt = '--'
+                chg_color = '#94a3b8'
+            else:
+                chg_txt = f"{'+' if chg >= 0 else ''}{chg*100:.1f}%"
+                chg_color = '#22c55e' if chg >= 0 else '#dc2626'
+            _sum_row[f'{_ml}变化率'] = f"<span style='color:{chg_color}'>{chg_txt}</span>"
+        dim_compare.append(_sum_row)
+
     if dim_compare:
         _dim_cols = list(dim_compare[0].keys())
-        _dim_w = {c: '95px' for c in _dim_cols}
-        _dim_w[_dim_label] = '120px'
-        st.markdown(_html_table(dim_compare, col_widths=_dim_w, height=max(300, len(dim_compare)*34+40)), unsafe_allow_html=True)
+        # 构建带色块分组的自定义 HTML 表格
+        _html = '<div class="styled-table-wrap" style="max-height:400px;overflow-y:auto;"><table class="styled-table"><thead>'
+        # 表头第1行：指标分组
+        _html += '<tr>'
+        _html += f'<th colspan="2" style="background:#e2e8f0;text-align:center;font-size:12px;">维度信息</th>'
+        for _ml, _mf, _fmt, _color in _metric_defs:
+            _html += f'<th colspan="3" style="background:{_color};text-align:center;font-size:12px;border-left:2px solid #fff;">{_ml}</th>'
+        _html += '</tr>'
+        # 表头第2行：具体列名
+        _html += '<tr>'
+        _html += f'<th style="min-width:110px;background:#e2e8f0;">{_dim_label}</th>'
+        _html += '<th style="min-width:72px;background:#e0f2fe;">占比</th>'
+        for _ml, _mf, _fmt, _color in _metric_defs:
+            _html += f'<th style="min-width:80px;background:{_color};">本期</th>'
+            _html += f'<th style="min-width:80px;background:{_color};">对比期</th>'
+            _html += f'<th style="min-width:72px;background:{_color};">变化率</th>'
+        _html += '</tr></thead><tbody>'
+        # 数据行
+        _total_row = len(dim_compare) - 1
+        for i, r in enumerate(dim_compare):
+            is_total = (i == _total_row)
+            bg = '#fff7ed' if is_total else ('#fafafa' if i % 2 == 0 else 'white')
+            fw = 'bold' if is_total else 'normal'
+            _html += f'<tr style="background:{bg};font-weight:{fw};">'
+            for j, c in enumerate(_dim_cols):
+                val = r.get(c, '')
+                align = '' if j <= 1 else 'text-align:right;'
+                _html += f'<td style="{align}">{val}</td>'
+            _html += '</tr>'
+        _html += '</tbody></table></div>'
+        st.markdown(_html, unsafe_allow_html=True)
 
     st.download_button('下载维度对比 CSV', rows_to_csv(dim_compare, _dim_cols) if dim_compare else '', file_name=f'dimension_compare_{_dim_label}.csv', mime='text/csv')
     st.download_button('下载时间段对比 CSV', rows_to_csv(compare_rows, ['指标', '本期数值', '对比期数值', '变化量', '变化率(%)']), file_name='period_comparison.csv', mime='text/csv')
