@@ -1700,22 +1700,57 @@ with tabs[2]:
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown('---')
-    st.markdown('<div class="section-title">渠道维度对比</div>', unsafe_allow_html=True)
-    cur_ch = group(get_period_rows(data['daily'], today_s, today_e), '渠道')
-    prev_ch = group(get_period_rows(data['daily'], prev_s, prev_e), '渠道')
-    prev_ch_map = {r['渠道']: r for r in prev_ch}
-    ch_compare = []
-    for r in cur_ch:
-        name = r['渠道']
-        prev_r = prev_ch_map.get(name, {})
-        prev_amt = prev_r.get('支付金额', 0)
-        cur_amt = r['支付金额']
-        chg = (cur_amt - prev_amt) / prev_amt if prev_amt else None
-        ch_compare.append({'渠道': name, '本期金额': f"¥{cur_amt:,.0f}",
-                            '对比期金额': f"¥{prev_amt:,.0f}",
-                            '变化率(%)': f'{chg*100:+.1f}%' if chg is not None else '--'})
-    if ch_compare:
-        st.dataframe(df(ch_compare), use_container_width=True, hide_index=True)
+    # ── 维度对比分析（独立切片器，不受全局筛选影响）──
+    st.markdown('<div class="section-title">维度对比分析</div>', unsafe_allow_html=True)
+
+    _dim_options = {'渠道': '渠道', '店铺': '店铺', '品类': '品类', '型号': '型号'}
+    _dim_label = st.radio('对比维度', list(_dim_options.keys()), horizontal=True, key='dim_compare')
+    _dim_field = _dim_options[_dim_label]
+
+    cur_dim = group(get_period_rows(data['daily'], today_s, today_e), _dim_field)
+    prev_dim = group(get_period_rows(data['daily'], prev_s, prev_e), _dim_field)
+    prev_dim_map = {r[_dim_field]: r for r in prev_dim}
+
+    _metric_fields = {
+        '销售额': '支付金额', '销售件数': '支付件数', '访客数': '商品访客数',
+        '转化率': '支付转化率', '客单价': '客单价',
+    }
+    _metric_format = {
+        '销售额': lambda v: f"¥{v:,.0f}", '销售件数': lambda v: f"{v:,.0f}",
+        '访客数': lambda v: f"{v:,.0f}", '转化率': lambda v: f"{v*100:.2f}%",
+        '客单价': lambda v: f"¥{v:,.2f}",
+    }
+
+    dim_compare = []
+    for r in cur_dim:
+        name = r[_dim_field]
+        prev_r = prev_dim_map.get(name, {})
+        row = {_dim_label: name}
+        for _ml, _mf in _metric_fields.items():
+            cur_v = r.get(_mf, 0) or 0
+            prev_v = prev_r.get(_mf, 0) or 0
+            _fmt = _metric_format[_ml]
+            _cur_s = _fmt(cur_v)
+            _prev_s = _fmt(prev_v)
+            chg = (cur_v - prev_v) / prev_v if prev_v else None
+            if chg is None:
+                chg_txt = '--'
+                chg_color = '#94a3b8'
+            else:
+                chg_txt = f"{'+' if chg >= 0 else ''}{chg*100:.1f}%"
+                chg_color = '#22c55e' if chg >= 0 else '#dc2626'
+            row[f'{_ml}(本期)'] = _cur_s
+            row[f'{_ml}(对比期)'] = _prev_s
+            row[f'{_ml}变化率'] = f"<span style='color:{chg_color}'>{chg_txt}</span>"
+        dim_compare.append(row)
+
+    if dim_compare:
+        _dim_cols = list(dim_compare[0].keys())
+        _dim_w = {c: '95px' for c in _dim_cols}
+        _dim_w[_dim_label] = '120px'
+        st.markdown(_html_table(dim_compare, col_widths=_dim_w, height=max(300, len(dim_compare)*34+40)), unsafe_allow_html=True)
+
+    st.download_button('下载维度对比 CSV', rows_to_csv(dim_compare, _dim_cols) if dim_compare else '', file_name=f'dimension_compare_{_dim_label}.csv', mime='text/csv')
     st.download_button('下载时间段对比 CSV', rows_to_csv(compare_rows, ['指标', '本期数值', '对比期数值', '变化量', '变化率(%)']), file_name='period_comparison.csv', mime='text/csv')
 
 # ═══════════════════════════════════════════════════════════════
