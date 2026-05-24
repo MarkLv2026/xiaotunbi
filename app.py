@@ -261,13 +261,14 @@ def load_promo_data(file_bytes: bytes):
                     r.get('订单客户数', None) or r.get('支付买家数', None) or
                     r.get('成交买家数', None) or 0)
             r['_成交客户数'] = float(cust) if cust not in (None, '') else 0.0
-            # 总成交订单量 — 用于总转化率（=总成交订单量/点击数）
-            total_orders = (r.get('成交订单数', None) or r.get('订单数', None) or
+            # 总成交订单量 — 用于总转化率（=总订单行/点击数）
+            total_orders = (r.get('总订单行', None) or r.get('订单行', None) or
+                           r.get('成交订单数', None) or r.get('订单数', None) or
                            r.get('总成交订单数', None) or r.get('总订单数', None) or 0)
             r['_总成交订单量'] = float(total_orders) if total_orders not in (None, '') else 0.0
-            # 直接订单量 — 用于直接转化率（=直接订单量/点击数）
-            direct_orders = (r.get('直接成交订单数', None) or r.get('直接订单数', None) or
-                            r.get('直接成交订单量', None) or 0)
+            # 直接订单量 — 用于直接转化率（=直接订单行/点击数）
+            direct_orders = (r.get('直接订单行', None) or r.get('直接成交订单数', None) or
+                            r.get('直接订单数', None) or r.get('直接成交订单量', None) or 0)
             r['_直接订单量'] = float(direct_orders) if direct_orders not in (None, '') else 0.0
             roi = r.get('投产比', None) or r.get('投产比', 0)
             r['_投产比'] = float(roi) if roi not in (None, '') else 0.0
@@ -826,9 +827,9 @@ with tabs[0]:
         _pctr_d = _promo_delta(promo_ctr*100, promo_mom_ctr*100, promo_yoy_ctr*100, '%')
         _pcpc_d = _promo_delta(promo_cpc, promo_mom_cpc, promo_yoy_cpc, '')
         _poc_d = _promo_delta(promo_order_cost, promo_mom_order_cost, promo_yoy_order_cost, '')
-        _prs = promo_direct_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
-        _prs_m = promo_mom_direct / totals['支付金额'] * 100 if totals['支付金额'] else 0
-        _prs_y = promo_yoy_direct / totals['支付金额'] * 100 if totals['支付金额'] else 0
+        _prs = promo_order_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
+        _prs_m = promo_mom_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
+        _prs_y = promo_yoy_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
         _prs_d = _promo_delta(_prs, _prs_m, _prs_y, '%')
         k11, k12, k13, k14, k15 = st.columns(5)
         k11.metric('直接ROI', f"{promo_direct_roi:.2f}" if promo_direct_roi else '--', _pdroi_d)
@@ -1029,14 +1030,14 @@ with tabs[1]:
         proi_d = _promo_delta(_ro, promo_mom_roi, promo_yoy_roi, '')
         pctr_d = _promo_delta(_ctr*100, promo_mom_ctr*100, promo_yoy_ctr*100, '%')
         cpc_d = _promo_delta(_cpc, promo_mom_cpc, promo_yoy_cpc, '')
-        pda_d = _promo_delta(_da, promo_mom_direct, promo_yoy_direct, '')
+        pda_d = _promo_delta(_da, promo_mom_amt, promo_yoy_amt, '')
         poc_d_text = _promo_delta(_p_order_cost, _poc_m, _poc_y, '')
         pk1, pk2, pk3, pk4, pk5, pk6 = st.columns(6)
         pk1.metric('推广花费', f"¥{_wan(_ps)}万" if _ps >= 10000 else f"¥{_ps:,.0f}", pfc_d)
         pk2.metric('ROI', f"{_ro:.2f}" if _ro else '--', proi_d)
         pk3.metric('点击率', f"{_ctr*100:.2f}%" if _imp else '--', pctr_d)
         pk4.metric('平均点击成本', f"¥{_cpc:.2f}" if _clk else '--', cpc_d)
-        pk5.metric('直接成交金额', f"¥{_wan(_da)}万" if _da >= 10000 else f"¥{_da:,.0f}", pda_d)
+        pk5.metric('总成交金额', f"¥{_wan(_da)}万" if _da >= 10000 else f"¥{_da:,.0f}", pda_d)
         pk6.metric('订单成本', f"¥{_p_order_cost:.2f}", poc_d_text)
 
         # ── 推广费趋势（日/月）──
