@@ -3065,267 +3065,260 @@ with tabs[6]:
         mime='text/csv')
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 7: 透视表分析
+# TAB 7: 透视表分析（单期数据，无对比列）
 # ═══════════════════════════════════════════════════════════════
 with tabs[7]:
     st.markdown('<div class="section-title">透视表分析</div>', unsafe_allow_html=True)
-    st.caption('类似 Excel 透视表：选择行维度、值指标，自由组合分析角度')
 
     _pv_dim_opts = ['渠道', '店铺', '品类', '型号']
     _pv_promo_dim_opts = ['_渠道', '_店铺', '_品类', '_型号']
-    _pv_sales_metrics = ['支付金额', '支付件数', '商品访客数', '支付买家数',
-                          '支付转化率', '客单价', '商品加购人数', '加购率', '成功退款金额', '退款率']
-    _pv_promo_metrics = ['_花费', '_展现数', '_点击数', '_CPC', '_点击率',
-                          '_总订单金额', '_直接订单金额', '_总ROI', '_直接ROI',
-                          '_总转化率', '_直接转化率', '_总加购数']
+
+    # 销售可选指标（含占比/计算字段标记）
+    _pv_sales_metrics_all = [
+        '商品访客数', '访客占比', '支付买家数', '支付件数',
+        '支付金额', '成交占比', '支付转化率', '商品加购人数',
+        '加购率', 'UV价值', '客单价',
+    ]
+    # 推广可选指标（含占比/计算字段标记）
+    _pv_promo_metrics_all = [
+        '_花费', '_花费占比', '_展现数', '_CPC', '_点击数', '_点击率',
+        '_直接订单金额', '_直接金额占比', '_总订单金额', '_总金额占比',
+        '_直接ROI', '_总ROI', '_总转化率', '_直接转化率',
+        '_总加购数', '_总加购率', '_总订单成本', '_直接订单成本',
+    ]
 
     # ══════════════════════════════════════
     # 子专区1：销售数据透视表
     # ══════════════════════════════════════
     st.markdown('#### 销售数据透视表')
-    _p1_data_col, _p1_cfg_col = st.columns([2, 1])
 
-    with _p1_cfg_col:
-        with st.expander('字段配置', expanded=False):
-            _p1_row_dims = st.multiselect('行维度（多级分组）', _pv_dim_opts,
-                                            default=['品类'], key='pv1_row')
-            _p1_vals = st.multiselect('值指标', _pv_sales_metrics,
-                                        default=_pv_sales_metrics, key='pv1_val')
-            _p1_top_n = st.number_input('显示前N行（0=全部）', min_value=0, max_value=100,
-                                         value=0, key='pv1_top')
+    # 字段配置行（置顶，水平排列）
+    _p1_cfg_c1, _p1_cfg_c2, _p1_cfg_c3 = st.columns([1, 2, 1])
+    with _p1_cfg_c1:
+        _p1_row_dims = st.multiselect('行维度', _pv_dim_opts, default=['品类'], key='pv1_row')
+    with _p1_cfg_c2:
+        _p1_vals = st.multiselect('值指标', _pv_sales_metrics_all,
+                                   default=_pv_sales_metrics_all, key='pv1_val')
+    with _p1_cfg_c3:
+        _p1_top_n = st.number_input('前N行（0=全部）', min_value=0, max_value=100,
+                                     value=0, key='pv1_top')
 
-    with _p1_data_col:
-        if _p1_vals and _p1_row_dims:
-            _p1_raw = data['daily']
-            if channel or store or category or model:
-                _p1_filtered = []
-                for r in _p1_raw:
-                    if channel and r.get('渠道') not in channel: continue
-                    if store and r.get('店铺') not in store: continue
-                    if category and r.get('品类') not in category: continue
-                    if model and r.get('型号') not in model: continue
-                    _p1_filtered.append(r)
-                _p1_raw = _p1_filtered
+    if _p1_vals and _p1_row_dims:
+        _p1_raw = data['daily']
+        if channel or store or category or model:
+            _p1_filtered = []
+            for r in _p1_raw:
+                if channel and r.get('渠道') not in channel: continue
+                if store and r.get('店铺') not in store: continue
+                if category and r.get('品类') not in category: continue
+                if model and r.get('型号') not in model: continue
+                _p1_filtered.append(r)
+            _p1_raw = _p1_filtered
 
-            _p1_cur_rows = get_period_rows(_p1_raw, today_s, today_e)
-            _p1_prev_rows = get_period_rows(_p1_raw, prev_s, prev_e)
+        _p1_rows = get_period_rows(_p1_raw, today_s, today_e)
 
-            def _pv_group(rows, row_dims, val_metrics):
-                agg = {}
-                for r in rows:
-                    rk = tuple((r.get(d) or '未标注') for d in row_dims)
-                    agg.setdefault(rk, {m: 0.0 for m in val_metrics})
-                    for m in val_metrics:
-                        agg[rk][m] += float(r.get(m, 0) or 0)
-                for rk, v in agg.items():
-                    if '支付买家数' in v and '商品访客数' in v:
-                        v['支付转化率'] = v['支付买家数'] / v['商品访客数'] if v['商品访客数'] else 0
-                    if '支付金额' in v and '支付买家数' in v:
-                        v['客单价'] = v['支付金额'] / v['支付买家数'] if v['支付买家数'] else 0
-                    if '商品加购人数' in v and '商品访客数' in v:
-                        v['加购率'] = v['商品加购人数'] / v['商品访客数'] if v['商品访客数'] else 0
-                    if '成功退款金额' in v and '支付金额' in v:
-                        v['退款率'] = v['成功退款金额'] / v['支付金额'] if v['支付金额'] else 0
-                return agg
+        # 聚合：只汇总原始可加字段，计算字段后处理
+        _P1_RAW_FIELDS = ['商品访客数', '支付买家数', '支付件数', '支付金额', '商品加购人数', '成功退款金额']
 
-            _p1_cur_agg = _pv_group(_p1_cur_rows, _p1_row_dims, _p1_vals)
-            _p1_prev_agg = _pv_group(_p1_prev_rows, _p1_row_dims, _p1_vals)
-            _p1_row_keys = sorted(_p1_cur_agg.keys())
+        def _pv1_group(rows, row_dims):
+            agg = {}
+            for r in rows:
+                rk = tuple((r.get(d) or '未标注') for d in row_dims)
+                if rk not in agg:
+                    agg[rk] = {f: 0.0 for f in _P1_RAW_FIELDS}
+                for f in _P1_RAW_FIELDS:
+                    agg[rk][f] += float(r.get(f, 0) or 0)
+            return agg
 
-            _p1_cols = _p1_vals
-            _p1_grand = {m: sum(v[m] for v in _p1_cur_agg.values()) for m in _p1_vals}
-            if _p1_top_n > 0:
-                _p1_row_keys = sorted(_p1_cur_agg.keys(),
-                                      key=lambda k: sum(_p1_cur_agg[k].get(m, 0) for m in _p1_vals),
-                                      reverse=True)[:_p1_top_n]
+        _p1_agg = _pv1_group(_p1_rows, _p1_row_dims)
+        _p1_total_visitors = sum(v['商品访客数'] for v in _p1_agg.values()) or 1
+        _p1_total_amt = sum(v['支付金额'] for v in _p1_agg.values()) or 1
 
-            _th_html = '<thead><tr>'
-            for d in _p1_row_dims:
-                _th_html += '<th style="background:#e2e8f0;color:#1e293b;font-weight:600;">' + d + '</th>'
+        # 计算派生字段
+        for rk, v in _p1_agg.items():
+            v['支付转化率'] = v['支付买家数'] / v['商品访客数'] if v['商品访客数'] else 0
+            v['客单价'] = v['支付金额'] / v['支付买家数'] if v['支付买家数'] else 0
+            v['加购率'] = v['商品加购人数'] / v['商品访客数'] if v['商品访客数'] else 0
+            v['退款率'] = v['成功退款金额'] / v['支付金额'] if v['支付金额'] else 0
+            v['UV价值'] = v['支付金额'] / v['商品访客数'] if v['商品访客数'] else 0
+            v['访客占比'] = v['商品访客数'] / _p1_total_visitors
+            v['成交占比'] = v['支付金额'] / _p1_total_amt
+
+        _p1_row_keys = sorted(_p1_agg.keys())
+        if _p1_top_n > 0:
+            _p1_row_keys = sorted(_p1_agg.keys(),
+                                  key=lambda k: _p1_agg[k].get('支付金额', 0),
+                                  reverse=True)[:_p1_top_n]
+
+        # 合计行
+        _p1_grand = {f: sum(v[f] for v in _p1_agg.values()) for f in _P1_RAW_FIELDS}
+        _p1_grand['支付转化率'] = _p1_grand['支付买家数'] / _p1_grand['商品访客数'] if _p1_grand['商品访客数'] else 0
+        _p1_grand['客单价'] = _p1_grand['支付金额'] / _p1_grand['支付买家数'] if _p1_grand['支付买家数'] else 0
+        _p1_grand['加购率'] = _p1_grand['商品加购人数'] / _p1_grand['商品访客数'] if _p1_grand['商品访客数'] else 0
+        _p1_grand['退款率'] = _p1_grand['成功退款金额'] / _p1_grand['支付金额'] if _p1_grand['支付金额'] else 0
+        _p1_grand['UV价值'] = _p1_grand['支付金额'] / _p1_grand['商品访客数'] if _p1_grand['商品访客数'] else 0
+        _p1_grand['访客占比'] = 1.0
+        _p1_grand['成交占比'] = 1.0
+
+        def _fmt_s1(mc, val):
+            if mc in ('支付金额', 'UV价值', '客单价'):
+                return '¥{:,.0f}'.format(val)
+            elif mc in ('支付转化率', '加购率', '退款率', '访客占比', '成交占比'):
+                return '{:.2f}%'.format(val * 100)
+            elif mc == '商品访客数':
+                return '{:,.0f}'.format(int(val))
+            else:
+                return '{:,.0f}'.format(int(val))
+
+        _p1_cols = _p1_vals
+        _th_html = '<thead><tr>'
+        for d in _p1_row_dims:
+            _th_html += '<th style="background:#e2e8f0;color:#1e293b;font-weight:600;padding:6px 10px;">' + d + '</th>'
+        for mc in _p1_cols:
+            _th_html += '<th style="background:#fef9c3;color:#1e293b;font-weight:600;text-align:right;padding:6px 10px;">' + mc + '</th>'
+        _th_html += '</tr></thead>'
+
+        _tb_html = '<tbody>'
+        for rk in _p1_row_keys:
+            _tb_html += '<tr>'
+            for i, d in enumerate(_p1_row_dims):
+                _tb_html += '<td style="padding:5px 10px;">' + str(rk[i]) + '</td>'
             for mc in _p1_cols:
-                _th_html += '<th style="background:#fef9c3;color:#1e293b;font-weight:600;text-align:center;" colspan="3">' + mc + '</th>'
-            _th_html += '</tr><tr>'
-            for d in _p1_row_dims:
-                _th_html += '<th style="background:#e2e8f0;color:#1e293b;font-weight:600;"></th>'
-            for mc in _p1_cols:
-                _th_html += '<th style="background:#fef9c3;color:#1e293b;font-weight:600;">本期</th>'
-                _th_html += '<th style="background:#fef9c3;color:#1e293b;font-weight:600;">对比期</th>'
-                _th_html += '<th style="background:#fef9c3;color:#1e293b;font-weight:600;">变化率</th>'
-            _th_html += '</tr></thead>'
+                _v = _p1_agg.get(rk, {}).get(mc, 0) or 0
+                _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_s1(mc, _v) + '</td>'
+            _tb_html += '</tr>'
+        _tb_html += '<tr style="background:#fff7ed;font-weight:bold;">'
+        for i, d in enumerate(_p1_row_dims):
+            _tb_html += '<td style="padding:5px 10px;">' + ('合计' if i == 0 else '') + '</td>'
+        for mc in _p1_cols:
+            _v = _p1_grand.get(mc, 0) or 0
+            _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_s1(mc, _v) + '</td>'
+        _tb_html += '</tr></tbody>'
 
-            _tb_html = '<tbody>'
-            for rk in _p1_row_keys:
-                _tb_html += '<tr>'
-                for i, d in enumerate(_p1_row_dims):
-                    _tb_html += '<td>' + str(rk[i]) + '</td>'
-                for mc in _p1_cols:
-                    _cv = _p1_cur_agg.get(rk, {}).get(mc, 0) or 0
-                    _pv = _p1_prev_agg.get(rk, {}).get(mc, 0) or 0
-                    if mc in ['支付金额', '成功退款金额']:
-                        _cv_s = '¥{:,.0f}'.format(_cv); _pv_s = '¥{:,.0f}'.format(_pv)
-                    elif mc in ['支付转化率', '加购率', '退款率']:
-                        _cv_s = '{:.2f}%'.format(_cv*100); _pv_s = '{:.2f}%'.format(_pv*100)
-                    else:
-                        _cv_s = '{:,.0f}'.format(_cv); _pv_s = '{:,.0f}'.format(_pv)
-                    if _pv != 0:
-                        _chg = (_cv - _pv) / _pv
-                        _sign = '+' if _chg >= 0 else ''
-                        _chg_s = _sign + '{:.1f}%'.format(_chg*100)
-                        _chg_c = '#22c55e' if _chg >= 0 else '#dc2626'
-                    else:
-                        _chg_s = '--'; _chg_c = '#94a3b8'
-                    _tb_html += '<td style="text-align:right;">' + _cv_s + '</td>'
-                    _tb_html += '<td style="text-align:right;">' + _pv_s + '</td>'
-                    _tb_html += '<td style="text-align:right;color:' + _chg_c + ';">' + _chg_s + '</td>'
-                _tb_html += '</tr>'
-
-            _tb_html += '<tr style="background:#fff7ed;font-weight:bold;">'
-            for d in _p1_row_dims:
-                _tb_html += '<td>合计</td>'
-            for mc in _p1_cols:
-                _cv = _p1_grand.get(mc, 0) or 0
-                _pv = sum(v.get(mc, 0) for v in _p1_prev_agg.values()) or 0
-                if mc in ['支付金额', '成功退款金额']:
-                    _cv_s = '¥{:,.0f}'.format(_cv); _pv_s = '¥{:,.0f}'.format(_pv)
-                elif mc in ['支付转化率', '加购率', '退款率']:
-                    _cv_s = '{:.2f}%'.format(_cv*100); _pv_s = '{:.2f}%'.format(_pv*100)
-                else:
-                    _cv_s = '{:,.0f}'.format(_cv); _pv_s = '{:,.0f}'.format(_pv)
-                if _pv != 0:
-                    _chg = (_cv - _pv) / _pv
-                    _sign = '+' if _chg >= 0 else ''
-                    _chg_s = _sign + '{:.1f}%'.format(_chg*100)
-                    _chg_c = '#22c55e' if _chg >= 0 else '#dc2626'
-                else:
-                    _chg_s = '--'; _chg_c = '#94a3b8'
-                _tb_html += '<td style="text-align:right;">' + _cv_s + '</td>'
-                _tb_html += '<td style="text-align:right;">' + _pv_s + '</td>'
-                _tb_html += '<td style="text-align:right;color:' + _chg_c + ';">' + _chg_s + '</td>'
-            _tb_html += '</tr></tbody>'
-
-            _html = '<div class="styled-table-wrap" style="max-height:600px;overflow-y:auto;"><table class="styled-table">' + _th_html + _tb_html + '</table></div>'
-            st.markdown(_html, unsafe_allow_html=True)
-        else:
-            st.info('请选择至少一个行维度和一个值指标')
+        _html = '<div class="styled-table-wrap" style="max-height:600px;overflow-y:auto;overflow-x:auto;"><table class="styled-table">' + _th_html + _tb_html + '</table></div>'
+        st.markdown(_html, unsafe_allow_html=True)
+    else:
+        st.info('请选择至少一个行维度和一个值指标')
 
     # ══════════════════════════════════════
     # 子专区2：推广数据透视表
     # ══════════════════════════════════════
     st.markdown('---')
     st.markdown('#### 推广数据透视表')
-    _p2_data_col, _p2_cfg_col = st.columns([2, 1])
 
-    with _p2_cfg_col:
-        with st.expander('字段配置', expanded=False):
-            _p2_row_dims = st.multiselect('行维度（多级分组）', _pv_promo_dim_opts,
-                                            default=['_品类'], key='pv2_row')
-            _p2_vals = st.multiselect('值指标', _pv_promo_metrics,
-                                        default=_pv_promo_metrics, key='pv2_val')
-            _p2_top_n = st.number_input('显示前N行（0=全部）', min_value=0, max_value=100,
-                                         value=0, key='pv2_top')
+    # 字段配置行（置顶，水平排列）
+    _p2_cfg_c1, _p2_cfg_c2, _p2_cfg_c3 = st.columns([1, 2, 1])
+    with _p2_cfg_c1:
+        _p2_row_dims = st.multiselect('行维度', _pv_promo_dim_opts, default=['_品类'], key='pv2_row')
+    with _p2_cfg_c2:
+        _p2_vals = st.multiselect('值指标', _pv_promo_metrics_all,
+                                   default=_pv_promo_metrics_all, key='pv2_val')
+    with _p2_cfg_c3:
+        _p2_top_n = st.number_input('前N行（0=全部）', min_value=0, max_value=100,
+                                     value=0, key='pv2_top')
 
-    with _p2_data_col:
-        if _p2_vals and _p2_row_dims:
-            _p2_raw = promo_rows if promo_rows else []
-            if channel and _p2_raw:
-                _p2_raw = [r for r in _p2_raw if r.get('_渠道') in channel]
+    if _p2_vals and _p2_row_dims:
+        _p2_raw = promo_rows if promo_rows else []
+        if channel and _p2_raw:
+            _p2_raw = [r for r in _p2_raw if r.get('_渠道') in channel]
 
-            def _pv_group_promo(rows, row_dims, val_metrics):
-                agg = {}
-                for r in rows:
-                    rk = tuple((r.get(d) or '未标注') for d in row_dims)
-                    agg.setdefault(rk, {m: 0.0 for m in val_metrics})
-                    for m in val_metrics:
-                        agg[rk][m] += float(r.get(m, 0) or 0)
-                for rk, v in agg.items():
-                    if '_点击数' in v and '_展现数' in v:
-                        v['_点击率'] = v['_点击数'] / v['_展现数'] if v['_展现数'] else 0
-                    if '_花费' in v and '_点击数' in v:
-                        v['_CPC'] = v['_花费'] / v['_点击数'] if v['_点击数'] else 0
-                    if '_总订单金额' in v and '_花费' in v and v['_花费']:
-                        v['_总ROI'] = v['_总订单金额'] / v['_花费']
-                    if '_直接订单金额' in v and '_花费' in v and v['_花费']:
-                        v['_直接ROI'] = v['_直接订单金额'] / v['_花费']
-                    if '_点击数' in v:
-                        v['_总转化率'] = v.get('_总订单数', 0) / v['_点击数'] if v['_点击数'] else 0
-                        v['_直接转化率'] = v.get('_直接订单数', 0) / v['_点击数'] if v['_点击数'] else 0
-                return agg
+        _P2_RAW_FIELDS = ['_花费', '_展现数', '_点击数', '_总订单金额', '_直接订单金额', '_总加购数']
 
-            _p2_cur_agg = _pv_group_promo(_p2_raw, _p2_row_dims, _p2_vals)
-            _p2_row_keys = sorted(_p2_cur_agg.keys())
-            _p2_grand = {m: sum(v[m] for v in _p2_cur_agg.values()) for m in _p2_vals}
-            if _p2_top_n > 0:
-                _p2_row_keys = sorted(_p2_cur_agg.keys(),
-                                      key=lambda k: sum(_p2_cur_agg[k].get(m, 0) for m in _p2_vals),
-                                      reverse=True)[:_p2_top_n]
+        def _pv2_group(rows, row_dims):
+            agg = {}
+            for r in rows:
+                rk = tuple((r.get(d) or '未标注') for d in row_dims)
+                if rk not in agg:
+                    agg[rk] = {f: 0.0 for f in _P2_RAW_FIELDS}
+                for f in _P2_RAW_FIELDS:
+                    agg[rk][f] += float(r.get(f, 0) or 0)
+            return agg
 
-            _metric_fmt = {
-                '_花费': lambda v: '¥{:,.0f}'.format(v),
-                '_展现数': lambda v: '{:,.0f}'.format(v),
-                '_点击数': lambda v: '{:,.0f}'.format(v),
-                '_总订单金额': lambda v: '¥{:,.0f}'.format(v),
-                '_直接订单金额': lambda v: '¥{:,.0f}'.format(v),
-                '_总加购数': lambda v: '{:,.0f}'.format(v),
-                '_CPC': lambda v: '¥{:.2f}'.format(v),
-                '_点击率': lambda v: '{:.2f}%'.format(v*100),
-                '_总ROI': lambda v: '{:.2f}'.format(v),
-                '_直接ROI': lambda v: '{:.2f}'.format(v),
-                '_总转化率': lambda v: '{:.2f}%'.format(v*100),
-                '_直接转化率': lambda v: '{:.2f}%'.format(v*100),
-            }
+        _p2_agg = _pv2_group(_p2_raw, _p2_row_dims)
+        _p2_total_spend = sum(v['_花费'] for v in _p2_agg.values()) or 1
+        _p2_total_total_amt = sum(v['_总订单金额'] for v in _p2_agg.values()) or 1
+        _p2_total_direct_amt = sum(v['_直接订单金额'] for v in _p2_agg.values()) or 1
 
-            _th_html = '<thead><tr>'
-            for d in _p2_row_dims:
-                _label = d.lstrip('_')
-                _th_html += '<th style="background:#e2e8f0;color:#1e293b;font-weight:600;">' + _label + '</th>'
-            for mc in _p2_vals:
-                _label = mc.lstrip('_')
-                _th_html += '<th style="background:#dbeafe;color:#1e293b;font-weight:600;text-align:center;" colspan="3">' + _label + '</th>'
-            _th_html += '</tr><tr>'
-            for d in _p2_row_dims:
-                _th_html += '<th style="background:#e2e8f0;color:#1e293b;font-weight:600;"></th>'
-            for mc in _p2_vals:
-                _th_html += '<th style="background:#dbeafe;color:#1e293b;font-weight:600;">本期</th>'
-                _th_html += '<th style="background:#dbeafe;color:#1e293b;font-weight:600;">对比期</th>'
-                _th_html += '<th style="background:#dbeafe;color:#1e293b;font-weight:600;">变化率</th>'
-            _th_html += '</tr></thead>'
+        # 计算派生字段
+        for rk, v in _p2_agg.items():
+            v['_点击率'] = v['_点击数'] / v['_展现数'] if v['_展现数'] else 0
+            v['_CPC'] = v['_花费'] / v['_点击数'] if v['_点击数'] else 0
+            v['_总ROI'] = v['_总订单金额'] / v['_花费'] if v['_花费'] else 0
+            v['_直接ROI'] = v['_直接订单金额'] / v['_花费'] if v['_花费'] else 0
+            v['_总转化率'] = v['_总订单金额'] / v['_点击数'] if v['_点击数'] else 0
+            v['_直接转化率'] = v['_直接订单金额'] / v['_点击数'] if v['_点击数'] else 0
+            v['_花费占比'] = v['_花费'] / _p2_total_spend
+            v['_总金额占比'] = v['_总订单金额'] / _p2_total_total_amt
+            v['_直接金额占比'] = v['_直接订单金额'] / _p2_total_direct_amt
+            v['_总加购率'] = v['_总加购数'] / v['_点击数'] if v['_点击数'] else 0
+            v['_总订单成本'] = v['_花费'] / v['_总订单金额'] * 100 if v['_总订单金额'] else 0
+            v['_直接订单成本'] = v['_花费'] / v['_直接订单金额'] * 100 if v['_直接订单金额'] else 0
 
-            _tb_html = '<tbody>'
-            for rk in _p2_row_keys:
-                _tb_html += '<tr>'
-                for i, d in enumerate(_p2_row_dims):
-                    _tb_html += '<td>' + str(rk[i]) + '</td>'
-                for mc in _p2_vals:
-                    _cv = _p2_cur_agg.get(rk, {}).get(mc, 0) or 0
-                    _pv = 0
-                    _fmt = _metric_fmt.get(mc, lambda v: '{:,.0f}'.format(v))
-                    _cv_s = _fmt(_cv); _pv_s = _fmt(_pv)
-                    if _pv != 0:
-                        _chg = (_cv - _pv) / _pv
-                        _sign = '+' if _chg >= 0 else ''
-                        _chg_s = _sign + '{:.1f}%'.format(_chg*100)
-                        _chg_c = '#22c55e' if _chg >= 0 else '#dc2626'
-                    else:
-                        _chg_s = '--'; _chg_c = '#94a3b8'
-                    _tb_html += '<td style="text-align:right;">' + _cv_s + '</td>'
-                    _tb_html += '<td style="text-align:right;">' + _pv_s + '</td>'
-                    _tb_html += '<td style="text-align:right;color:' + _chg_c + ';">' + _chg_s + '</td>'
-                _tb_html += '</tr>'
-            _tb_html += '<tr style="background:#fff7ed;font-weight:bold;">'
-            for d in _p2_row_dims:
-                _tb_html += '<td>合计</td>'
-            for mc in _p2_vals:
-                _cv = _p2_grand.get(mc, 0) or 0
-                _pv = 0
-                _fmt = _metric_fmt.get(mc, lambda v: '{:,.0f}'.format(v))
-                _cv_s = _fmt(_cv); _pv_s = _fmt(_pv)
-                _chg_s = '--'; _chg_c = '#94a3b8'
-                _tb_html += '<td style="text-align:right;">' + _cv_s + '</td>'
-                _tb_html += '<td style="text-align:right;">' + _pv_s + '</td>'
-                _tb_html += '<td style="text-align:right;color:' + _chg_c + ';">' + _chg_s + '</td>'
-            _tb_html += '</tr></tbody>'
+        _p2_row_keys = sorted(_p2_agg.keys())
+        if _p2_top_n > 0:
+            _p2_row_keys = sorted(_p2_agg.keys(),
+                                  key=lambda k: _p2_agg[k].get('_花费', 0),
+                                  reverse=True)[:_p2_top_n]
 
-            _html = '<div class="styled-table-wrap" style="max-height:600px;overflow-y:auto;"><table class="styled-table">' + _th_html + _tb_html + '</table></div>'
-            st.markdown(_html, unsafe_allow_html=True)
-        else:
-            st.info('请选择至少一个行维度和一个值指标')
+        # 合计行
+        _p2_grand = {f: sum(v[f] for v in _p2_agg.values()) for f in _P2_RAW_FIELDS}
+        _p2_grand['_点击率'] = _p2_grand['_点击数'] / _p2_grand['_展现数'] if _p2_grand['_展现数'] else 0
+        _p2_grand['_CPC'] = _p2_grand['_花费'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
+        _p2_grand['_总ROI'] = _p2_grand['_总订单金额'] / _p2_grand['_花费'] if _p2_grand['_花费'] else 0
+        _p2_grand['_直接ROI'] = _p2_grand['_直接订单金额'] / _p2_grand['_花费'] if _p2_grand['_花费'] else 0
+        _p2_grand['_总转化率'] = _p2_grand['_总订单金额'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
+        _p2_grand['_直接转化率'] = _p2_grand['_直接订单金额'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
+        _p2_grand['_花费占比'] = 1.0
+        _p2_grand['_总金额占比'] = 1.0
+        _p2_grand['_直接金额占比'] = 1.0
+        _p2_grand['_总加购率'] = _p2_grand['_总加购数'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
+        _p2_grand['_总订单成本'] = _p2_grand['_花费'] / _p2_grand['_总订单金额'] * 100 if _p2_grand['_总订单金额'] else 0
+        _p2_grand['_直接订单成本'] = _p2_grand['_花费'] / _p2_grand['_直接订单金额'] * 100 if _p2_grand['_直接订单金额'] else 0
+
+        def _fmt_p2(mc, val):
+            if mc in ('_花费', '_总订单金额', '_直接订单金额'):
+                return '¥{:,.0f}'.format(val)
+            elif mc == '_CPC':
+                return '¥{:.2f}'.format(val)
+            elif mc in ('_点击率', '_花费占比', '_总金额占比', '_直接金额占比', '_总转化率', '_直接转化率', '_总加购率'):
+                return '{:.2f}%'.format(val * 100)
+            elif mc in ('_总ROI', '_直接ROI'):
+                return '{:.2f}'.format(val)
+            elif mc in ('_总订单成本', '_直接订单成本'):
+                return '{:.2f}%'.format(val)
+            elif mc in ('_展现数', '_点击数', '_总加购数'):
+                return '{:,.0f}'.format(int(val))
+            else:
+                return '{:,.2f}'.format(val)
+
+        _p2_cols = _p2_vals
+        _th_html = '<thead><tr>'
+        for d in _p2_row_dims:
+            _label = d.lstrip('_')
+            _th_html += '<th style="background:#e2e8f0;color:#1e293b;font-weight:600;padding:6px 10px;">' + _label + '</th>'
+        for mc in _p2_cols:
+            _label = mc.lstrip('_')
+            _th_html += '<th style="background:#dbeafe;color:#1e293b;font-weight:600;text-align:right;padding:6px 10px;">' + _label + '</th>'
+        _th_html += '</tr></thead>'
+
+        _tb_html = '<tbody>'
+        for rk in _p2_row_keys:
+            _tb_html += '<tr>'
+            for i, d in enumerate(_p2_row_dims):
+                _tb_html += '<td style="padding:5px 10px;">' + str(rk[i]) + '</td>'
+            for mc in _p2_cols:
+                _v = _p2_agg.get(rk, {}).get(mc, 0) or 0
+                _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_p2(mc, _v) + '</td>'
+            _tb_html += '</tr>'
+        _tb_html += '<tr style="background:#fff7ed;font-weight:bold;">'
+        for i, d in enumerate(_p2_row_dims):
+            _tb_html += '<td style="padding:5px 10px;">' + ('合计' if i == 0 else '') + '</td>'
+        for mc in _p2_cols:
+            _v = _p2_grand.get(mc, 0) or 0
+            _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_p2(mc, _v) + '</td>'
+        _tb_html += '</tr></tbody>'
+
+        _html = '<div class="styled-table-wrap" style="max-height:600px;overflow-y:auto;overflow-x:auto;"><table class="styled-table">' + _th_html + _tb_html + '</table></div>'
+        st.markdown(_html, unsafe_allow_html=True)
+    else:
+        st.info('请选择至少一个行维度和一个值指标')
