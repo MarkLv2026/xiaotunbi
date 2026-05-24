@@ -3269,8 +3269,8 @@ with tabs[6]:
 with tabs[7]:
     st.markdown('<div class="section-title">透视表分析</div>', unsafe_allow_html=True)
 
-    _pv_dim_opts = ['渠道', '店铺', '品类', '型号']
-    _pv_promo_dim_opts = ['_渠道', '_店铺', '_品类', '_型号']
+    _pv_dim_opts = ['渠道', '店铺', '品类', '型号', '日期', '年月']
+    _pv_promo_dim_opts = ['_渠道', '_店铺', '_品类', '_型号', '日期', '年月']
 
     # 销售可选指标（含占比/计算字段标记）
     _pv_sales_metrics_all = [
@@ -3316,6 +3316,12 @@ with tabs[7]:
 
         _p1_rows = get_period_rows(_p1_raw, today_s, today_e)
 
+        # 注入时间维度字段（用于行维度筛选）
+        for r in _p1_rows:
+            dt = r.get('日期', '')
+            r['日期'] = dt
+            r['年月'] = dt[:7] if len(dt) >= 7 else dt
+
         # ── 去年同期数据 ──
         _yoy_start = start.replace(year=start.year - 1)
         _yoy_end = end.replace(year=end.year - 1)
@@ -3324,6 +3330,12 @@ with tabs[7]:
         if end.month == 2 and end.day == 29:
             _yoy_end = _yoy_end.replace(day=28)
         _p1_yoy_rows = get_period_rows(_p1_raw, str(_yoy_start), str(_yoy_end))
+
+        # 同期数据也注入时间维度字段
+        for r in _p1_yoy_rows:
+            dt = r.get('日期', '')
+            r['日期'] = dt
+            r['年月'] = dt[:7] if len(dt) >= 7 else dt
 
         # 聚合：只汇总原始可加字段，计算字段后处理
         _P1_RAW_FIELDS = ['商品访客数', '支付买家数', '支付件数', '支付金额', '商品加购人数', '成功退款金额']
@@ -3511,6 +3523,12 @@ with tabs[7]:
                 _p2_filtered.append(r)
             _p2_raw = _p2_filtered
 
+        # 注入时间维度字段（从 _date 派生）
+        for r in _p2_raw:
+            d = r.get('_date', '') or r.get('日期', '')
+            r['日期'] = d
+            r['年月'] = d[:7] if len(d) >= 7 else d
+
         _P2_RAW_FIELDS = ['_花费', '_展现数', '_点击数', '_总订单金额', '_直接订单金额', '_总成交订单量', '_直接订单量']
 
         def _pv2_group(rows, row_dims):
@@ -3535,6 +3553,11 @@ with tabs[7]:
                 if model and r.get('_型号') not in model: continue
                 _p2_yoy_filtered.append(r)
             _p2_yoy_raw = _p2_yoy_filtered
+        # 同比数据也注入时间维度字段
+        for r in _p2_yoy_raw:
+            d = r.get('_date', '') or r.get('日期', '')
+            r['日期'] = d
+            r['年月'] = d[:7] if len(d) >= 7 else d
         _p2_yoy_agg = _pv2_group(_p2_yoy_raw, _p2_row_dims)
 
         _p2_total_spend = sum(v['_花费'] for v in _p2_agg.values()) or 1
