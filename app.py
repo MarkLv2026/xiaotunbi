@@ -2183,21 +2183,24 @@ with tabs[3]:
                 '销额同比': '--', '访客同比': '--', '转化率同比': '--',
             })
         # 排序控件
-        _daily_sort_cols = ['访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值']
+        _daily_sort_cols = ['日期','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值']
         _dsc1, _dsc2 = st.columns([2, 1])
         with _dsc1:
-            _daily_sort_by = st.selectbox('排序字段', _daily_sort_cols, index=3, key='daily_sort_col')
+            _daily_sort_by = st.selectbox('排序字段', _daily_sort_cols, index=0, key='daily_sort_col')
         with _dsc2:
-            _daily_sort_desc = st.radio('', ['降序', '升序'], horizontal=True, key='daily_sort_dir', index=0)
+            _daily_sort_desc = st.radio('', ['降序', '升序'], horizontal=True, key='daily_sort_dir', index=1)
         # 分离数据行和总计行
         _daily_data_rows = [r for r in daily_tbl if r.get('日期') != '总计']
         _daily_total_row = [r for r in daily_tbl if r.get('日期') == '总计']
-        # 排序
+        # 排序（日期字段用字符串自然排序，数值字段用 _parse_num）
         def _parse_num(v):
             if isinstance(v, (int, float)): return v
             try: return float(str(v).replace(',','').replace('%','').replace('¥',''))
             except: return 0
-        _daily_data_rows.sort(key=lambda r: _parse_num(r.get(_daily_sort_by, 0)), reverse=(_daily_sort_desc == '降序'))
+        if _daily_sort_by == '日期':
+            _daily_data_rows.sort(key=lambda r: r.get('日期', ''), reverse=(_daily_sort_desc == '降序'))
+        else:
+            _daily_data_rows.sort(key=lambda r: _parse_num(r.get(_daily_sort_by, 0)), reverse=(_daily_sort_desc == '降序'))
         _daily_tbl_sorted = _daily_data_rows + _daily_total_row
         _render_html_table(
             _daily_tbl_sorted,
@@ -2245,19 +2248,22 @@ with tabs[3]:
             })
         if monthly_tbl:
             # 排序控件
-            _mm_sort_cols = ['访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值']
+            _mm_sort_cols = ['月份','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值']
             _mmc1, _mmc2 = st.columns([2, 1])
             with _mmc1:
-                _mm_sort_by = st.selectbox('排序字段', _mm_sort_cols, index=3, key='mm_sort_col')
+                _mm_sort_by = st.selectbox('排序字段', _mm_sort_cols, index=0, key='mm_sort_col')
             with _mmc2:
-                _mm_sort_desc = st.radio('', ['降序', '升序'], horizontal=True, key='mm_sort_dir', index=0)
+                _mm_sort_desc = st.radio('', ['降序', '升序'], horizontal=True, key='mm_sort_dir', index=1)
             _mm_data_rows = [r for r in monthly_tbl if r.get('月份') != '总计']
             _mm_total_row = [r for r in monthly_tbl if r.get('月份') == '总计']
             def _parse_num(v):
                 if isinstance(v, (int, float)): return v
                 try: return float(str(v).replace(',','').replace('%','').replace('¥',''))
                 except: return 0
-            _mm_data_rows.sort(key=lambda r: _parse_num(r.get(_mm_sort_by, 0)), reverse=(_mm_sort_desc == '降序'))
+            if _mm_sort_by == '月份':
+                _mm_data_rows.sort(key=lambda r: r.get('月份', ''), reverse=(_mm_sort_desc == '降序'))
+            else:
+                _mm_data_rows.sort(key=lambda r: _parse_num(r.get(_mm_sort_by, 0)), reverse=(_mm_sort_desc == '降序'))
             _mm_sorted = _mm_data_rows + _mm_total_row
             _render_html_table(
                 _mm_sorted,
