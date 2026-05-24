@@ -256,8 +256,11 @@ def load_promo_data(file_bytes: bytes):
             r['_间接订单金额'] = float(indirect_amt) if indirect_amt not in (None, '') else 0.0
             r['_总订单金额'] = float(total_amt) if total_amt not in (None, '') else 0.0
             r['_总加购数'] = float(r.get('总加购数', 0) or 0)
-            # 成交客户数 — 用于转化率计算
-            cust = r.get('成交客户数', None) or r.get('成交客户', None) or r.get('订单客户数', None) or 0
+            # 成交客户数 — 用于转化率计算（多列名适配）
+            cust = (r.get('成交客户数', None) or r.get('成交客户', None) or
+                    r.get('订单客户数', None) or r.get('成交订单数', None) or
+                    r.get('支付买家数', None) or r.get('成交买家数', None) or
+                    r.get('直接成交订单数', None) or r.get('订单数', None) or 0)
             r['_成交客户数'] = float(cust) if cust not in (None, '') else 0.0
             roi = r.get('投产比', None) or r.get('投产比', 0)
             r['_投产比'] = float(roi) if roi not in (None, '') else 0.0
@@ -542,6 +545,23 @@ def _html_table(rows, col_widths=None, height=None):
         html += '</tr>'
     html += '</tbody></table></div>'
     return html
+
+
+def _chart_csv_download(data_rows, columns, file_name, label='📥 下载图表数据 (CSV)'):
+    """在图表下方添加折叠的CSV下载按钮"""
+    if not data_rows:
+        return
+    with st.expander(label):
+        csv_str = rows_to_csv(data_rows, columns)
+        st.download_button('下载 CSV', csv_str, file_name=file_name, mime='text/csv')
+
+
+def _add_table_csv_download(data_rows, columns, file_name, label='📥 下载数据 (CSV)'):
+    """为表格添加CSV下载按钮"""
+    if not data_rows:
+        return
+    csv_str = rows_to_csv(data_rows, columns)
+    st.download_button(label, csv_str, file_name=file_name, mime='text/csv')
 
 
 # 当前筛选数据
@@ -881,6 +901,8 @@ with tabs[0]:
             margin=dict(l=20, r=20, t=45, b=20),
             yaxis_title='转化率(%)', showlegend=False)
         st.plotly_chart(fig_c, use_container_width=True)
+        # 图表数据下载
+        _chart_csv_download(daily_trend, ['日期', '支付金额', '商品访客数', '支付转化率', '支付件数', '客单价'], 'overview_daily_trend.csv')
     else:
         st.info('当前筛选条件下，最近30天无日趋势数据')
 
@@ -1032,8 +1054,8 @@ with tabs[1]:
             fig.update_layout(height=360, template='plotly_white', legend=dict(orientation='h'),
                                   yaxis_title='推广费(万)', yaxis2=dict(title='订单金额(万)', overlaying='y', side='right'))
             st.plotly_chart(fig, use_container_width=True)
-
-        # ── ROI 趋势（日/月）──
+            _chart_csv_download([{'日期': x[0], '花费': x[1]['花费'], '总订单金额': x[1]['总订单金额']} for x in _pr_s],
+                              ['日期', '花费', '总订单金额'], 'promo_spend_trend.csv')
         _gran_label = '日度' if promo_gran == '按日' else '月度'
         st.markdown(f'<div class="section-title">ROI 趋势（{_gran_label}）</div>', unsafe_allow_html=True)
         _roi_gr = {}
@@ -1053,8 +1075,9 @@ with tabs[1]:
                               title=f'{_gran_label}ROI趋势', line_shape='spline')
             fig.update_layout(height=320, template='plotly_white', yaxis_title='ROI')
             st.plotly_chart(fig, use_container_width=True)
-
-        # ── 推广效率矩阵：花费 vs 成交金额（散点图）──
+            _chart_csv_download([{'日期': x[0], '花费': x[1]['花费'], '总订单金额': x[1]['总订单金额'],
+                                   'ROI': x[1]['总订单金额']/x[1]['花费'] if x[1]['花费'] else 0} for x in _roi_s],
+                              ['日期', '花费', '总订单金额', 'ROI'], 'promo_roi_trend.csv')
         st.markdown('<div class="section-title">推广效率矩阵（花费 vs 成交金额）</div>', unsafe_allow_html=True)
         _pl = {}
         for r in promo_filtered:
@@ -2067,10 +2090,30 @@ with tabs[3]:
                 'UV价值': round(total_amt/total_vis, 1) if total_vis else 0,
                 '销额同比': '--', '访客同比': '--', '转化率同比': '--',
             })
+        # 排序控件
+        _daily_sort_cols = ['访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值']
+        _dsc1, _dsc2 = st.columns([2, 1])
+        with _dsc1:
+            _daily_sort_by = st.selectbox('排序字段', _daily_sort_cols, index=3, key='daily_sort_col')
+        with _dsc2:
+            _daily_sort_desc = st.radio('', ['降序', '升序'], horizontal=True, key='daily_sort_dir', index=0)
+        # 分离数据行和总计行
+        _daily_data_rows = [r for r in daily_tbl if r.get('日期') != '总计']
+        _daily_total_row = [r for r in daily_tbl if r.get('日期') == '总计']
+        # 排序
+        def _parse_num(v):
+            if isinstance(v, (int, float)): return v
+            try: return float(str(v).replace(',','').replace('%','').replace('¥',''))
+            except: return 0
+        _daily_data_rows.sort(key=lambda r: _parse_num(r.get(_daily_sort_by, 0)), reverse=(_daily_sort_desc == '降序'))
+        _daily_tbl_sorted = _daily_data_rows + _daily_total_row
         _render_html_table(
-            daily_tbl,
+            _daily_tbl_sorted,
             ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'],
             ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'])
+        # 下载原始数据
+        _daily_dl = [{'_d': dt, **{m: v[m] for m in METRICS}} for dt, v in day_dict.items()]
+        _add_table_csv_download(_daily_dl, ['_d'] + METRICS, 'daily_summary.csv')
     with tab_monthly:
         # 月度表格从 filtered daily 聚合（受筛选器控制）
         filtered_monthly_list = build_monthly(daily)
@@ -2109,21 +2152,29 @@ with tabs[3]:
                 '转化率同比': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
             })
         if monthly_tbl:
-            monthly_tbl.append({
-                '月份': '总计', '访客数': f"{int(total_vis_m):,}", '访客占比': '100.00%',
-                '买家数': f"{int(total_buyers_m):,}", '支付件数': f"{int(sum(r['支付件数'] for r in filtered_monthly_list)):,}",
-                '成交金额(万)': round(total_amt_m/10000, 1), '成交占比': '100.00%',
-                '转化率': f"{total_buyers_m/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
-                '加购人数': f"{int(total_cart_m):,}",
-                '加购率': f"{total_cart_m/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
-                'UV价值': round(total_amt_m/total_vis_m, 1) if total_vis_m else 0,
-                '销额同比': '--', '访客同比': '--', '转化率同比': '--',
-            })
-        _render_html_table(
-            monthly_tbl,
-            ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'],
-            ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'])
-
+            # 排序控件
+            _mm_sort_cols = ['访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值']
+            _mmc1, _mmc2 = st.columns([2, 1])
+            with _mmc1:
+                _mm_sort_by = st.selectbox('排序字段', _mm_sort_cols, index=3, key='mm_sort_col')
+            with _mmc2:
+                _mm_sort_desc = st.radio('', ['降序', '升序'], horizontal=True, key='mm_sort_dir', index=0)
+            _mm_data_rows = [r for r in monthly_tbl if r.get('月份') != '总计']
+            _mm_total_row = [r for r in monthly_tbl if r.get('月份') == '总计']
+            def _parse_num(v):
+                if isinstance(v, (int, float)): return v
+                try: return float(str(v).replace(',','').replace('%','').replace('¥',''))
+                except: return 0
+            _mm_data_rows.sort(key=lambda r: _parse_num(r.get(_mm_sort_by, 0)), reverse=(_mm_sort_desc == '降序'))
+            _mm_sorted = _mm_data_rows + _mm_total_row
+            _render_html_table(
+                _mm_sorted,
+                ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'],
+                ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'])
+            # 下载原始月度数据
+            _mm_dl = [{m: v[m] for m in METRICS} for v in filtered_monthly_list]
+            _add_table_csv_download(_mm_dl, METRICS, 'monthly_summary.csv')
+        st.markdown('---')
     t1, t2 = st.columns(2)
     with t1:
         fig = go.Figure()
@@ -2195,6 +2246,7 @@ with tabs[4]:
     # 渠道表现: 基于已过滤 daily 数据
     ch_all = group(daily, '渠道')
     if ch_all:
+        ch_all = sorted(ch_all, key=lambda x: x['支付金额'], reverse=True)
         ch_display = []
         for r in ch_all:
             ch_name = r['渠道']
@@ -2215,6 +2267,7 @@ with tabs[4]:
                 '环比': f'{mo_chg*100:+.1f}%' if mo_chg is not None else '--',
             })
         st.dataframe(df(ch_display), use_container_width=True, hide_index=True)
+        _add_table_csv_download(ch_all, ['渠道', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价', '退款率'], 'channel_performance.csv')
 
     # 渠道可视化
     if ch_all:
@@ -2238,6 +2291,7 @@ with tabs[4]:
     st.markdown('---')
     st.markdown('<div class="section-title">渠道内店铺明细</div>', unsafe_allow_html=True)
     store_rows2 = group(daily, '店铺')
+    store_rows2 = sorted(store_rows2, key=lambda x: x['支付金额'], reverse=True)
     store_display = []
     for r in store_rows2:
         # 找到该店铺对应渠道
@@ -2274,6 +2328,13 @@ with tabs[4]:
         cross_rows.append(row)
     if cross_rows:
         st.dataframe(df(cross_rows), use_container_width=True, hide_index=True)
+        # 构建原始数值行用于下载
+        _cross_raw = []
+        for ch_key in sorted(cross.keys()):
+            _r = {'渠道': ch_key}
+            _r.update({cat: cross[ch_key].get(cat, 0) for cat in all_cats})
+            _cross_raw.append(_r)
+        _add_table_csv_download(_cross_raw, list(_cross_raw[0].keys()), 'channel_category_matrix.csv')
 
     # 渠道月度趋势（从 daily 重新按月+渠道汇总）
     st.markdown('---')
@@ -2366,6 +2427,7 @@ with tabs[5]:
                (model == '全部' or r.get('型号') == model)]
         if not sty:
             sty = group(daily, '款式') if any(r.get('款式') for r in daily) else []
+        sty = sorted(sty, key=lambda x: x.get('支付金额', 0), reverse=True)
         sty_display = [{'款式': r.get('款式', ''), '渠道': r.get('渠道', ''),
                          '品类': r.get('品类', ''), '型号': r.get('型号', ''),
                          '支付金额': f"¥{_wan(r.get('支付金额', 0))}万",
@@ -2385,6 +2447,7 @@ with tabs[5]:
                (model == '全部' or r.get('型号') == model)]
         if not mdl:
             mdl = group(daily, '型号')
+        mdl = sorted(mdl, key=lambda x: x.get('支付金额', 0), reverse=True)
         mdl_display = [{'型号': r.get('型号', ''), '渠道': r.get('渠道', ''),
                          '品类': r.get('品类', ''), '店铺': r.get('店铺', ''),
                          '支付金额': f"¥{_wan(r.get('支付金额', 0))}万",
@@ -2421,6 +2484,7 @@ with tabs[5]:
                      (top_ch == '全部' or r.get('渠道') == top_ch) and
                      (top_cat == '全部' or r.get('品类') == top_cat) and
                      (top_mdl == '全部' or r.get('型号') == top_mdl)]
+    filtered_prod = sorted(filtered_prod, key=lambda x: x.get('支付金额', 0), reverse=True)
     fp_display = [{'商品名称': str(r.get('商品名称', ''))[:50], '渠道': r.get('渠道', ''),
                    '品类': r.get('品类', ''), '型号': r.get('型号', ''),
                    '支付金额': f"¥{_wan(r.get('支付金额', 0))}万",
@@ -2428,6 +2492,7 @@ with tabs[5]:
                    '客单价': f"¥{r.get('客单价', 0):,.0f}"} for r in filtered_prod[:100]]
     if fp_display:
         st.dataframe(df(fp_display), use_container_width=True, hide_index=True, height=350)
+        _add_table_csv_download(filtered_prod[:100], ['商品名称', '渠道', '品类', '型号', '支付金额', '支付转化率', '客单价'], 'filtered_products.csv')
 
 # ═══════════════════════════════════════════════════════════════
 # ═══════════════════════════════════════════════════════════════
@@ -3248,6 +3313,19 @@ with tabs[7]:
             return f'{sign}{v:.1f}%', color
 
         _p1_cols = _p1_vals
+        # 排序控件
+        _p1_sort_col, _p1_sort_dir = st.columns([2, 1])
+        with _p1_sort_col:
+            _p1_sort_key = st.selectbox('排序列', _p1_vals, index=0, key='pv1_sort')
+        with _p1_sort_dir:
+            _p1_asc = st.radio('', ['降序', '升序'], horizontal=True, key='pv1_asc', index=0)
+        # 按选定列排序（映射格式化前的原始值）
+        def _get_raw(rk, mc):
+            v = _p1_agg.get(rk, {}).get(mc, 0)
+            return v
+        _p1_row_keys = sorted(_p1_row_keys,
+                                 key=lambda k: _get_raw(k, _p1_sort_key),
+                                 reverse=(_p1_asc == '降序'))
         _yoy_cols = ['访客数同比', '转化率同比', '销售额同比', '销售量同比']
         _yoy_keys = ['_YOY_访客数', '_YOY_转化率', '_YOY_销售额', '_YOY_销售量']
 
@@ -3287,6 +3365,19 @@ with tabs[7]:
 
         _html = '<div class="styled-table-wrap" style="max-height:600px;overflow-y:auto;overflow-x:auto;"><table class="styled-table">' + _th_html + _tb_html + '</table></div>'
         st.markdown(_html, unsafe_allow_html=True)
+        # 下载原始数据
+        _p1_dl = []
+        for rk in _p1_row_keys:
+            _dlr = {}
+            for di, d in enumerate(_p1_row_dims):
+                _dlr[d.lstrip('_')] = rk[di] if isinstance(rk, tuple) else str(rk)
+            for mc in _p1_vals:
+                _dlr[mc.lstrip('_')] = _p1_agg.get(rk, {}).get(mc, 0) or 0
+            for yk in _yoy_keys:
+                _dlr[yk.lstrip('_')] = _p1_agg.get(rk, {}).get(yk)
+            _p1_dl.append(_dlr)
+        if _p1_dl:
+            _add_table_csv_download(_p1_dl, list(_p1_dl[0].keys()), 'pivot_sales.csv')
     else:
         st.info('请选择至少一个行维度和一个值指标')
 
@@ -3380,7 +3471,22 @@ with tabs[7]:
             v['_YOY_转化率'] = _p2_yoy_pct(_cur_cvr, _ly_cvr) if _ly_click else None
 
         _p2_row_keys = sorted(_p2_agg.keys())
-        if _p2_top_n > 0:
+        # 排序控件（仅在前N行=0时启用自由排序）
+        _p2_sort_enabled = (_p2_top_n == 0)
+        if _p2_sort_enabled:
+            # 构建可排序的指标列表
+            _p2_sort_metrics = ['花费', '展现数', '点击数', '点击率', 'CPC', '总ROI', '直接ROI',
+                               '总转化率', '总加购率', '总订单金额', '直接订单金额', '花费占比']
+            _p2_sort_col, _p2_sort_dir = st.columns([2, 1])
+            with _p2_sort_col:
+                _p2_sort_key = st.selectbox('排序列', _p2_sort_metrics, index=0, key='pv2_sort')
+            with _p2_sort_dir:
+                _p2_asc = st.radio('', ['降序', '升序'], horizontal=True, key='pv2_asc', index=0)
+            _key = '_' + _p2_sort_key
+            _p2_row_keys = sorted(_p2_row_keys,
+                                   key=lambda k: _p2_agg.get(k, {}).get(_key, 0) or 0,
+                                   reverse=(_p2_asc == '降序'))
+        elif _p2_top_n > 0:
             _p2_row_keys = sorted(_p2_agg.keys(),
                                   key=lambda k: _p2_agg[k].get('_花费', 0),
                                   reverse=True)[:_p2_top_n]
@@ -3475,5 +3581,18 @@ with tabs[7]:
 
         _html = '<div class="styled-table-wrap" style="max-height:600px;overflow-y:auto;overflow-x:auto;"><table class="styled-table">' + _th_html + _tb_html + '</table></div>'
         st.markdown(_html, unsafe_allow_html=True)
+        # 下载原始数据
+        _p2_dl = []
+        for rk in _p2_row_keys:
+            _dlr = {}
+            for di, d in enumerate(_p2_row_dims):
+                _dlr[d.lstrip('_')] = rk[di] if isinstance(rk, tuple) else str(rk)
+            for mc in _p2_cols:
+                _dlr[mc.lstrip('_')] = _p2_agg.get(rk, {}).get(mc, 0) or 0
+            for yk in _p2_yoy_keys:
+                _dlr[yk.lstrip('_')] = _p2_agg.get(rk, {}).get(yk)
+            _p2_dl.append(_dlr)
+        if _p2_dl:
+            _add_table_csv_download(_p2_dl, list(_p2_dl[0].keys()), 'pivot_promo.csv')
     else:
         st.info('请选择至少一个行维度和一个值指标')
