@@ -3408,8 +3408,15 @@ with tabs[7]:
 
     if _p2_vals and _p2_row_dims:
         _p2_raw = promo_rows if promo_rows else []
-        if channel and _p2_raw:
-            _p2_raw = [r for r in _p2_raw if r.get('_渠道') in channel]
+        if channel or store or category or model:
+            _p2_filtered = []
+            for r in _p2_raw:
+                if channel and r.get('_渠道') not in channel: continue
+                if store and r.get('_店铺') not in store: continue
+                if category and r.get('_品类') not in category: continue
+                if model and r.get('_型号') not in model: continue
+                _p2_filtered.append(r)
+            _p2_raw = _p2_filtered
 
         _P2_RAW_FIELDS = ['_花费', '_展现数', '_点击数', '_总订单金额', '_直接订单金额', '_总成交订单量', '_直接订单量']
 
@@ -3426,8 +3433,15 @@ with tabs[7]:
         _p2_agg = _pv2_group(_p2_raw, _p2_row_dims)
         # ── 去年同期 ──
         _p2_yoy_raw = promo_yoy if promo_yoy else []
-        if channel and _p2_yoy_raw:
-            _p2_yoy_raw = [r for r in _p2_yoy_raw if r.get('_渠道') in channel]
+        if channel or store or category or model:
+            _p2_yoy_filtered = []
+            for r in _p2_yoy_raw:
+                if channel and r.get('_渠道') not in channel: continue
+                if store and r.get('_店铺') not in store: continue
+                if category and r.get('_品类') not in category: continue
+                if model and r.get('_型号') not in model: continue
+                _p2_yoy_filtered.append(r)
+            _p2_yoy_raw = _p2_yoy_filtered
         _p2_yoy_agg = _pv2_group(_p2_yoy_raw, _p2_row_dims)
 
         _p2_total_spend = sum(v['_花费'] for v in _p2_agg.values()) or 1
