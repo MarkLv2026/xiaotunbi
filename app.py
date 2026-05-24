@@ -2566,7 +2566,7 @@ with tabs[5]:
                      text=[f"{_wan(r['支付金额'])}万" for r in cat_rows[:10]])
         fig.update_layout(height=380, template='plotly_white', yaxis={'categoryorder': 'total ascending'})
         st.plotly_chart(fig, use_container_width=True)
-        _render_download_panel(cat_w, ['品类', '支付金额_万', '支付转化率'], 'product_cat_bar.csv', '📥 品类销售额')        st.plotly_chart(fig, use_container_width=True)
+        _render_download_panel(cat_w, ['品类', '支付金额_万', '支付转化率'], 'product_cat_bar.csv', '📥 品类销售额')
 
     st.markdown('---')
     st.markdown('<div class="section-title">商品层级快速筛选</div>', unsafe_allow_html=True)
