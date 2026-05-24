@@ -256,12 +256,19 @@ def load_promo_data(file_bytes: bytes):
             r['_间接订单金额'] = float(indirect_amt) if indirect_amt not in (None, '') else 0.0
             r['_总订单金额'] = float(total_amt) if total_amt not in (None, '') else 0.0
             r['_总加购数'] = float(r.get('总加购数', 0) or 0)
-            # 成交客户数 — 用于转化率计算（多列名适配）
+            # 成交客户数 — 用于客户维度分析
             cust = (r.get('成交客户数', None) or r.get('成交客户', None) or
-                    r.get('订单客户数', None) or r.get('成交订单数', None) or
-                    r.get('支付买家数', None) or r.get('成交买家数', None) or
-                    r.get('直接成交订单数', None) or r.get('订单数', None) or 0)
+                    r.get('订单客户数', None) or r.get('支付买家数', None) or
+                    r.get('成交买家数', None) or 0)
             r['_成交客户数'] = float(cust) if cust not in (None, '') else 0.0
+            # 总成交订单量 — 用于总转化率（=总成交订单量/点击数）
+            total_orders = (r.get('成交订单数', None) or r.get('订单数', None) or
+                           r.get('总成交订单数', None) or r.get('总订单数', None) or 0)
+            r['_总成交订单量'] = float(total_orders) if total_orders not in (None, '') else 0.0
+            # 直接订单量 — 用于直接转化率（=直接订单量/点击数）
+            direct_orders = (r.get('直接成交订单数', None) or r.get('直接订单数', None) or
+                            r.get('直接成交订单量', None) or 0)
+            r['_直接订单量'] = float(direct_orders) if direct_orders not in (None, '') else 0.0
             roi = r.get('投产比', None) or r.get('投产比', 0)
             r['_投产比'] = float(roi) if roi not in (None, '') else 0.0
             rows.append(r)
@@ -1013,7 +1020,7 @@ with tabs[1]:
         _clk = sum(r.get('_点击数', 0) for r in promo_filtered)
         _ctr = _clk / _imp if _imp else 0
         _cpc = _ps / _clk if _clk else 0
-        _da = sum(r.get('_直接订单金额', 0) for r in promo_filtered)
+        _da = sum(r.get('_总订单金额', 0) for r in promo_filtered)
         _porders = sum(1 for r in promo_filtered if r.get('_总订单金额', 0) > 0) or totals['支付买家数']
         _p_order_cost = _ps / _porders if _porders else 0
         _poc_m = promo_mom_fc / _porders if _porders else 0
@@ -3182,7 +3189,7 @@ with tabs[7]:
         '_花费', '_花费占比', '_展现数', '_CPC', '_点击数', '_点击率',
         '_直接订单金额', '_直接金额占比', '_总订单金额', '_总金额占比',
         '_直接ROI', '_总ROI', '_总转化率', '_直接转化率',
-        '_总加购数', '_总加购率', '_总订单成本', '_直接订单成本',
+        '_总订单成本', '_直接订单成本',
     ]
 
     # ══════════════════════════════════════
@@ -3403,7 +3410,7 @@ with tabs[7]:
         if channel and _p2_raw:
             _p2_raw = [r for r in _p2_raw if r.get('_渠道') in channel]
 
-        _P2_RAW_FIELDS = ['_花费', '_展现数', '_点击数', '_总订单金额', '_直接订单金额', '_总加购数', '_成交客户数']
+        _P2_RAW_FIELDS = ['_花费', '_展现数', '_点击数', '_总订单金额', '_直接订单金额', '_总成交订单量', '_直接订单量']
 
         def _pv2_group(rows, row_dims):
             agg = {}
@@ -3432,12 +3439,11 @@ with tabs[7]:
             v['_CPC'] = v['_花费'] / v['_点击数'] if v['_点击数'] else 0
             v['_总ROI'] = v['_总订单金额'] / v['_花费'] if v['_花费'] else 0
             v['_直接ROI'] = v['_直接订单金额'] / v['_花费'] if v['_花费'] else 0
-            v['_总转化率'] = v['_成交客户数'] / v['_点击数'] if v['_点击数'] else 0
-            v['_直接转化率'] = v['_成交客户数'] / v['_点击数'] if v['_点击数'] else 0
+            v['_总转化率'] = v['_总成交订单量'] / v['_点击数'] if v['_点击数'] else 0
+            v['_直接转化率'] = v['_直接订单量'] / v['_点击数'] if v['_点击数'] else 0
             v['_花费占比'] = v['_花费'] / _p2_total_spend
             v['_总金额占比'] = v['_总订单金额'] / _p2_total_total_amt
             v['_直接金额占比'] = v['_直接订单金额'] / _p2_total_direct_amt
-            v['_总加购率'] = v['_总加购数'] / v['_点击数'] if v['_点击数'] else 0
             v['_总订单成本'] = v['_花费'] / v['_总订单金额'] * 100 if v['_总订单金额'] else 0
             v['_直接订单成本'] = v['_花费'] / v['_直接订单金额'] * 100 if v['_直接订单金额'] else 0
 
@@ -3464,9 +3470,9 @@ with tabs[7]:
             _ly_cpc = _ly_spend / _ly_click if _ly_click else 0
             _cur_cpc = v.get('_CPC', 0) or 0
             v['_YOY_CPC'] = _p2_yoy_pct(_cur_cpc, _ly_cpc) if _ly_click else None
-            # 转化率同比
-            _ly_cust = ly.get('_成交客户数', 0) or 0
-            _ly_cvr = _ly_cust / _ly_click if _ly_click else 0
+            # 转化率同比（基于总成交订单量）
+            _ly_orders = ly.get('_总成交订单量', 0) or 0
+            _ly_cvr = _ly_orders / _ly_click if _ly_click else 0
             _cur_cvr = v.get('_总转化率', 0) or 0
             v['_YOY_转化率'] = _p2_yoy_pct(_cur_cvr, _ly_cvr) if _ly_click else None
 
@@ -3476,7 +3482,7 @@ with tabs[7]:
         if _p2_sort_enabled:
             # 构建可排序的指标列表
             _p2_sort_metrics = ['花费', '展现数', '点击数', '点击率', 'CPC', '总ROI', '直接ROI',
-                               '总转化率', '总加购率', '总订单金额', '直接订单金额', '花费占比']
+                               '总转化率', '总订单金额', '直接订单金额', '花费占比']
             _p2_sort_col, _p2_sort_dir = st.columns([2, 1])
             with _p2_sort_col:
                 _p2_sort_key = st.selectbox('排序列', _p2_sort_metrics, index=0, key='pv2_sort')
@@ -3497,12 +3503,11 @@ with tabs[7]:
         _p2_grand['_CPC'] = _p2_grand['_花费'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
         _p2_grand['_总ROI'] = _p2_grand['_总订单金额'] / _p2_grand['_花费'] if _p2_grand['_花费'] else 0
         _p2_grand['_直接ROI'] = _p2_grand['_直接订单金额'] / _p2_grand['_花费'] if _p2_grand['_花费'] else 0
-        _p2_grand['_总转化率'] = _p2_grand['_成交客户数'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
-        _p2_grand['_直接转化率'] = _p2_grand['_成交客户数'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
+        _p2_grand['_总转化率'] = _p2_grand['_总成交订单量'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
+        _p2_grand['_直接转化率'] = _p2_grand['_直接订单量'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
         _p2_grand['_花费占比'] = 1.0
         _p2_grand['_总金额占比'] = 1.0
         _p2_grand['_直接金额占比'] = 1.0
-        _p2_grand['_总加购率'] = _p2_grand['_总加购数'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
         _p2_grand['_总订单成本'] = _p2_grand['_花费'] / _p2_grand['_总订单金额'] * 100 if _p2_grand['_总订单金额'] else 0
         _p2_grand['_直接订单成本'] = _p2_grand['_花费'] / _p2_grand['_直接订单金额'] * 100 if _p2_grand['_直接订单金额'] else 0
         # Grand YoY
@@ -3513,21 +3518,21 @@ with tabs[7]:
         _p2_grand['_YOY_直接ROI'] = _p2_yoy_pct(_p2_grand['_直接ROI'], _p2_grand_yoy.get('_直接订单金额', 0) / _g_ly_spend if _g_ly_spend else 0)
         _p2_grand['_YOY_总ROI'] = _p2_yoy_pct(_p2_grand['_总ROI'], _p2_grand_yoy.get('_总订单金额', 0) / _g_ly_spend if _g_ly_spend else 0)
         _p2_grand['_YOY_CPC'] = _p2_yoy_pct(_p2_grand['_CPC'], _g_ly_spend / _g_ly_click if _g_ly_click else 0)
-        _g_ly_cust = _p2_grand_yoy.get('_成交客户数', 0) or 0
-        _p2_grand['_YOY_转化率'] = _p2_yoy_pct(_p2_grand['_总转化率'], _g_ly_cust / _g_ly_click if _g_ly_click else 0)
+        _g_ly_orders = _p2_grand_yoy.get('_总成交订单量', 0) or 0
+        _p2_grand['_YOY_转化率'] = _p2_yoy_pct(_p2_grand['_总转化率'], _g_ly_orders / _g_ly_click if _g_ly_click else 0)
 
         def _fmt_p2(mc, val):
             if mc in ('_花费', '_总订单金额', '_直接订单金额'):
                 return '¥{:,.0f}'.format(val)
             elif mc == '_CPC':
                 return '¥{:.2f}'.format(val)
-            elif mc in ('_点击率', '_花费占比', '_总金额占比', '_直接金额占比', '_总转化率', '_直接转化率', '_总加购率'):
+            elif mc in ('_点击率', '_花费占比', '_总金额占比', '_直接金额占比', '_总转化率', '_直接转化率'):
                 return '{:.2f}%'.format(val * 100)
             elif mc in ('_总ROI', '_直接ROI'):
                 return '{:.2f}'.format(val)
             elif mc in ('_总订单成本', '_直接订单成本'):
                 return '{:.2f}%'.format(val)
-            elif mc in ('_展现数', '_点击数', '_总加购数'):
+            elif mc in ('_展现数', '_点击数', '_总成交订单量', '_直接订单量'):
                 return '{:,.0f}'.format(int(val))
             else:
                 return '{:,.2f}'.format(val)
