@@ -256,6 +256,9 @@ def load_promo_data(file_bytes: bytes):
             r['_间接订单金额'] = float(indirect_amt) if indirect_amt not in (None, '') else 0.0
             r['_总订单金额'] = float(total_amt) if total_amt not in (None, '') else 0.0
             r['_总加购数'] = float(r.get('总加购数', 0) or 0)
+            # 成交客户数 — 用于转化率计算
+            cust = r.get('成交客户数', None) or r.get('成交客户', None) or r.get('订单客户数', None) or 0
+            r['_成交客户数'] = float(cust) if cust not in (None, '') else 0.0
             roi = r.get('投产比', None) or r.get('投产比', 0)
             r['_投产比'] = float(roi) if roi not in (None, '') else 0.0
             rows.append(r)
@@ -622,13 +625,14 @@ def _promo_agg(rows, key_field):
     d = {}
     for r in rows:
         k = r.get(key_field, '') or '未标注'
-        d.setdefault(k, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0})
+        d.setdefault(k, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0, '成交客户数': 0})
         d[k]['花费'] += r.get('_花费', 0)
         d[k]['展现数'] += r.get('_展现数', 0)
         d[k]['点击数'] += r.get('_点击数', 0)
         d[k]['总订单金额'] += r.get('_总订单金额', 0)
         d[k]['直接订单金额'] += r.get('_直接订单金额', 0)
         d[k]['总加购数'] += r.get('_总加购数', 0)
+        d[k]['成交客户数'] += r.get('_成交客户数', 0)
     return d
 
 def _yoy_text(cur, prev):
@@ -1088,21 +1092,22 @@ with tabs[1]:
         _store_m = {}
         for r in promo_filtered:
             sn = r.get('_店铺', '') or r.get('店铺', '') or '未标注'
-            _store_m.setdefault(sn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0})
+            _store_m.setdefault(sn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0, '成交客户数': 0})
             _store_m[sn]['花费'] += r.get('_花费', 0)
             _store_m[sn]['展现数'] += r.get('_展现数', 0)
             _store_m[sn]['点击数'] += r.get('_点击数', 0)
             _store_m[sn]['总订单金额'] += r.get('_总订单金额', 0)
             _store_m[sn]['直接订单金额'] += r.get('_直接订单金额', 0)
             _store_m[sn]['总加购数'] += r.get('_总加购数', 0)
+            _store_m[sn]['成交客户数'] += r.get('_成交客户数', 0)
         _store_yoy = _promo_agg(promo_yoy, '_店铺')
         _sm_r = []
         for k, v in sorted(_store_m.items(), key=lambda x: x[1]['花费'], reverse=True):
             _imp = v['展现数']
             _clk = v['点击数']
             _fc = v['花费']
-            _addcart = v['总加购数']
-            _cv = _addcart / _clk * 100 if _clk else None  # 推广转化率
+            _cust = v['成交客户数']
+            _cv = _cust / _clk * 100 if _clk else None  # 推广转化率 = 成交客户数/点击量
             _d_roi = v['直接订单金额'] / _fc if _fc else 0
             _cpc = _fc / _clk if _clk else 0
             # 同比
@@ -1167,28 +1172,29 @@ with tabs[1]:
         _chan_m = {}
         for r in promo_filtered:
             cn = r.get('_渠道', '') or r.get('渠道', '') or '未标注'
-            _chan_m.setdefault(cn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0})
+            _chan_m.setdefault(cn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0, '成交客户数': 0})
             _chan_m[cn]['花费'] += r.get('_花费', 0)
             _chan_m[cn]['展现数'] += r.get('_展现数', 0)
             _chan_m[cn]['点击数'] += r.get('_点击数', 0)
             _chan_m[cn]['总订单金额'] += r.get('_总订单金额', 0)
             _chan_m[cn]['直接订单金额'] += r.get('_直接订单金额', 0)
             _chan_m[cn]['总加购数'] += r.get('_总加购数', 0)
+            _chan_m[cn]['成交客户数'] += r.get('_成交客户数', 0)
         _chan_yoy = _promo_agg(promo_yoy, '_渠道')
         _cm_r = []
         for k, v in sorted(_chan_m.items(), key=lambda x: x[1]['花费'], reverse=True):
             _imp = v['展现数']
             _clk = v['点击数']
             _fc = v['花费']
-            _addcart = v['总加购数']
-            _cv = _addcart / _clk * 100 if _clk else None
+            _cust = v['成交客户数']
+            _cv = _cust / _clk * 100 if _clk else None
             _d_roi = v['直接订单金额'] / _fc if _fc else 0
             _cpc = _fc / _clk if _clk else 0
             vy = _chan_yoy.get(k, {})
             _fc_yoy, _ = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
             _droi_yoy, _ = _yoy_text(_d_roi, (vy.get('直接订单金额', 0) / vy.get('花费', 1)) if vy.get('花费', 0) else None)
             _cpc_yoy, _ = _yoy_text(_cpc, (vy.get('花费', 0) / vy.get('点击数', 1)) if vy.get('点击数', 0) else None)
-            _yc = vy.get('总加购数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+            _yc = vy.get('成交客户数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
             _cv_yoy, _ = _yoy_text(_cv, _yc) if _cv and _yc else ('--', '')
             _cm_r.append({
                 '渠道': k,
@@ -1284,28 +1290,29 @@ with tabs[1]:
         _sku = {}
         for r in promo_filtered:
             sku = r.get('_型号', '') or r.get('型号', '') or r.get('SKU', '') or '未标注'
-            _sku.setdefault(sku, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0})
+            _sku.setdefault(sku, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0, '成交客户数': 0})
             _sku[sku]['花费'] += r.get('_花费', 0)
             _sku[sku]['展现数'] += r.get('_展现数', 0)
             _sku[sku]['点击数'] += r.get('_点击数', 0)
             _sku[sku]['总订单金额'] += r.get('_总订单金额', 0)
             _sku[sku]['直接订单金额'] += r.get('_直接订单金额', 0)
             _sku[sku]['总加购数'] += r.get('_总加购数', 0)
+            _sku[sku]['成交客户数'] += r.get('_成交客户数', 0)
         _sku_yoy = _promo_agg(promo_yoy, '_型号')
         _sku_r = []
         for k, v in sorted(_sku.items(), key=lambda x: x[1]['花费'], reverse=True):
             _imp = v['展现数']
             _clk = v['点击数']
             _fc = v['花费']
-            _addcart = v['总加购数']
-            _cv = _addcart / _clk * 100 if _clk else None
+            _cust = v['成交客户数']
+            _cv = _cust / _clk * 100 if _clk else None
             _d_roi = v['直接订单金额'] / _fc if _fc else 0
             _cpc = _fc / _clk if _clk else 0
             vy = _sku_yoy.get(k, {})
             _fc_yoy, _ = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
             _droi_yoy, _ = _yoy_text(_d_roi, (vy.get('直接订单金额', 0) / vy.get('花费', 1)) if vy.get('花费', 0) else None)
             _cpc_yoy, _ = _yoy_text(_cpc, (vy.get('花费', 0) / vy.get('点击数', 1)) if vy.get('点击数', 0) else None)
-            _yc = vy.get('总加购数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+            _yc = vy.get('成交客户数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
             _cv_yoy, _ = _yoy_text(_cv, _yc) if _cv and _yc else ('--', '')
             _sku_r.append({
                 '型号': k,
@@ -1381,14 +1388,14 @@ with tabs[1]:
                 _imp = v['展现数'] or 0; _clk = v['点击数'] or 0
                 _ctr_v = _clk / _imp * 100 if _imp else 0
                 _cpc_v = _fc / _clk if _clk else 0
-                _cv = v['总加购数'] / _clk * 100 if _clk else 0
+                _cv = v['成交客户数'] / _clk * 100 if _clk else 0
                 vy = _cat_yoy.get(k, {})
                 _fc_yoy, _fc_c = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
                 _y_dri = vy.get('直接订单金额', 0) / vy.get('花费', 1) if vy.get('花费', 0) else None
                 _dri_yoy, _dri_c = _yoy_text(_dri, _y_dri) if _dri and _y_dri else ('--', '')
                 _y_cpc = vy.get('花费', 0) / vy.get('点击数', 1) if vy.get('点击数', 0) else None
                 _cpc_yoy, _cpc_c = _yoy_text(_cpc_v, _y_cpc) if _cpc_v and _y_cpc else ('--', '')
-                _y_cv = vy.get('总加购数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+                _y_cv = vy.get('成交客户数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
                 _cv_yoy, _cv_c = _yoy_text(_cv, _y_cv) if _cv and _y_cv else ('--', '')
                 _cat_r.append({
                     '产品线': k,
@@ -1434,14 +1441,14 @@ with tabs[1]:
                 _imp = v['展现数'] or 0; _clk = v['点击数'] or 0
                 _ctr_v = _clk / _imp * 100 if _imp else 0
                 _cpc_v = _fc / _clk if _clk else 0
-                _cv = v['总加购数'] / _clk * 100 if _clk else 0
+                _cv = v['成交客户数'] / _clk * 100 if _clk else 0
                 vy = _scene_yoy.get(k, {})
                 _fc_yoy, _fc_c = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
                 _y_dri = vy.get('直接订单金额', 0) / vy.get('花费', 1) if vy.get('花费', 0) else None
                 _dri_yoy, _dri_c = _yoy_text(_dri, _y_dri) if _dri and _y_dri else ('--', '')
                 _y_cpc = vy.get('花费', 0) / vy.get('点击数', 1) if vy.get('点击数', 0) else None
                 _cpc_yoy, _cpc_c = _yoy_text(_cpc_v, _y_cpc) if _cpc_v and _y_cpc else ('--', '')
-                _y_cv = vy.get('总加购数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+                _y_cv = vy.get('成交客户数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
                 _cv_yoy, _cv_c = _yoy_text(_cv, _y_cv) if _cv and _y_cv else ('--', '')
                 _scene_r.append({
                     '营销场景': k,
@@ -1824,9 +1831,35 @@ with tabs[2]:
     # 合计行
     if dim_compare:
         _sum_row = {_dim_label: '<b>合计</b>', '销售额占比': '100%'}
+        # 先汇总原始字段总量（避免比率字段直接求和出错）
+        _tot_cur_amt = sum(r.get('支付金额', 0) or 0 for r in cur_dim)
+        _tot_prev_amt = sum(r.get('支付金额', 0) or 0 for r in prev_dim)
+        _tot_cur_vis = sum(r.get('商品访客数', 0) or 0 for r in cur_dim)
+        _tot_prev_vis = sum(r.get('商品访客数', 0) or 0 for r in prev_dim)
+        _tot_cur_buyers = sum(r.get('支付买家数', 0) or 0 for r in cur_dim)
+        _tot_prev_buyers = sum(r.get('支付买家数', 0) or 0 for r in prev_dim)
+        _tot_cur_qty = sum(r.get('支付件数', 0) or 0 for r in cur_dim)
+        _tot_prev_qty = sum(r.get('支付件数', 0) or 0 for r in prev_dim)
+
         for _ml, _mf, _fmt, _color in _metric_defs:
-            _cur_sum = sum(r.get(_mf, 0) or 0 for r in cur_dim)
-            _prev_sum = sum(r.get(_mf, 0) or 0 for r in prev_dim)
+            if _ml == '销售额':
+                _cur_sum = _tot_cur_amt
+                _prev_sum = _tot_prev_amt
+            elif _ml == '销售件数':
+                _cur_sum = _tot_cur_qty
+                _prev_sum = _tot_prev_qty
+            elif _ml == '访客数':
+                _cur_sum = _tot_cur_vis
+                _prev_sum = _tot_prev_vis
+            elif _ml == '转化率':
+                _cur_sum = _tot_cur_buyers / _tot_cur_vis if _tot_cur_vis else 0
+                _prev_sum = _tot_prev_buyers / _tot_prev_vis if _tot_prev_vis else 0
+            elif _ml == '客单价':
+                _cur_sum = _tot_cur_amt / _tot_cur_buyers if _tot_cur_buyers else 0
+                _prev_sum = _tot_prev_amt / _tot_prev_buyers if _tot_prev_buyers else 0
+            else:
+                _cur_sum = sum(r.get(_mf, 0) or 0 for r in cur_dim)
+                _prev_sum = sum(r.get(_mf, 0) or 0 for r in prev_dim)
             _sum_row[f'{_ml}(本期)'] = _fmt(_cur_sum)
             _sum_row[f'{_ml}(对比期)'] = _fmt(_prev_sum)
             chg = (_cur_sum - _prev_sum) / _prev_sum if _prev_sum else None
@@ -3117,6 +3150,15 @@ with tabs[7]:
 
         _p1_rows = get_period_rows(_p1_raw, today_s, today_e)
 
+        # ── 去年同期数据 ──
+        _yoy_start = start.replace(year=start.year - 1)
+        _yoy_end = end.replace(year=end.year - 1)
+        if start.month == 2 and start.day == 29:
+            _yoy_start = _yoy_start.replace(day=28)
+        if end.month == 2 and end.day == 29:
+            _yoy_end = _yoy_end.replace(day=28)
+        _p1_yoy_rows = get_period_rows(_p1_raw, str(_yoy_start), str(_yoy_end))
+
         # 聚合：只汇总原始可加字段，计算字段后处理
         _P1_RAW_FIELDS = ['商品访客数', '支付买家数', '支付件数', '支付金额', '商品加购人数', '成功退款金额']
 
@@ -3131,6 +3173,7 @@ with tabs[7]:
             return agg
 
         _p1_agg = _pv1_group(_p1_rows, _p1_row_dims)
+        _p1_yoy_agg = _pv1_group(_p1_yoy_rows, _p1_row_dims)
         _p1_total_visitors = sum(v['商品访客数'] for v in _p1_agg.values()) or 1
         _p1_total_amt = sum(v['支付金额'] for v in _p1_agg.values()) or 1
 
@@ -3143,6 +3186,24 @@ with tabs[7]:
             v['UV价值'] = v['支付金额'] / v['商品访客数'] if v['商品访客数'] else 0
             v['访客占比'] = v['商品访客数'] / _p1_total_visitors
             v['成交占比'] = v['支付金额'] / _p1_total_amt
+
+        # ── 计算同比 ──
+        def _p1_yoy_pct(cur_v, ly_v):
+            if ly_v and ly_v != 0:
+                return (cur_v - ly_v) / ly_v * 100
+            return None
+
+        for rk, v in _p1_agg.items():
+            ly = _p1_yoy_agg.get(rk, {})
+            v['_YOY_访客数'] = _p1_yoy_pct(v.get('商品访客数', 0), ly.get('商品访客数', 0))
+            v['_YOY_销售额'] = _p1_yoy_pct(v.get('支付金额', 0), ly.get('支付金额', 0))
+            v['_YOY_销售量'] = _p1_yoy_pct(v.get('支付件数', 0), ly.get('支付件数', 0))
+            # 转化率同比 = 本期转化率 vs 去年同期转化率
+            _ly_buyers = ly.get('支付买家数', 0) or 0
+            _ly_vis = ly.get('商品访客数', 0) or 0
+            _ly_cvr = _ly_buyers / _ly_vis if _ly_vis else 0
+            _cur_cvr = v.get('支付转化率', 0) or 0
+            v['_YOY_转化率'] = _p1_yoy_pct(_cur_cvr, _ly_cvr)
 
         _p1_row_keys = sorted(_p1_agg.keys())
         if _p1_top_n > 0:
@@ -3159,6 +3220,15 @@ with tabs[7]:
         _p1_grand['UV价值'] = _p1_grand['支付金额'] / _p1_grand['商品访客数'] if _p1_grand['商品访客数'] else 0
         _p1_grand['访客占比'] = 1.0
         _p1_grand['成交占比'] = 1.0
+        # Grand YoY
+        _p1_grand_yoy = {f: sum(v[f] for v in _p1_yoy_agg.values()) for f in _P1_RAW_FIELDS}
+        _p1_grand['_YOY_访客数'] = _p1_yoy_pct(_p1_grand.get('商品访客数', 0), _p1_grand_yoy.get('商品访客数', 0))
+        _p1_grand['_YOY_销售额'] = _p1_yoy_pct(_p1_grand.get('支付金额', 0), _p1_grand_yoy.get('支付金额', 0))
+        _p1_grand['_YOY_销售量'] = _p1_yoy_pct(_p1_grand.get('支付件数', 0), _p1_grand_yoy.get('支付件数', 0))
+        _ly_g_buyers = _p1_grand_yoy.get('支付买家数', 0) or 0
+        _ly_g_vis = _p1_grand_yoy.get('商品访客数', 0) or 0
+        _ly_g_cvr = _ly_g_buyers / _ly_g_vis if _ly_g_vis else 0
+        _p1_grand['_YOY_转化率'] = _p1_yoy_pct(_p1_grand.get('支付转化率', 0), _ly_g_cvr)
 
         def _fmt_s1(mc, val):
             if mc in ('支付金额', 'UV价值', '客单价'):
@@ -3170,12 +3240,24 @@ with tabs[7]:
             else:
                 return '{:,.0f}'.format(int(val))
 
+        def _fmt_yoy(v):
+            if v is None:
+                return '--', '#94a3b8'
+            sign = '+' if v >= 0 else ''
+            color = '#22c55e' if v >= 0 else '#dc2626'
+            return f'{sign}{v:.1f}%', color
+
         _p1_cols = _p1_vals
+        _yoy_cols = ['访客数同比', '转化率同比', '销售额同比', '销售量同比']
+        _yoy_keys = ['_YOY_访客数', '_YOY_转化率', '_YOY_销售额', '_YOY_销售量']
+
         _th_html = '<thead><tr>'
         for d in _p1_row_dims:
             _th_html += '<th style="background:#e2e8f0;color:#1e293b;font-weight:600;padding:6px 10px;">' + d + '</th>'
         for mc in _p1_cols:
             _th_html += '<th style="background:#fef9c3;color:#1e293b;font-weight:600;text-align:right;padding:6px 10px;">' + mc + '</th>'
+        for yc in _yoy_cols:
+            _th_html += '<th style="background:#fce7f3;color:#1e293b;font-weight:600;text-align:right;padding:6px 10px;">' + yc + '</th>'
         _th_html += '</tr></thead>'
 
         _tb_html = '<tbody>'
@@ -3186,6 +3268,10 @@ with tabs[7]:
             for mc in _p1_cols:
                 _v = _p1_agg.get(rk, {}).get(mc, 0) or 0
                 _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_s1(mc, _v) + '</td>'
+            for yk in _yoy_keys:
+                _yv = _p1_agg.get(rk, {}).get(yk)
+                _ys, _yc = _fmt_yoy(_yv)
+                _tb_html += '<td style="text-align:right;padding:5px 10px;color:' + _yc + ';">' + _ys + '</td>'
             _tb_html += '</tr>'
         _tb_html += '<tr style="background:#fff7ed;font-weight:bold;">'
         for i, d in enumerate(_p1_row_dims):
@@ -3193,6 +3279,10 @@ with tabs[7]:
         for mc in _p1_cols:
             _v = _p1_grand.get(mc, 0) or 0
             _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_s1(mc, _v) + '</td>'
+        for yk in _yoy_keys:
+            _yv = _p1_grand.get(yk)
+            _ys, _yc = _fmt_yoy(_yv)
+            _tb_html += '<td style="text-align:right;padding:5px 10px;color:' + _yc + ';">' + _ys + '</td>'
         _tb_html += '</tr></tbody>'
 
         _html = '<div class="styled-table-wrap" style="max-height:600px;overflow-y:auto;overflow-x:auto;"><table class="styled-table">' + _th_html + _tb_html + '</table></div>'
@@ -3222,7 +3312,7 @@ with tabs[7]:
         if channel and _p2_raw:
             _p2_raw = [r for r in _p2_raw if r.get('_渠道') in channel]
 
-        _P2_RAW_FIELDS = ['_花费', '_展现数', '_点击数', '_总订单金额', '_直接订单金额', '_总加购数']
+        _P2_RAW_FIELDS = ['_花费', '_展现数', '_点击数', '_总订单金额', '_直接订单金额', '_总加购数', '_成交客户数']
 
         def _pv2_group(rows, row_dims):
             agg = {}
@@ -3235,6 +3325,12 @@ with tabs[7]:
             return agg
 
         _p2_agg = _pv2_group(_p2_raw, _p2_row_dims)
+        # ── 去年同期 ──
+        _p2_yoy_raw = promo_yoy if promo_yoy else []
+        if channel and _p2_yoy_raw:
+            _p2_yoy_raw = [r for r in _p2_yoy_raw if r.get('_渠道') in channel]
+        _p2_yoy_agg = _pv2_group(_p2_yoy_raw, _p2_row_dims)
+
         _p2_total_spend = sum(v['_花费'] for v in _p2_agg.values()) or 1
         _p2_total_total_amt = sum(v['_总订单金额'] for v in _p2_agg.values()) or 1
         _p2_total_direct_amt = sum(v['_直接订单金额'] for v in _p2_agg.values()) or 1
@@ -3245,14 +3341,43 @@ with tabs[7]:
             v['_CPC'] = v['_花费'] / v['_点击数'] if v['_点击数'] else 0
             v['_总ROI'] = v['_总订单金额'] / v['_花费'] if v['_花费'] else 0
             v['_直接ROI'] = v['_直接订单金额'] / v['_花费'] if v['_花费'] else 0
-            v['_总转化率'] = v['_总订单金额'] / v['_点击数'] if v['_点击数'] else 0
-            v['_直接转化率'] = v['_直接订单金额'] / v['_点击数'] if v['_点击数'] else 0
+            v['_总转化率'] = v['_成交客户数'] / v['_点击数'] if v['_点击数'] else 0
+            v['_直接转化率'] = v['_成交客户数'] / v['_点击数'] if v['_点击数'] else 0
             v['_花费占比'] = v['_花费'] / _p2_total_spend
             v['_总金额占比'] = v['_总订单金额'] / _p2_total_total_amt
             v['_直接金额占比'] = v['_直接订单金额'] / _p2_total_direct_amt
             v['_总加购率'] = v['_总加购数'] / v['_点击数'] if v['_点击数'] else 0
             v['_总订单成本'] = v['_花费'] / v['_总订单金额'] * 100 if v['_总订单金额'] else 0
             v['_直接订单成本'] = v['_花费'] / v['_直接订单金额'] * 100 if v['_直接订单金额'] else 0
+
+        # ── 计算同比 ──
+        def _p2_yoy_pct(cur_v, ly_v):
+            if ly_v and ly_v != 0:
+                return (cur_v - ly_v) / ly_v * 100
+            return None
+
+        for rk, v in _p2_agg.items():
+            ly = _p2_yoy_agg.get(rk, {})
+            v['_YOY_花费'] = _p2_yoy_pct(v.get('_花费', 0), ly.get('_花费', 0))
+            _ly_spend = ly.get('_花费', 0) or 0
+            _ly_click = ly.get('_点击数', 0) or 0
+            # 直接ROI同比
+            _ly_droi = ly.get('_直接订单金额', 0) / _ly_spend if _ly_spend else 0
+            _cur_droi = v.get('_直接ROI', 0) or 0
+            v['_YOY_直接ROI'] = _p2_yoy_pct(_cur_droi, _ly_droi) if _ly_spend else None
+            # 总ROI同比
+            _ly_roi = ly.get('_总订单金额', 0) / _ly_spend if _ly_spend else 0
+            _cur_roi = v.get('_总ROI', 0) or 0
+            v['_YOY_总ROI'] = _p2_yoy_pct(_cur_roi, _ly_roi) if _ly_spend else None
+            # CPC同比
+            _ly_cpc = _ly_spend / _ly_click if _ly_click else 0
+            _cur_cpc = v.get('_CPC', 0) or 0
+            v['_YOY_CPC'] = _p2_yoy_pct(_cur_cpc, _ly_cpc) if _ly_click else None
+            # 转化率同比
+            _ly_cust = ly.get('_成交客户数', 0) or 0
+            _ly_cvr = _ly_cust / _ly_click if _ly_click else 0
+            _cur_cvr = v.get('_总转化率', 0) or 0
+            v['_YOY_转化率'] = _p2_yoy_pct(_cur_cvr, _ly_cvr) if _ly_click else None
 
         _p2_row_keys = sorted(_p2_agg.keys())
         if _p2_top_n > 0:
@@ -3266,14 +3391,24 @@ with tabs[7]:
         _p2_grand['_CPC'] = _p2_grand['_花费'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
         _p2_grand['_总ROI'] = _p2_grand['_总订单金额'] / _p2_grand['_花费'] if _p2_grand['_花费'] else 0
         _p2_grand['_直接ROI'] = _p2_grand['_直接订单金额'] / _p2_grand['_花费'] if _p2_grand['_花费'] else 0
-        _p2_grand['_总转化率'] = _p2_grand['_总订单金额'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
-        _p2_grand['_直接转化率'] = _p2_grand['_直接订单金额'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
+        _p2_grand['_总转化率'] = _p2_grand['_成交客户数'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
+        _p2_grand['_直接转化率'] = _p2_grand['_成交客户数'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
         _p2_grand['_花费占比'] = 1.0
         _p2_grand['_总金额占比'] = 1.0
         _p2_grand['_直接金额占比'] = 1.0
         _p2_grand['_总加购率'] = _p2_grand['_总加购数'] / _p2_grand['_点击数'] if _p2_grand['_点击数'] else 0
         _p2_grand['_总订单成本'] = _p2_grand['_花费'] / _p2_grand['_总订单金额'] * 100 if _p2_grand['_总订单金额'] else 0
         _p2_grand['_直接订单成本'] = _p2_grand['_花费'] / _p2_grand['_直接订单金额'] * 100 if _p2_grand['_直接订单金额'] else 0
+        # Grand YoY
+        _p2_grand_yoy = {f: sum(v[f] for v in _p2_yoy_agg.values()) for f in _P2_RAW_FIELDS}
+        _p2_grand['_YOY_花费'] = _p2_yoy_pct(_p2_grand.get('_花费', 0), _p2_grand_yoy.get('_花费', 0))
+        _g_ly_spend = _p2_grand_yoy.get('_花费', 0) or 1
+        _g_ly_click = _p2_grand_yoy.get('_点击数', 0) or 1
+        _p2_grand['_YOY_直接ROI'] = _p2_yoy_pct(_p2_grand['_直接ROI'], _p2_grand_yoy.get('_直接订单金额', 0) / _g_ly_spend if _g_ly_spend else 0)
+        _p2_grand['_YOY_总ROI'] = _p2_yoy_pct(_p2_grand['_总ROI'], _p2_grand_yoy.get('_总订单金额', 0) / _g_ly_spend if _g_ly_spend else 0)
+        _p2_grand['_YOY_CPC'] = _p2_yoy_pct(_p2_grand['_CPC'], _g_ly_spend / _g_ly_click if _g_ly_click else 0)
+        _g_ly_cust = _p2_grand_yoy.get('_成交客户数', 0) or 0
+        _p2_grand['_YOY_转化率'] = _p2_yoy_pct(_p2_grand['_总转化率'], _g_ly_cust / _g_ly_click if _g_ly_click else 0)
 
         def _fmt_p2(mc, val):
             if mc in ('_花费', '_总订单金额', '_直接订单金额'):
@@ -3291,7 +3426,17 @@ with tabs[7]:
             else:
                 return '{:,.2f}'.format(val)
 
+        def _fmt_p2_yoy(v):
+            if v is None:
+                return '--', '#94a3b8'
+            sign = '+' if v >= 0 else ''
+            color = '#22c55e' if v >= 0 else '#dc2626'
+            return f'{sign}{v:.1f}%', color
+
         _p2_cols = _p2_vals
+        _p2_yoy_cols = ['花费同比', '直接ROI同比', '总ROI同比', 'CPC同比', '转化率同比']
+        _p2_yoy_keys = ['_YOY_花费', '_YOY_直接ROI', '_YOY_总ROI', '_YOY_CPC', '_YOY_转化率']
+
         _th_html = '<thead><tr>'
         for d in _p2_row_dims:
             _label = d.lstrip('_')
@@ -3299,6 +3444,8 @@ with tabs[7]:
         for mc in _p2_cols:
             _label = mc.lstrip('_')
             _th_html += '<th style="background:#dbeafe;color:#1e293b;font-weight:600;text-align:right;padding:6px 10px;">' + _label + '</th>'
+        for yc in _p2_yoy_cols:
+            _th_html += '<th style="background:#fce7f3;color:#1e293b;font-weight:600;text-align:right;padding:6px 10px;">' + yc + '</th>'
         _th_html += '</tr></thead>'
 
         _tb_html = '<tbody>'
@@ -3309,6 +3456,10 @@ with tabs[7]:
             for mc in _p2_cols:
                 _v = _p2_agg.get(rk, {}).get(mc, 0) or 0
                 _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_p2(mc, _v) + '</td>'
+            for yk in _p2_yoy_keys:
+                _yv = _p2_agg.get(rk, {}).get(yk)
+                _ys, _yc = _fmt_p2_yoy(_yv)
+                _tb_html += '<td style="text-align:right;padding:5px 10px;color:' + _yc + ';">' + _ys + '</td>'
             _tb_html += '</tr>'
         _tb_html += '<tr style="background:#fff7ed;font-weight:bold;">'
         for i, d in enumerate(_p2_row_dims):
@@ -3316,6 +3467,10 @@ with tabs[7]:
         for mc in _p2_cols:
             _v = _p2_grand.get(mc, 0) or 0
             _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_p2(mc, _v) + '</td>'
+        for yk in _p2_yoy_keys:
+            _yv = _p2_grand.get(yk)
+            _ys, _yc = _fmt_p2_yoy(_yv)
+            _tb_html += '<td style="text-align:right;padding:5px 10px;color:' + _yc + ';">' + _ys + '</td>'
         _tb_html += '</tr></tbody>'
 
         _html = '<div class="styled-table-wrap" style="max-height:600px;overflow-y:auto;overflow-x:auto;"><table class="styled-table">' + _th_html + _tb_html + '</table></div>'
