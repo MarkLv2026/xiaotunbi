@@ -2278,8 +2278,8 @@ with tabs[3]:
                                       name='访客数', yaxis='y2', line=dict(color='#06b6d4', width=2)))
         fig.update_layout(height=350, template='plotly_white', legend=dict(orientation='h'),
                         yaxis_title='支付金额(万)', yaxis2=dict(title='访客数', overlaying='y', side='right'))
-            st.plotly_chart(fig, use_container_width=True)
-            _render_download_panel(tr_data, ['周期','支付金额','访客数','转化率','加购率'], 'trend_amt_vs_vis.csv', '📥 趋势：金额/访客')
+        st.plotly_chart(fig, use_container_width=True)
+        _render_download_panel(tr_data, ['周期','支付金额','访客数','转化率','加购率'], 'trend_amt_vs_vis.csv', '📥 趋势：金额/访客')
     with t2:
         fig = go.Figure()
         if tr_data:
