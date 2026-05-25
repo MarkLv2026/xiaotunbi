@@ -2395,9 +2395,7 @@ with tabs[3]:
                 _month_promo[ym] = _month_promo.get(ym, 0) + float(r.get('_花费', 0) or 0)
         # 月度表格从 filtered daily 聚合（受筛选器控制）
         filtered_monthly_list = build_monthly(daily)
-        # 同比查找表：从全时段同条件数据聚合，用于查找去年同期的月度汇总
-        full_mm_list = build_monthly(daily_all_filtered)
-        mm_all = {r['月份']: r for r in full_mm_list}
+        # 去年同月同比：从 ly_day_dict 按月份聚合对应天数（而非整月）
         total_vis_m = sum(r['商品访客数'] for r in filtered_monthly_list)
         total_amt_m = sum(r['支付金额'] for r in filtered_monthly_list)
         total_buyers_m = sum(r['支付买家数'] for r in filtered_monthly_list)
@@ -2407,13 +2405,17 @@ with tabs[3]:
             m = r['月份']
             vis = r['商品访客数']
             amt = r['支付金额']
-            ly = mm_all.get(month_shift(m, -12), {})
-            ly_amt = ly.get('支付金额', 0)
+            # 去年同期：从 ly_day_dict 聚合本月各天对应的去年数据（不支持整月时只取对应天数）
+            ly_amt = 0; ly_vis = 0; ly_buyers = 0
+            for dt_name, ly_v in ly_day_dict.items():
+                if dt_name.startswith(m) and ly_v:
+                    ly_amt += float(ly_v.get('支付金额', 0) or 0)
+                    ly_vis += float(ly_v.get('商品访客数', 0) or 0)
+                    ly_buyers += float(ly_v.get('支付买家数', 0) or 0)
             yoy_amt = (amt - ly_amt) / ly_amt if ly_amt else None
-            ly_vis = ly.get('商品访客数', 0)
             yoy_vis = (vis - ly_vis) / ly_vis if ly_vis else None
             cvr = r['支付转化率'] or 0
-            ly_cvr = ly.get('支付转化率', 0)
+            ly_cvr = ly_buyers / ly_vis if ly_vis else 0
             yoy_cvr = (cvr - ly_cvr) / ly_cvr if ly_cvr else None
             monthly_tbl.append({
                 '月份': m, '访客数': f"{int(vis):,}",
@@ -2437,29 +2439,10 @@ with tabs[3]:
             _mm_total_vis = total_vis_m; _mm_total_amt = total_amt_m
             _mm_total_buyers = total_buyers_m; _mm_total_cart = total_cart_m
             _mm_total_qty = sum(r['支付件数'] for r in filtered_monthly_list)
-            # 合计同比：用已经算好的去年同期（ystart~yend 精确范围）
-            _ly_monthly_total = [mm_all.get(month_shift(r['月份'], -12), {}) for r in filtered_monthly_list]
-            _ly_total_amt = sum(d.get('支付金额', 0) for d in _ly_monthly_total if d)
-            _ly_total_vis = sum(d.get('商品访客数', 0) for d in _ly_monthly_total if d)
-            _ly_total_buyers = sum(d.get('支付买家数', 0) for d in _ly_monthly_total if d)
-            # 去年同期：用与本期相同的日期 offset 范围（yoy_start~yoy_end 精确天数）
-            # 正确做法：从 daily_all_filtered 按去年对应日期范围聚合
-            _ly_daily_vis = 0; _ly_daily_amt = 0; _ly_daily_buyers = 0; _ly_daily_qty = 0; _ly_daily_cart = 0
-            for r in daily_all_filtered:
-                _rd = r.get('日期', '')
-                if not _rd: continue
-                try:
-                    _rdt = datetime.date.fromisoformat(_rd[:10])
-                    # 去年同期：年份-1，月日对应
-                    _cur_dt = _rdt.replace(year=_rdt.year + 1)
-                    if str(start) <= str(_cur_dt) <= str(end):
-                        _ly_daily_vis += float(r.get('商品访客数', 0) or 0)
-                        _ly_daily_amt += float(r.get('支付金额', 0) or 0)
-                        _ly_daily_buyers += float(r.get('支付买家数', 0) or 0)
-                        _ly_daily_qty += float(r.get('支付件数', 0) or 0)
-                        _ly_daily_cart += float(r.get('商品加购人数', 0) or 0)
-                except Exception:
-                    pass
+            # 合计同比：从 ly_day_dict 聚合与本期一一对应的去年同期数据
+            _ly_daily_vis = sum(v['商品访客数'] for v in ly_day_dict.values() if v)
+            _ly_daily_amt = sum(v['支付金额'] for v in ly_day_dict.values() if v)
+            _ly_daily_buyers = sum(v['支付买家数'] for v in ly_day_dict.values() if v)
             _total_yoy_amt = (_mm_total_amt - _ly_daily_amt) / _ly_daily_amt if _ly_daily_amt else None
             _total_yoy_vis = (_mm_total_vis - _ly_daily_vis) / _ly_daily_vis if _ly_daily_vis else None
             _total_cvr = _mm_total_buyers / _mm_total_vis if _mm_total_vis else 0
