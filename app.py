@@ -2031,13 +2031,93 @@ with tabs[3]:
     st.markdown('<div class="section-title">趋势分析</div>', unsafe_allow_html=True)
     gran = st.radio('趋势粒度', ['月度', '周度', '日度'], horizontal=True, key='granularity')
 
+    # ══════════════════════════════════════
+    # 趋势维度筛选器（本地，仅影响本 Tab）
+    # ══════════════════════════════════════
+    st.markdown('<div style="font-size:13px;font-weight:600;margin-bottom:4px;">销售维度筛选</div>', unsafe_allow_html=True)
+    _tr_s1, _tr_s2, _tr_s3, _tr_s4 = st.columns(4)
+    with _tr_s1:
+        _tr_ch_opts = sorted({r.get('渠道','') for r in daily if r.get('渠道')})
+        _tr_channel = st.selectbox('渠道', ['全部'] + _tr_ch_opts, key='tr_sales_ch')
+    with _tr_s2:
+        _tr_ch_f = [r for r in daily if _tr_channel == '全部' or r.get('渠道') == _tr_channel]
+        _tr_st_opts = sorted({r.get('店铺','') for r in _tr_ch_f if r.get('店铺')})
+        _tr_store = st.selectbox('店铺', ['全部'] + _tr_st_opts, key='tr_sales_st')
+    with _tr_s3:
+        _tr_st_f = [r for r in _tr_ch_f if _tr_store == '全部' or r.get('店铺') == _tr_store]
+        _tr_cat_opts = sorted({r.get('品类','') for r in _tr_st_f if r.get('品类')})
+        _tr_category = st.selectbox('品类', ['全部'] + _tr_cat_opts, key='tr_sales_cat')
+    with _tr_s4:
+        _tr_cat_f = [r for r in _tr_st_f if _tr_category == '全部' or r.get('品类') == _tr_category]
+        _tr_mdl_opts = sorted({r.get('型号','') for r in _tr_cat_f if r.get('型号')})
+        _tr_model = st.selectbox('型号', ['全部'] + _tr_mdl_opts, key='tr_sales_mdl')
+
+    st.markdown('<div style="font-size:13px;font-weight:600;margin:10px 0 4px;">推广维度筛选</div>', unsafe_allow_html=True)
+    _tr_pc1, _tr_pc2, _tr_pc3, _tr_pc4 = st.columns(4)
+    _tr_pc5, _tr_pc6, _tr_pc7 = st.columns(3)
+    with _tr_pc1:
+        _tr_pch_opts = sorted({r.get('_渠道','') for r in promo_filtered if r.get('_渠道')})
+        _tr_pchannel = st.selectbox('渠道', ['全部'] + _tr_pch_opts, key='tr_promo_ch')
+    with _tr_pc2:
+        _tr_pch_f = [r for r in promo_filtered if _tr_pchannel == '全部' or r.get('_渠道') == _tr_pchannel]
+        _tr_pst_opts = sorted({r.get('_店铺','') for r in _tr_pch_f if r.get('_店铺')})
+        _tr_pstore = st.selectbox('店铺', ['全部'] + _tr_pst_opts, key='tr_promo_st')
+    with _tr_pc3:
+        _tr_pst_f = [r for r in _tr_pch_f if _tr_pstore == '全部' or r.get('_店铺') == _tr_pstore]
+        _tr_pcat_opts = sorted({r.get('_品类','') for r in _tr_pst_f if r.get('_品类')})
+        _tr_pcategory = st.selectbox('品类', ['全部'] + _tr_pcat_opts, key='tr_promo_cat')
+    with _tr_pc4:
+        _tr_pcat_f = [r for r in _tr_pst_f if _tr_pcategory == '全部' or r.get('_品类') == _tr_pcategory]
+        _tr_pmdl_opts = sorted({r.get('_型号','') for r in _tr_pcat_f if r.get('_型号')})
+        _tr_pmodel = st.selectbox('型号', ['全部'] + _tr_pmdl_opts, key='tr_promo_mdl')
+    with _tr_pc5:
+        _tr_pl_opts = sorted({r.get('产品线','') or '未标注' for r in promo_filtered})
+        _tr_p_line = st.selectbox('产品线', ['全部'] + _tr_pl_opts, key='tr_promo_line')
+    with _tr_pc6:
+        _tr_ps_opts = sorted({r.get('_营销场景','') for r in promo_filtered if r.get('_营销场景')})
+        _tr_p_scene = st.selectbox('营销场景', ['全部'] + _tr_ps_opts, key='tr_promo_scene')
+    with _tr_pc7:
+        _tr_pp_opts = sorted({(r.get('推广计划','') or r.get('计划ID','') or '未标注') for r in promo_filtered})
+        _tr_p_plan = st.selectbox('推广计划', ['全部'] + _tr_pp_opts, key='tr_promo_plan')
+
+    # ── 构建趋势本地过滤数据 ──
+    _tr_daily = []
+    for r in daily:
+        if _tr_channel != '全部' and r.get('渠道') != _tr_channel: continue
+        if _tr_store != '全部' and r.get('店铺') != _tr_store: continue
+        if _tr_category != '全部' and r.get('品类') != _tr_category: continue
+        if _tr_model != '全部' and r.get('型号') != _tr_model: continue
+        _tr_daily.append(r)
+    _tr_promo = []
+    for r in promo_filtered:
+        if _tr_pchannel != '全部' and r.get('_渠道') != _tr_pchannel: continue
+        if _tr_pstore != '全部' and r.get('_店铺') != _tr_pstore: continue
+        if _tr_pcategory != '全部' and r.get('_品类') != _tr_pcategory: continue
+        if _tr_pmodel != '全部' and r.get('_型号') != _tr_pmodel: continue
+        if _tr_p_line != '全部' and (r.get('产品线','') or '未标注') != _tr_p_line: continue
+        if _tr_p_scene != '全部' and r.get('_营销场景') != _tr_p_scene: continue
+        if _tr_p_plan != '全部' and (r.get('推广计划','') or r.get('计划ID','') or '未标注') != _tr_p_plan: continue
+        _tr_promo.append(r)
+    _tr_daily_all = []
+    for r in daily_all_filtered:
+        if _tr_channel != '全部' and r.get('渠道') != _tr_channel: continue
+        if _tr_store != '全部' and r.get('店铺') != _tr_store: continue
+        if _tr_category != '全部' and r.get('品类') != _tr_category: continue
+        if _tr_model != '全部' and r.get('型号') != _tr_model: continue
+        _tr_daily_all.append(r)
+    # 月度汇总也从 _tr_daily 重建
+    _tr_filtered_monthly = build_monthly(_tr_daily)
+    # 同比图表用的全时段月度聚合（同维度筛选，所有月份）
+    _tr_all_months = build_monthly(_tr_daily_all)
+    _tr_mm = {r['月份']: r for r in _tr_all_months}
+
     if gran == '月度':
         tr_data = [{'周期': r['月份'], '支付金额': r['支付金额'], '访客数': r['商品访客数'],
                     '支付件数': r['支付件数'], '转化率': r['支付转化率'], '加购率': r['加购率']}
-                   for r in all_months]
+                   for r in _tr_filtered_monthly]
     elif gran == '周度':
         week_dict = {}   # key: (yr, wk_int)  -> {metrics..., week_start, week_end}
-        for r in daily:
+        for r in _tr_daily:
             try:
                 ds = r.get('日期', '')
                 if len(ds) == 7:
@@ -2072,7 +2152,7 @@ with tabs[3]:
         tr_data = week_rows
     else:
         tr_data = []
-        for r in daily:
+        for r in _tr_daily:
             byr = float(r.get('支付买家数', 0) or 0)
             vis = float(r.get('商品访客数', 0) or 0)
             tr_data.append({
@@ -2151,12 +2231,12 @@ with tabs[3]:
         # 构建每日推广花费字典（用于费率计算）
         _day_promo = {}
         if promo_rows:
-            for r in promo_filtered:
+            for r in _tr_promo:
                 d = r.get('_date', '')
                 if not d: continue
                 _day_promo[d] = _day_promo.get(d, 0) + float(r.get('_花费', 0) or 0)
         day_dict = {}
-        for r in daily:
+        for r in _tr_daily:
             dt = r.get('日期', '')
             if not dt:
                 continue
@@ -2170,7 +2250,7 @@ with tabs[3]:
         total_cart = sum(v['商品加购人数'] for v in day_dict.values())
         # 预计算每日同比（去年同期同一天）——从全时段同条件数据查询
         full_day_dict = {}
-        for r in daily_all_filtered:
+        for r in _tr_daily_all:
             dt_full = r.get('日期', '')
             if not dt_full:
                 continue
@@ -2271,14 +2351,14 @@ with tabs[3]:
         if promo_rows:
             st.markdown('<div style="margin-top:18px;font-weight:700;font-size:14px;color:#1d4ed8;">📢 推广日度趋势</div>', unsafe_allow_html=True)
             _pd_dict = {}
-            for r in promo_filtered:
+            for r in _tr_promo:
                 d = r.get('_date', '')
                 if not d: continue
                 if d not in _pd_dict:
                     _pd_dict[d] = {'_花费':0,'_展现数':0,'_点击数':0,'_直接订单金额':0,'_总订单金额':0,'_直接订单量':0,'_总成交订单量':0}
                 for fk in ('_花费','_展现数','_点击数','_直接订单金额','_总订单金额','_直接订单量','_总成交订单量'):
                     _pd_dict[d][fk] += float(r.get(fk, 0) or 0)
-            # 去年同期（精确日期对应）
+            # 去年同期（精确日期对应 + 趋势本地维度筛选）
             _pd_yoy_dict = {}
             for r in promo_rows:
                 d = r.get('_date', '')
@@ -2287,6 +2367,14 @@ with tabs[3]:
                 if store and r.get('_店铺', '') not in store: continue
                 if category and r.get('_品类', '') not in category: continue
                 if model and r.get('_型号', '') not in model: continue
+                # 趋势本地推广维度筛选
+                if _tr_pchannel != '全部' and r.get('_渠道') != _tr_pchannel: continue
+                if _tr_pstore != '全部' and r.get('_店铺') != _tr_pstore: continue
+                if _tr_pcategory != '全部' and r.get('_品类') != _tr_pcategory: continue
+                if _tr_pmodel != '全部' and r.get('_型号') != _tr_pmodel: continue
+                if _tr_p_line != '全部' and (r.get('产品线','') or '未标注') != _tr_p_line: continue
+                if _tr_p_scene != '全部' and r.get('_营销场景') != _tr_p_scene: continue
+                if _tr_p_plan != '全部' and (r.get('推广计划','') or r.get('计划ID','') or '未标注') != _tr_p_plan: continue
                 try:
                     _rdt = datetime.date.fromisoformat(d[:10])
                     _cur_eq = _rdt.replace(year=_rdt.year + 1)
@@ -2388,20 +2476,18 @@ with tabs[3]:
         # 构建每月推广花费字典（用于费率计算）
         _month_promo = {}
         if promo_rows:
-            for r in promo_filtered:
+            for r in _tr_promo:
                 d = r.get('_date', '')
                 if not d or len(d) < 7: continue
                 ym = d[:7]
                 _month_promo[ym] = _month_promo.get(ym, 0) + float(r.get('_花费', 0) or 0)
-        # 月度表格从 filtered daily 聚合（受筛选器控制）
-        filtered_monthly_list = build_monthly(daily)
-        # 去年同月同比：从 ly_day_dict 按月份聚合对应天数（而非整月）
-        total_vis_m = sum(r['商品访客数'] for r in filtered_monthly_list)
-        total_amt_m = sum(r['支付金额'] for r in filtered_monthly_list)
-        total_buyers_m = sum(r['支付买家数'] for r in filtered_monthly_list)
-        total_cart_m = sum(r['商品加购人数'] for r in filtered_monthly_list)
+        # 月度表格从趋势本地过滤后的 _tr_daily 聚合
+        total_vis_m = sum(r['商品访客数'] for r in _tr_filtered_monthly)
+        total_amt_m = sum(r['支付金额'] for r in _tr_filtered_monthly)
+        total_buyers_m = sum(r['支付买家数'] for r in _tr_filtered_monthly)
+        total_cart_m = sum(r['商品加购人数'] for r in _tr_filtered_monthly)
         monthly_tbl = []
-        for r in filtered_monthly_list:
+        for r in _tr_filtered_monthly:
             m = r['月份']
             vis = r['商品访客数']
             amt = r['支付金额']
@@ -2438,7 +2524,7 @@ with tabs[3]:
             # 去年同期合计：也只取与本期相同月份范围+相同天数区间的数据
             _mm_total_vis = total_vis_m; _mm_total_amt = total_amt_m
             _mm_total_buyers = total_buyers_m; _mm_total_cart = total_cart_m
-            _mm_total_qty = sum(r['支付件数'] for r in filtered_monthly_list)
+            _mm_total_qty = sum(r['支付件数'] for r in _tr_filtered_monthly)
             # 合计同比：从 ly_day_dict 聚合与本期一一对应的去年同期数据
             _ly_daily_vis = sum(v['商品访客数'] for v in ly_day_dict.values() if v)
             _ly_daily_amt = sum(v['支付金额'] for v in ly_day_dict.values() if v)
@@ -2484,7 +2570,7 @@ with tabs[3]:
             _mm_headers = ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
             _render_html_table(_mm_sorted, _mm_headers, _mm_headers, title='📦 销售月度趋势')
             # 下载原始月度数据
-            _mm_dl = [{m: v[m] for m in METRICS} for v in filtered_monthly_list]
+            _mm_dl = [{m: v[m] for m in METRICS} for v in _tr_filtered_monthly]
             _render_download_panel(_mm_dl, METRICS, 'monthly_summary.csv')
 
         # ══════════════════════════════════════════════
@@ -2492,9 +2578,9 @@ with tabs[3]:
         # ══════════════════════════════════════════════
         if promo_rows:
             st.markdown('<div style="margin-top:18px;font-weight:700;font-size:14px;color:#1d4ed8;">📢 推广月度趋势</div>', unsafe_allow_html=True)
-            # 按月聚合本期推广数据（已过滤渠道/店铺/品类/型号+日期）
+            # 按月聚合本期推广数据（趋势本地维度筛选）
             _pm_dict = {}  # key: 'YYYY-MM'
-            for r in promo_filtered:
+            for r in _tr_promo:
                 d = r.get('_date', '')
                 if not d: continue
                 ym = d[:7]
@@ -2512,6 +2598,14 @@ with tabs[3]:
                 if store and r.get('_店铺', '') not in store: continue
                 if category and r.get('_品类', '') not in category: continue
                 if model and r.get('_型号', '') not in model: continue
+                # 趋势本地推广维度筛选
+                if _tr_pchannel != '全部' and r.get('_渠道') != _tr_pchannel: continue
+                if _tr_pstore != '全部' and r.get('_店铺') != _tr_pstore: continue
+                if _tr_pcategory != '全部' and r.get('_品类') != _tr_pcategory: continue
+                if _tr_pmodel != '全部' and r.get('_型号') != _tr_pmodel: continue
+                if _tr_p_line != '全部' and (r.get('产品线','') or '未标注') != _tr_p_line: continue
+                if _tr_p_scene != '全部' and r.get('_营销场景') != _tr_p_scene: continue
+                if _tr_p_plan != '全部' and (r.get('推广计划','') or r.get('计划ID','') or '未标注') != _tr_p_plan: continue
                 try:
                     _rdt = datetime.date.fromisoformat(d[:10])
                     # 检查该天在本期是否有对应（推一年后在 today_s~today_e 内）
@@ -2647,13 +2741,13 @@ with tabs[3]:
 
     st.markdown('---')
     st.markdown('<div class="section-title">同比趋势叠加（月度）</div>', unsafe_allow_html=True)
-    if all_months:
+    if _tr_filtered_monthly:
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=[r['月份'] for r in all_months], y=[_wan(r['支付金额']) for r in all_months],
-                              text=[f"{_wan(r['支付金额'])}万" for r in all_months], textposition='outside',
+        fig.add_trace(go.Bar(x=[r['月份'] for r in _tr_filtered_monthly], y=[_wan(r['支付金额']) for r in _tr_filtered_monthly],
+                              text=[f"{_wan(r['支付金额'])}万" for r in _tr_filtered_monthly], textposition='outside',
                               name='本期月度金额', marker_color='#1d4ed8'))
-        ly_data = [mm.get(month_shift(r['月份'], -12), {}).get('支付金额', 0) for r in all_months]
-        fig.add_trace(go.Scatter(x=[r['月份'] for r in all_months], y=[_wan(v) for v in ly_data],
+        ly_data = [_tr_mm.get(month_shift(r['月份'], -12), {}).get('支付金额', 0) for r in _tr_filtered_monthly]
+        fig.add_trace(go.Scatter(x=[r['月份'] for r in _tr_filtered_monthly], y=[_wan(v) for v in ly_data],
                                   name='去年同期金额', line=dict(color='#f59e0b', width=2, dash='dash')))
         fig.update_layout(height=380, template='plotly_white', legend=dict(orientation='h'), yaxis_title='支付金额(万)')
         st.plotly_chart(fig, use_container_width=True)
@@ -2662,7 +2756,7 @@ with tabs[3]:
     st.markdown('<div class="section-title">周内趋势（每日均值）</div>', unsafe_allow_html=True)
     dow_map = {0: '周一', 1: '周二', 2: '周三', 3: '周四', 4: '周五', 5: '周六', 6: '周日'}
     dow_dict = {v: [] for v in dow_map.values()}
-    for r in daily:
+    for r in _tr_daily:
         try:
             ds = r.get('日期', '')
             if len(ds) == 7:
