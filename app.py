@@ -2092,51 +2092,69 @@ with tabs[3]:
     _YOY_COLS = {'销额同比','访客同比','转化率同比','花费同比','直接ROI同比','总ROI同比','CPC同比','转化率同比'}
 
     def _render_html_table(rows, headers, keys, align='center', height=520, title='', fullscreen=True):
-        """渲染带全屏按钮的 HTML 表格。yoy 列自动着色。"""
+        """渲染带全屏按钮的 HTML 表格。yoy 列自动着色。全屏使用 CSS overlay modal。"""
         tbl_id = 'tbl_' + _uuid_mod.uuid4().hex[:8]
+        overlay_id = tbl_id + '_fs'
         fullscreen_btn = ''
         if fullscreen:
             fullscreen_btn = (
-                f'<button onclick="(function(){{var el=document.getElementById(\'{tbl_id}\');'
-                f'if(el.requestFullscreen){{el.requestFullscreen();}}'
-                f'else if(el.webkitRequestFullscreen){{el.webkitRequestFullscreen();}}}}"'
-                f' style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
+                f'<button onclick="document.getElementById(\'{overlay_id}\').style.display=\'flex\'" '
+                f'style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
                 f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
             )
         title_html = f'<div style="font-weight:700;font-size:14px;margin-bottom:4px;">{title}</div>' if title else ''
         th = ''.join(f'<th style="text-align:{align};white-space:nowrap">{h}</th>' for h in headers)
-        body = ''
-        for r in rows:
-            is_total = r.get('日期') in ('总计',) or r.get('月份') in ('总计',) or r.get('_period') in ('合计',) or r.get('年月') in ('合计',)
-            row_style = 'background:#f0f4ff;font-weight:700;' if is_total else ''
-            tr = ''
-            for k in keys:
-                v = r.get(k, '')
-                style = f"text-align:{align};padding:7px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;{row_style}"
-                if k in _YOY_COLS and not is_total:
-                    try:
-                        nv = float(str(v).replace('%','').replace('+',''))
-                        color = _yoy_color(nv/100)
-                        style += f"color:{color};font-weight:700;"
-                    except Exception:
-                        pass
-                elif k in _YOY_COLS and is_total:
-                    try:
-                        nv = float(str(v).replace('%','').replace('+',''))
-                        color = _yoy_color(nv/100)
-                        style += f"color:{color};font-weight:700;"
-                    except Exception:
-                        pass
-                tr += f'<td style="{style}">{v}</td>'
-            body += f'<tr>{tr}</tr>'
-        html = (f'{title_html}{fullscreen_btn}'
-                f'<div id="{tbl_id}" class="styled-table-wrap" style="max-height:{height}px;overflow:auto;">'
-                f'<table class="styled-table"><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>')
+        def _build_body():
+            body = ''
+            for r in rows:
+                is_total = r.get('日期') in ('总计',) or r.get('月份') in ('总计',) or r.get('_period') in ('合计',) or r.get('年月') in ('合计',)
+                row_style = 'background:#f0f4ff;font-weight:700;' if is_total else ''
+                tr = ''
+                for k in keys:
+                    v = r.get(k, '')
+                    style = f"text-align:{align};padding:7px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;{row_style}"
+                    if k in _YOY_COLS:
+                        try:
+                            nv = float(str(v).replace('%','').replace('+',''))
+                            color = _yoy_color(nv/100)
+                            style += f"color:{color};font-weight:700;"
+                        except Exception:
+                            pass
+                    tr += f'<td style="{style}">{v}</td>'
+                body += f'<tr>{tr}</tr>'
+            return body
+        body = _build_body()
+        table_html = f'<table class="styled-table"><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table>'
+        # 正常视图
+        main_html = (f'<div id="{tbl_id}" class="styled-table-wrap" style="max-height:{height}px;overflow:auto;">'
+                     f'{table_html}</div>')
+        # 全屏遮罩
+        overlay_html = ''
+        if fullscreen:
+            overlay_html = (
+                f'<div id="{overlay_id}" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;'
+                f'background:rgba(0,0,0,0.82);z-index:99999;flex-direction:column;padding:20px;box-sizing:border-box;">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;">'
+                f'<span style="color:#fff;font-size:18px;font-weight:700;">{title}</span>'
+                f'<button onclick="document.getElementById(\'{overlay_id}\').style.display=\'none\'" '
+                f'style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button>'
+                f'</div>'
+                f'<div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">'
+                f'{table_html}</div></div>'
+            )
+        html = f'{title_html}{fullscreen_btn}{main_html}{overlay_html}'
         st.markdown(html, unsafe_allow_html=True)
 
     st.markdown('<div class="section-title">数据明细</div>', unsafe_allow_html=True)
     tab_daily, tab_monthly = st.tabs(['日度汇总', '月度汇总'])
     with tab_daily:
+        # 构建每日推广花费字典（用于费率计算）
+        _day_promo = {}
+        if promo_rows:
+            for r in promo_filtered:
+                d = r.get('_date', '')
+                if not d: continue
+                _day_promo[d] = _day_promo.get(d, 0) + float(r.get('_花费', 0) or 0)
         day_dict = {}
         for r in daily:
             dt = r.get('日期', '')
@@ -2191,6 +2209,7 @@ with tabs[3]:
                 '加购人数': f"{int(v['商品加购人数']):,}",
                 '加购率': f"{v['商品加购人数']/vis*100:.2f}%" if vis else "0.00%",
                 'UV价值': round(amt/vis, 1) if vis else 0,
+                '费率': f"{_day_promo.get(dt, 0)/amt*100:.2f}%" if amt else '--',
                 '销额同比': f"{yoy_amt*100:+.2f}%" if yoy_amt is not None else '--',
                 '访客同比': f"{yoy_vis*100:+.2f}%" if yoy_vis is not None else '--',
                 '转化率同比': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
@@ -2205,6 +2224,8 @@ with tabs[3]:
             _total_cvr_d = total_buyers / total_vis if total_vis else 0
             _ly_total_cvr_d = _ly_total_buyers_d / _ly_total_vis_d if _ly_total_vis_d else 0
             _total_yoy_cvr_d = (_total_cvr_d - _ly_total_cvr_d) / _ly_total_cvr_d if _ly_total_cvr_d else None
+            _total_promo_d = sum(_day_promo.values())
+            _total_rate_d = _total_promo_d / total_amt * 100 if total_amt else None
             daily_tbl.append({
                 '日期': '总计', '访客数': f"{int(total_vis):,}", '访客占比': '100.00%',
                 '买家数': f"{int(total_buyers):,}", '支付件数': f"{int(sum(v['支付件数'] for v in day_dict.values())):,}",
@@ -2213,12 +2234,13 @@ with tabs[3]:
                 '加购人数': f"{int(total_cart):,}",
                 '加购率': f"{total_cart/total_vis*100:.2f}%" if total_vis else "0.00%",
                 'UV价值': round(total_amt/total_vis, 1) if total_vis else 0,
+                '费率': f"{_total_rate_d:.2f}%" if _total_rate_d is not None else '--',
                 '销额同比': f"{_total_yoy_amt_d*100:+.2f}%" if _total_yoy_amt_d is not None else '--',
                 '访客同比': f"{_total_yoy_vis_d*100:+.2f}%" if _total_yoy_vis_d is not None else '--',
                 '转化率同比': f"{_total_yoy_cvr_d*100:+.2f}%" if _total_yoy_cvr_d is not None else '--',
             })
         # 排序控件
-        _daily_sort_cols = ['日期','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值']
+        _daily_sort_cols = ['日期','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值','费率']
         _dsc1, _dsc2 = st.columns([2, 1])
         with _dsc1:
             _daily_sort_by = st.selectbox('排序字段', _daily_sort_cols, index=0, key='daily_sort_col')
@@ -2237,7 +2259,7 @@ with tabs[3]:
         else:
             _daily_data_rows.sort(key=lambda r: _parse_num(r.get(_daily_sort_by, 0)), reverse=(_daily_sort_desc == '降序'))
         _daily_tbl_sorted = _daily_data_rows + _daily_total_row
-        _daily_headers = ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比']
+        _daily_headers = ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
         _render_html_table(_daily_tbl_sorted, _daily_headers, _daily_headers, title='📦 销售日度趋势')
         # 下载原始数据
         _daily_dl = [{'_d': dt, **{m: v[m] for m in METRICS}} for dt, v in day_dict.items()]
@@ -2363,6 +2385,14 @@ with tabs[3]:
             _render_html_table(_pd_tbl, _pd_headers, _pd_headers, title='📢 推广日度趋势')
             _render_download_panel(_pd_tbl, _pd_headers, 'promo_daily_trend.csv', '📥 下载推广日度趋势')
     with tab_monthly:
+        # 构建每月推广花费字典（用于费率计算）
+        _month_promo = {}
+        if promo_rows:
+            for r in promo_filtered:
+                d = r.get('_date', '')
+                if not d or len(d) < 7: continue
+                ym = d[:7]
+                _month_promo[ym] = _month_promo.get(ym, 0) + float(r.get('_花费', 0) or 0)
         # 月度表格从 filtered daily 聚合（受筛选器控制）
         filtered_monthly_list = build_monthly(daily)
         # 同比查找表：从全时段同条件数据聚合，用于查找去年同期的月度汇总
@@ -2395,6 +2425,7 @@ with tabs[3]:
                 '加购人数': f"{int(r['商品加购人数']):,}",
                 '加购率': f"{r['加购率']*100:.2f}%" if r['加购率'] else "0.00%",
                 'UV价值': round(amt/vis, 1) if vis else 0,
+                '费率': f"{_month_promo.get(m, 0)/amt*100:.2f}%" if amt else '--',
                 '销额同比': f"{yoy_amt*100:+.2f}%" if yoy_amt is not None else '--',
                 '访客同比': f"{yoy_vis*100:+.2f}%" if yoy_vis is not None else '--',
                 '转化率同比': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
@@ -2434,6 +2465,8 @@ with tabs[3]:
             _total_cvr = _mm_total_buyers / _mm_total_vis if _mm_total_vis else 0
             _ly_total_cvr = _ly_daily_buyers / _ly_daily_vis if _ly_daily_vis else 0
             _total_yoy_cvr = (_total_cvr - _ly_total_cvr) / _ly_total_cvr if _ly_total_cvr else None
+            _total_promo_m = sum(_month_promo.values())
+            _total_rate_m = _total_promo_m / _mm_total_amt * 100 if _mm_total_amt else None
             monthly_tbl.append({
                 '月份': '总计', '访客数': f"{int(_mm_total_vis):,}", '访客占比': '100.00%',
                 '买家数': f"{int(_mm_total_buyers):,}", '支付件数': f"{int(_mm_total_qty):,}",
@@ -2442,12 +2475,13 @@ with tabs[3]:
                 '加购人数': f"{int(_mm_total_cart):,}",
                 '加购率': f"{_mm_total_cart/_mm_total_vis*100:.2f}%" if _mm_total_vis else "0.00%",
                 'UV价值': round(_mm_total_amt/_mm_total_vis, 1) if _mm_total_vis else 0,
+                '费率': f"{_total_rate_m:.2f}%" if _total_rate_m is not None else '--',
                 '销额同比': f"{_total_yoy_amt*100:+.2f}%" if _total_yoy_amt is not None else '--',
                 '访客同比': f"{_total_yoy_vis*100:+.2f}%" if _total_yoy_vis is not None else '--',
                 '转化率同比': f"{_total_yoy_cvr*100:+.2f}%" if _total_yoy_cvr is not None else '--',
             })
             # 排序控件
-            _mm_sort_cols = ['月份','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值']
+            _mm_sort_cols = ['月份','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值','费率']
             _mmc1, _mmc2 = st.columns([2, 1])
             with _mmc1:
                 _mm_sort_by = st.selectbox('排序字段', _mm_sort_cols, index=0, key='mm_sort_col')
@@ -2464,7 +2498,7 @@ with tabs[3]:
             else:
                 _mm_data_rows.sort(key=lambda r: _parse_num(r.get(_mm_sort_by, 0)), reverse=(_mm_sort_desc == '降序'))
             _mm_sorted = _mm_data_rows + _mm_total_row
-            _mm_headers = ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比']
+            _mm_headers = ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
             _render_html_table(_mm_sorted, _mm_headers, _mm_headers, title='📦 销售月度趋势')
             # 下载原始月度数据
             _mm_dl = [{m: v[m] for m in METRICS} for v in filtered_monthly_list]
@@ -3686,6 +3720,26 @@ with tabs[7]:
         _p1_total_visitors = sum(v['商品访客数'] for v in _p1_agg.values()) or 1
         _p1_total_amt = sum(v['支付金额'] for v in _p1_agg.values()) or 1
 
+        # ── 按行维度聚合推广花费（用于费率计算）──
+        _promo_dim_map = {'渠道': '_渠道', '店铺': '_店铺', '品类': '_品类', '型号': '_型号'}
+        _p1_promo_spend = {}
+        if promo_rows:
+            for r in promo_filtered:
+                rk = []
+                for d in _p1_row_dims:
+                    pd_key = _promo_dim_map.get(d, d)
+                    val = r.get(pd_key)
+                    if not val and d in ('日期', '年月'):
+                        # 尝试从 _date 字段派生日期/年月
+                        _dd = r.get('_date', '') or ''
+                        if d == '年月' and len(_dd) >= 7:
+                            val = _dd[:7]
+                        elif d == '日期' and len(_dd) >= 10:
+                            val = _dd[:10]
+                    rk.append(val or '未标注')
+                rk = tuple(rk)
+                _p1_promo_spend[rk] = _p1_promo_spend.get(rk, 0) + float(r.get('_花费', 0) or 0)
+
         # 计算派生字段
         for rk, v in _p1_agg.items():
             v['支付转化率'] = v['支付买家数'] / v['商品访客数'] if v['商品访客数'] else 0
@@ -3695,6 +3749,7 @@ with tabs[7]:
             v['UV价值'] = v['支付金额'] / v['商品访客数'] if v['商品访客数'] else 0
             v['访客占比'] = v['商品访客数'] / _p1_total_visitors
             v['成交占比'] = v['支付金额'] / _p1_total_amt
+            v['费率'] = _p1_promo_spend.get(rk, 0) / v['支付金额'] * 100 if v['支付金额'] else None
 
         # ── 计算同比 ──
         def _p1_yoy_pct(cur_v, ly_v):
@@ -3751,6 +3806,7 @@ with tabs[7]:
         _p1_grand['UV价值'] = _p1_grand['支付金额'] / _p1_grand['商品访客数'] if _p1_grand['商品访客数'] else 0
         _p1_grand['访客占比'] = 1.0
         _p1_grand['成交占比'] = 1.0
+        _p1_grand['费率'] = sum(_p1_promo_spend.values()) / _p1_grand['支付金额'] * 100 if _p1_grand['支付金额'] else None
         # Grand YoY
         _p1_grand_yoy = {f: sum(v[f] for v in _p1_yoy_agg.values()) for f in _P1_RAW_FIELDS}
         _p1_grand['_YOY_访客数'] = _p1_yoy_pct(_p1_grand.get('商品访客数', 0), _p1_grand_yoy.get('商品访客数', 0))
@@ -3762,6 +3818,8 @@ with tabs[7]:
         _p1_grand['_YOY_转化率'] = _p1_yoy_pct(_p1_grand.get('支付转化率', 0), _ly_g_cvr)
 
         def _fmt_s1(mc, val):
+            if mc == '费率':
+                return '{:.2f}%'.format(val) if val is not None else '--'
             if mc in ('支付金额', 'UV价值', '客单价'):
                 return '¥{:,.0f}'.format(val)
             elif mc in ('支付转化率', '加购率', '退款率', '访客占比', '成交占比'):
@@ -3808,6 +3866,7 @@ with tabs[7]:
             _th_html += '<th style="background:#e2e8f0;color:#1e293b;font-weight:600;padding:6px 10px;">' + d + '</th>'
         for mc in _p1_cols:
             _th_html += '<th style="background:#fef9c3;color:#1e293b;font-weight:600;text-align:right;padding:6px 10px;">' + mc + '</th>'
+        _th_html += '<th style="background:#dbeafe;color:#1e293b;font-weight:600;text-align:right;padding:6px 10px;">费率</th>'
         for yc in _yoy_cols:
             _th_html += '<th style="background:#fce7f3;color:#1e293b;font-weight:600;text-align:right;padding:6px 10px;">' + yc + '</th>'
         _th_html += '</tr></thead>'
@@ -3820,6 +3879,8 @@ with tabs[7]:
             for mc in _p1_cols:
                 _v = _p1_agg.get(rk, {}).get(mc, 0) or 0
                 _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_s1(mc, _v) + '</td>'
+            _rate_v = _p1_agg.get(rk, {}).get('费率')
+            _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_s1('费率', _rate_v) + '</td>'
             for yk in _yoy_keys:
                 _yv = _p1_agg.get(rk, {}).get(yk)
                 _ys, _yc = _fmt_yoy(_yv)
@@ -3831,6 +3892,8 @@ with tabs[7]:
         for mc in _p1_cols:
             _v = _p1_grand.get(mc, 0) or 0
             _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_s1(mc, _v) + '</td>'
+        _rate_g = _p1_grand.get('费率')
+        _tb_html += '<td style="text-align:right;padding:5px 10px;">' + _fmt_s1('费率', _rate_g) + '</td>'
         for yk in _yoy_keys:
             _yv = _p1_grand.get(yk)
             _ys, _yc = _fmt_yoy(_yv)
@@ -3847,6 +3910,7 @@ with tabs[7]:
                 _dlr[d.lstrip('_')] = rk[di] if isinstance(rk, tuple) else str(rk)
             for mc in _p1_vals:
                 _dlr[mc.lstrip('_')] = _p1_agg.get(rk, {}).get(mc, 0) or 0
+            _dlr['费率'] = _p1_agg.get(rk, {}).get('费率')
             for yk in _yoy_keys:
                 _dlr[yk.lstrip('_')] = _p1_agg.get(rk, {}).get(yk)
             _p1_dl.append(_dlr)
