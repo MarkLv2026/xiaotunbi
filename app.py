@@ -3371,8 +3371,30 @@ with tabs[7]:
                 return (cur_v - ly_v) / ly_v * 100
             return None
 
+        def _p1_yoy_key(rk):
+            """将本期行键里的年月/日期字段往前推一年，用于在 yoy_agg 里查找对应 key"""
+            new_rk = []
+            for i, d in enumerate(_p1_row_dims):
+                val = rk[i] if isinstance(rk, tuple) else rk
+                if d == '年月' and isinstance(val, str) and len(val) >= 7:
+                    try:
+                        y, m = int(val[:4]), int(val[5:7])
+                        new_rk.append(f'{y-1:04d}-{m:02d}')
+                    except Exception:
+                        new_rk.append(val)
+                elif d == '日期' and isinstance(val, str) and len(val) >= 10:
+                    try:
+                        import datetime as _dt
+                        _d = _dt.date.fromisoformat(val[:10])
+                        new_rk.append(str(_d.replace(year=_d.year - 1)))
+                    except Exception:
+                        new_rk.append(val)
+                else:
+                    new_rk.append(val)
+            return tuple(new_rk)
+
         for rk, v in _p1_agg.items():
-            ly = _p1_yoy_agg.get(rk, {})
+            ly = _p1_yoy_agg.get(_p1_yoy_key(rk), _p1_yoy_agg.get(rk, {}))
             v['_YOY_访客数'] = _p1_yoy_pct(v.get('商品访客数', 0), ly.get('商品访客数', 0))
             v['_YOY_销售额'] = _p1_yoy_pct(v.get('支付金额', 0), ly.get('支付金额', 0))
             v['_YOY_销售量'] = _p1_yoy_pct(v.get('支付件数', 0), ly.get('支付件数', 0))
@@ -3521,6 +3543,9 @@ with tabs[7]:
 
     if _p2_vals and _p2_row_dims:
         _p2_raw = promo_rows if promo_rows else []
+        # 按日期区间过滤（与销售透视表保持一致）
+        _p2_raw = [r for r in _p2_raw if today_s <= (r.get('_date', '') or '') <= today_e]
+        # 按全局筛选器过滤
         if channel or store or category or model:
             _p2_filtered = []
             for r in _p2_raw:
@@ -3550,8 +3575,16 @@ with tabs[7]:
             return agg
 
         _p2_agg = _pv2_group(_p2_raw, _p2_row_dims)
-        # ── 去年同期 ──
-        _p2_yoy_raw = promo_yoy if promo_yoy else []
+        # ── 去年同期：从 promo_rows 按去年日期区间重新过滤，而非用全局 promo_yoy ──
+        try:
+            import datetime as _pv2_dt
+            _p2_yoy_s = str(start.replace(year=start.year - 1))
+            _p2_yoy_e = str(end.replace(year=end.year - 1))
+        except ValueError:
+            _p2_yoy_s = str(start.replace(year=start.year - 1, day=28))
+            _p2_yoy_e = str(end.replace(year=end.year - 1, day=28))
+        _p2_yoy_raw = [r for r in (promo_rows if promo_rows else [])
+                       if _p2_yoy_s <= (r.get('_date', '') or '') <= _p2_yoy_e]
         if channel or store or category or model:
             _p2_yoy_filtered = []
             for r in _p2_yoy_raw:
@@ -3561,7 +3594,7 @@ with tabs[7]:
                 if model and r.get('_型号') not in model: continue
                 _p2_yoy_filtered.append(r)
             _p2_yoy_raw = _p2_yoy_filtered
-        # 同比数据也注入时间维度字段
+        # 同比数据注入时间维度字段（年月从 _date 的去年日期派生）
         for r in _p2_yoy_raw:
             d = r.get('_date', '') or r.get('日期', '')
             r['日期'] = d
@@ -3592,8 +3625,31 @@ with tabs[7]:
                 return (cur_v - ly_v) / ly_v * 100
             return None
 
+        def _p2_yoy_key(rk):
+            """将本期行键里的年月/日期字段往前推一年，用于在 yoy_agg 里查找对应 key"""
+            new_rk = []
+            for i, d in enumerate(_p2_row_dims):
+                val = rk[i] if isinstance(rk, tuple) else rk
+                d_strip = d.lstrip('_')
+                if d_strip == '年月' and isinstance(val, str) and len(val) >= 7:
+                    try:
+                        y, m = int(val[:4]), int(val[5:7])
+                        new_rk.append(f'{y-1:04d}-{m:02d}')
+                    except Exception:
+                        new_rk.append(val)
+                elif d_strip == '日期' and isinstance(val, str) and len(val) >= 10:
+                    try:
+                        import datetime as _dt2
+                        _d2 = _dt2.date.fromisoformat(val[:10])
+                        new_rk.append(str(_d2.replace(year=_d2.year - 1)))
+                    except Exception:
+                        new_rk.append(val)
+                else:
+                    new_rk.append(val)
+            return tuple(new_rk)
+
         for rk, v in _p2_agg.items():
-            ly = _p2_yoy_agg.get(rk, {})
+            ly = _p2_yoy_agg.get(_p2_yoy_key(rk), _p2_yoy_agg.get(rk, {}))
             v['_YOY_花费'] = _p2_yoy_pct(v.get('_花费', 0), ly.get('_花费', 0))
             _ly_spend = ly.get('_花费', 0) or 0
             _ly_click = ly.get('_点击数', 0) or 0
