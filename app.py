@@ -2088,25 +2088,50 @@ with tabs[3]:
             return '#64748b'
         return '#22c55e' if v >= 0 else '#ef4444'
 
-    def _render_html_table(rows, headers, keys, align='center', height=520):
-        th = ''.join(f'<th style="text-align:{align}">{h}</th>' for h in headers)
+    import uuid as _uuid_mod
+    _YOY_COLS = {'销额同比','访客同比','转化率同比','花费同比','直接ROI同比','总ROI同比','CPC同比','转化率同比'}
+
+    def _render_html_table(rows, headers, keys, align='center', height=520, title='', fullscreen=True):
+        """渲染带全屏按钮的 HTML 表格。yoy 列自动着色。"""
+        tbl_id = 'tbl_' + _uuid_mod.uuid4().hex[:8]
+        fullscreen_btn = ''
+        if fullscreen:
+            fullscreen_btn = (
+                f'<button onclick="(function(){{var el=document.getElementById(\'{tbl_id}\');'
+                f'if(el.requestFullscreen){{el.requestFullscreen();}}'
+                f'else if(el.webkitRequestFullscreen){{el.webkitRequestFullscreen();}}}}"'
+                f' style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
+                f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
+            )
+        title_html = f'<div style="font-weight:700;font-size:14px;margin-bottom:4px;">{title}</div>' if title else ''
+        th = ''.join(f'<th style="text-align:{align};white-space:nowrap">{h}</th>' for h in headers)
         body = ''
         for r in rows:
+            is_total = r.get('日期') in ('总计',) or r.get('月份') in ('总计',) or r.get('_period') in ('合计',) or r.get('年月') in ('合计',)
+            row_style = 'background:#f0f4ff;font-weight:700;' if is_total else ''
             tr = ''
             for k in keys:
                 v = r.get(k, '')
-                style = f"text-align:{align};padding:7px 10px;border-bottom:1px solid #e5e7eb;"
-                if k in ('销额同比','访客同比','转化率同比') and r.get('日期') != '总计' and r.get('月份') != '总计':
+                style = f"text-align:{align};padding:7px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;{row_style}"
+                if k in _YOY_COLS and not is_total:
                     try:
-                        nv = float(v.replace('%',''))
+                        nv = float(str(v).replace('%','').replace('+',''))
+                        color = _yoy_color(nv/100)
+                        style += f"color:{color};font-weight:700;"
+                    except Exception:
+                        pass
+                elif k in _YOY_COLS and is_total:
+                    try:
+                        nv = float(str(v).replace('%','').replace('+',''))
                         color = _yoy_color(nv/100)
                         style += f"color:{color};font-weight:700;"
                     except Exception:
                         pass
                 tr += f'<td style="{style}">{v}</td>'
             body += f'<tr>{tr}</tr>'
-        html = (f'<div class="styled-table-wrap" style="max-height:{height}px;overflow-y:auto;"><table class="styled-table">'
-                f'<thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>')
+        html = (f'{title_html}{fullscreen_btn}'
+                f'<div id="{tbl_id}" class="styled-table-wrap" style="max-height:{height}px;overflow:auto;">'
+                f'<table class="styled-table"><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>')
         st.markdown(html, unsafe_allow_html=True)
 
     st.markdown('<div class="section-title">数据明细</div>', unsafe_allow_html=True)
@@ -2171,7 +2196,15 @@ with tabs[3]:
                 '转化率同比': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
             })
         if daily_tbl:
-            ly_total = ly_day_dict.get('')
+            # 日度合计行同比：去年同期与本期完全一一对应的日期求和
+            _ly_total_vis_d = sum(v['商品访客数'] for v in ly_day_dict.values() if v)
+            _ly_total_amt_d = sum(v['支付金额'] for v in ly_day_dict.values() if v)
+            _ly_total_buyers_d = sum(v['支付买家数'] for v in ly_day_dict.values() if v)
+            _total_yoy_amt_d = (total_amt - _ly_total_amt_d) / _ly_total_amt_d if _ly_total_amt_d else None
+            _total_yoy_vis_d = (total_vis - _ly_total_vis_d) / _ly_total_vis_d if _ly_total_vis_d else None
+            _total_cvr_d = total_buyers / total_vis if total_vis else 0
+            _ly_total_cvr_d = _ly_total_buyers_d / _ly_total_vis_d if _ly_total_vis_d else 0
+            _total_yoy_cvr_d = (_total_cvr_d - _ly_total_cvr_d) / _ly_total_cvr_d if _ly_total_cvr_d else None
             daily_tbl.append({
                 '日期': '总计', '访客数': f"{int(total_vis):,}", '访客占比': '100.00%',
                 '买家数': f"{int(total_buyers):,}", '支付件数': f"{int(sum(v['支付件数'] for v in day_dict.values())):,}",
@@ -2180,7 +2213,9 @@ with tabs[3]:
                 '加购人数': f"{int(total_cart):,}",
                 '加购率': f"{total_cart/total_vis*100:.2f}%" if total_vis else "0.00%",
                 'UV价值': round(total_amt/total_vis, 1) if total_vis else 0,
-                '销额同比': '--', '访客同比': '--', '转化率同比': '--',
+                '销额同比': f"{_total_yoy_amt_d*100:+.2f}%" if _total_yoy_amt_d is not None else '--',
+                '访客同比': f"{_total_yoy_vis_d*100:+.2f}%" if _total_yoy_vis_d is not None else '--',
+                '转化率同比': f"{_total_yoy_cvr_d*100:+.2f}%" if _total_yoy_cvr_d is not None else '--',
             })
         # 排序控件
         _daily_sort_cols = ['日期','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值']
@@ -2202,13 +2237,131 @@ with tabs[3]:
         else:
             _daily_data_rows.sort(key=lambda r: _parse_num(r.get(_daily_sort_by, 0)), reverse=(_daily_sort_desc == '降序'))
         _daily_tbl_sorted = _daily_data_rows + _daily_total_row
-        _render_html_table(
-            _daily_tbl_sorted,
-            ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'],
-            ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'])
+        _daily_headers = ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比']
+        _render_html_table(_daily_tbl_sorted, _daily_headers, _daily_headers, title='📦 销售日度趋势')
         # 下载原始数据
         _daily_dl = [{'_d': dt, **{m: v[m] for m in METRICS}} for dt, v in day_dict.items()]
         _render_download_panel(_daily_dl, ['_d'] + METRICS, 'daily_summary.csv')
+
+        # ══════════════════════════════════════════════
+        # 推广日度趋势表格
+        # ══════════════════════════════════════════════
+        if promo_rows:
+            st.markdown('<div style="margin-top:18px;font-weight:700;font-size:14px;color:#1d4ed8;">📢 推广日度趋势</div>', unsafe_allow_html=True)
+            _pd_dict = {}
+            for r in promo_filtered:
+                d = r.get('_date', '')
+                if not d: continue
+                if d not in _pd_dict:
+                    _pd_dict[d] = {'_花费':0,'_展现数':0,'_点击数':0,'_直接订单金额':0,'_总订单金额':0,'_直接订单量':0,'_总成交订单量':0}
+                for fk in ('_花费','_展现数','_点击数','_直接订单金额','_总订单金额','_直接订单量','_总成交订单量'):
+                    _pd_dict[d][fk] += float(r.get(fk, 0) or 0)
+            # 去年同期（精确日期对应）
+            _pd_yoy_dict = {}
+            for r in promo_rows:
+                d = r.get('_date', '')
+                if not d: continue
+                if channel and r.get('_渠道', '') not in channel: continue
+                if store and r.get('_店铺', '') not in store: continue
+                if category and r.get('_品类', '') not in category: continue
+                if model and r.get('_型号', '') not in model: continue
+                try:
+                    _rdt = datetime.date.fromisoformat(d[:10])
+                    _cur_eq = _rdt.replace(year=_rdt.year + 1)
+                    if not (str(start) <= str(_cur_eq) <= str(end)): continue
+                    _pd_yoy_dict[d] = _pd_yoy_dict.get(d) or {'_花费':0,'_展现数':0,'_点击数':0,'_直接订单金额':0,'_总订单金额':0,'_直接订单量':0,'_总成交订单量':0}
+                    for fk in ('_花费','_展现数','_点击数','_直接订单金额','_总订单金额','_直接订单量','_总成交订单量'):
+                        _pd_yoy_dict[d][fk] += float(r.get(fk, 0) or 0)
+                except Exception:
+                    continue
+            def _date_yoy_key(d):
+                try:
+                    _dt = datetime.date.fromisoformat(d[:10])
+                    return str(_dt.replace(year=_dt.year - 1))
+                except Exception:
+                    return d
+            _pd_total_amt = sum(v['_总订单金额'] for v in _pd_dict.values()) or 1
+            _pd_tbl = []
+            for d in sorted(_pd_dict.keys()):
+                v = _pd_dict[d]
+                ly = _pd_yoy_dict.get(_date_yoy_key(d), {})
+                spend = v['_花费']; clicks = v['_点击数']; impress = v['_展现数']
+                direct_amt = v['_直接订单金额']; total_amt_v = v['_总订单金额']
+                total_orders = v['_总成交订单量']
+                cpc = spend / clicks if clicks else 0
+                ctr = clicks / impress * 100 if impress else 0
+                droi = direct_amt / spend if spend else 0
+                troi = total_amt_v / spend if spend else 0
+                tcvr = total_orders / clicks * 100 if clicks else 0
+                ly_spend = ly.get('_花费', 0); ly_clicks = ly.get('_点击数', 0)
+                ly_direct_amt = ly.get('_直接订单金额', 0); ly_total_amt_v = ly.get('_总订单金额', 0)
+                ly_total_orders = ly.get('_总成交订单量', 0)
+                ly_cpc = ly_spend / ly_clicks if ly_clicks else 0
+                ly_droi = ly_direct_amt / ly_spend if ly_spend else 0
+                ly_troi = ly_total_amt_v / ly_spend if ly_spend else 0
+                ly_tcvr = ly_total_orders / ly_clicks * 100 if ly_clicks else 0
+                def _pct_str(c, p):
+                    if p and p != 0: return f"{(c-p)/p*100:+.1f}%"
+                    return '--'
+                _pd_tbl.append({
+                    '日期': d,
+                    '花费': f"¥{spend:,.0f}",
+                    'CPC': f"¥{cpc:.2f}",
+                    '点击数': f"{int(clicks):,}",
+                    '点击率': f"{ctr:.2f}%",
+                    '直接订单金额': f"¥{direct_amt:,.0f}",
+                    '总订单金额': f"¥{total_amt_v:,.0f}",
+                    '总金额占比': f"{total_amt_v/_pd_total_amt*100:.2f}%" if _pd_total_amt else '0.00%',
+                    '直接ROI': f"{droi:.2f}",
+                    '总ROI': f"{troi:.2f}",
+                    '总转化率': f"{tcvr:.2f}%",
+                    '花费同比': _pct_str(spend, ly_spend),
+                    '直接ROI同比': _pct_str(droi, ly_droi),
+                    '总ROI同比': _pct_str(troi, ly_troi),
+                    'CPC同比': _pct_str(cpc, ly_cpc),
+                    '转化率同比': _pct_str(tcvr, ly_tcvr),
+                })
+            # 日度推广合计行
+            if _pd_tbl:
+                _pdt_spend = sum(v['_花费'] for v in _pd_dict.values())
+                _pdt_clicks = sum(v['_点击数'] for v in _pd_dict.values())
+                _pdt_impress = sum(v['_展现数'] for v in _pd_dict.values())
+                _pdt_direct = sum(v['_直接订单金额'] for v in _pd_dict.values())
+                _pdt_total = sum(v['_总订单金额'] for v in _pd_dict.values())
+                _pdt_torders = sum(v['_总成交订单量'] for v in _pd_dict.values())
+                _pdt_cpc = _pdt_spend / _pdt_clicks if _pdt_clicks else 0
+                _pdt_droi = _pdt_direct / _pdt_spend if _pdt_spend else 0
+                _pdt_troi = _pdt_total / _pdt_spend if _pdt_spend else 0
+                _pdt_tcvr = _pdt_torders / _pdt_clicks * 100 if _pdt_clicks else 0
+                _ly_pdt_spend = sum(v['_花费'] for v in _pd_yoy_dict.values())
+                _ly_pdt_clicks = sum(v['_点击数'] for v in _pd_yoy_dict.values())
+                _ly_pdt_direct = sum(v['_直接订单金额'] for v in _pd_yoy_dict.values())
+                _ly_pdt_total = sum(v['_总订单金额'] for v in _pd_yoy_dict.values())
+                _ly_pdt_torders = sum(v['_总成交订单量'] for v in _pd_yoy_dict.values())
+                _ly_pdt_cpc = _ly_pdt_spend / _ly_pdt_clicks if _ly_pdt_clicks else 0
+                _ly_pdt_droi = _ly_pdt_direct / _ly_pdt_spend if _ly_pdt_spend else 0
+                _ly_pdt_troi = _ly_pdt_total / _ly_pdt_spend if _ly_pdt_spend else 0
+                _ly_pdt_tcvr = _ly_pdt_torders / _ly_pdt_clicks * 100 if _ly_pdt_clicks else 0
+                def _pct_str2(c, p):
+                    if p and p != 0: return f"{(c-p)/p*100:+.1f}%"
+                    return '--'
+                _pd_tbl.append({
+                    '日期': '总计',
+                    '花费': f"¥{_pdt_spend:,.0f}", 'CPC': f"¥{_pdt_cpc:.2f}",
+                    '点击数': f"{int(_pdt_clicks):,}", '点击率': '--',
+                    '直接订单金额': f"¥{_pdt_direct:,.0f}",
+                    '总订单金额': f"¥{_pdt_total:,.0f}", '总金额占比': '100.00%',
+                    '直接ROI': f"{_pdt_droi:.2f}", '总ROI': f"{_pdt_troi:.2f}",
+                    '总转化率': f"{_pdt_tcvr:.2f}%",
+                    '花费同比': _pct_str2(_pdt_spend, _ly_pdt_spend),
+                    '直接ROI同比': _pct_str2(_pdt_droi, _ly_pdt_droi),
+                    '总ROI同比': _pct_str2(_pdt_troi, _ly_pdt_troi),
+                    'CPC同比': _pct_str2(_pdt_cpc, _ly_pdt_cpc),
+                    '转化率同比': _pct_str2(_pdt_tcvr, _ly_pdt_tcvr),
+                })
+            _pd_headers = ['日期','花费','CPC','点击数','点击率','直接订单金额','总订单金额','总金额占比','直接ROI','总ROI','总转化率','花费同比','直接ROI同比','总ROI同比','CPC同比','转化率同比']
+            _render_html_table(_pd_tbl, _pd_headers, _pd_headers, title='📢 推广日度趋势')
+            _render_download_panel(_pd_tbl, _pd_headers, 'promo_daily_trend.csv', '📥 下载推广日度趋势')
     with tab_monthly:
         # 月度表格从 filtered daily 聚合（受筛选器控制）
         filtered_monthly_list = build_monthly(daily)
@@ -2247,6 +2400,52 @@ with tabs[3]:
                 '转化率同比': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
             })
         if monthly_tbl:
+            # ── 合计行（同比按「本期总天数 vs 去年同期对应天数」）──
+            # 计算本期每个月实际天数（不足整月时，只取实际有数据的天数）
+            # 去年同期合计：也只取与本期相同月份范围+相同天数区间的数据
+            _mm_total_vis = total_vis_m; _mm_total_amt = total_amt_m
+            _mm_total_buyers = total_buyers_m; _mm_total_cart = total_cart_m
+            _mm_total_qty = sum(r['支付件数'] for r in filtered_monthly_list)
+            # 合计同比：用已经算好的去年同期（ystart~yend 精确范围）
+            _ly_monthly_total = [mm_all.get(month_shift(r['月份'], -12), {}) for r in filtered_monthly_list]
+            _ly_total_amt = sum(d.get('支付金额', 0) for d in _ly_monthly_total if d)
+            _ly_total_vis = sum(d.get('商品访客数', 0) for d in _ly_monthly_total if d)
+            _ly_total_buyers = sum(d.get('支付买家数', 0) for d in _ly_monthly_total if d)
+            # 去年同期：用与本期相同的日期 offset 范围（yoy_start~yoy_end 精确天数）
+            # 正确做法：从 daily_all_filtered 按去年对应日期范围聚合
+            _ly_daily_vis = 0; _ly_daily_amt = 0; _ly_daily_buyers = 0; _ly_daily_qty = 0; _ly_daily_cart = 0
+            for r in daily_all_filtered:
+                _rd = r.get('日期', '')
+                if not _rd: continue
+                try:
+                    _rdt = datetime.date.fromisoformat(_rd[:10])
+                    # 去年同期：年份-1，月日对应
+                    _cur_dt = _rdt.replace(year=_rdt.year + 1)
+                    if str(start) <= str(_cur_dt) <= str(end):
+                        _ly_daily_vis += float(r.get('商品访客数', 0) or 0)
+                        _ly_daily_amt += float(r.get('支付金额', 0) or 0)
+                        _ly_daily_buyers += float(r.get('支付买家数', 0) or 0)
+                        _ly_daily_qty += float(r.get('支付件数', 0) or 0)
+                        _ly_daily_cart += float(r.get('商品加购人数', 0) or 0)
+                except Exception:
+                    pass
+            _total_yoy_amt = (_mm_total_amt - _ly_daily_amt) / _ly_daily_amt if _ly_daily_amt else None
+            _total_yoy_vis = (_mm_total_vis - _ly_daily_vis) / _ly_daily_vis if _ly_daily_vis else None
+            _total_cvr = _mm_total_buyers / _mm_total_vis if _mm_total_vis else 0
+            _ly_total_cvr = _ly_daily_buyers / _ly_daily_vis if _ly_daily_vis else 0
+            _total_yoy_cvr = (_total_cvr - _ly_total_cvr) / _ly_total_cvr if _ly_total_cvr else None
+            monthly_tbl.append({
+                '月份': '总计', '访客数': f"{int(_mm_total_vis):,}", '访客占比': '100.00%',
+                '买家数': f"{int(_mm_total_buyers):,}", '支付件数': f"{int(_mm_total_qty):,}",
+                '成交金额(万)': round(_mm_total_amt/10000, 1), '成交占比': '100.00%',
+                '转化率': f"{_total_cvr*100:.2f}%",
+                '加购人数': f"{int(_mm_total_cart):,}",
+                '加购率': f"{_mm_total_cart/_mm_total_vis*100:.2f}%" if _mm_total_vis else "0.00%",
+                'UV价值': round(_mm_total_amt/_mm_total_vis, 1) if _mm_total_vis else 0,
+                '销额同比': f"{_total_yoy_amt*100:+.2f}%" if _total_yoy_amt is not None else '--',
+                '访客同比': f"{_total_yoy_vis*100:+.2f}%" if _total_yoy_vis is not None else '--',
+                '转化率同比': f"{_total_yoy_cvr*100:+.2f}%" if _total_yoy_cvr is not None else '--',
+            })
             # 排序控件
             _mm_sort_cols = ['月份','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值']
             _mmc1, _mmc2 = st.columns([2, 1])
@@ -2265,13 +2464,145 @@ with tabs[3]:
             else:
                 _mm_data_rows.sort(key=lambda r: _parse_num(r.get(_mm_sort_by, 0)), reverse=(_mm_sort_desc == '降序'))
             _mm_sorted = _mm_data_rows + _mm_total_row
-            _render_html_table(
-                _mm_sorted,
-                ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'],
-                ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比'])
+            _mm_headers = ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','销额同比','访客同比','转化率同比']
+            _render_html_table(_mm_sorted, _mm_headers, _mm_headers, title='📦 销售月度趋势')
             # 下载原始月度数据
             _mm_dl = [{m: v[m] for m in METRICS} for v in filtered_monthly_list]
             _render_download_panel(_mm_dl, METRICS, 'monthly_summary.csv')
+
+        # ══════════════════════════════════════════════
+        # 推广月度趋势表格
+        # ══════════════════════════════════════════════
+        if promo_rows:
+            st.markdown('<div style="margin-top:18px;font-weight:700;font-size:14px;color:#1d4ed8;">📢 推广月度趋势</div>', unsafe_allow_html=True)
+            # 按月聚合本期推广数据（已过滤渠道/店铺/品类/型号+日期）
+            _pm_dict = {}  # key: 'YYYY-MM'
+            for r in promo_filtered:
+                d = r.get('_date', '')
+                if not d: continue
+                ym = d[:7]
+                if ym not in _pm_dict:
+                    _pm_dict[ym] = {'_花费':0,'_展现数':0,'_点击数':0,'_直接订单金额':0,'_总订单金额':0,'_直接订单量':0,'_总成交订单量':0}
+                for fk in ('_花费','_展现数','_点击数','_直接订单金额','_总订单金额','_直接订单量','_总成交订单量'):
+                    _pm_dict[ym][fk] += float(r.get(fk, 0) or 0)
+            # 去年同期：按对应月份聚合（精确天数匹配：从全量 promo_rows 按去年日期过滤）
+            _pm_yoy_dict = {}
+            for r in promo_rows:
+                d = r.get('_date', '')
+                if not d: continue
+                # 过滤筛选条件
+                if channel and r.get('_渠道', '') not in channel: continue
+                if store and r.get('_店铺', '') not in store: continue
+                if category and r.get('_品类', '') not in category: continue
+                if model and r.get('_型号', '') not in model: continue
+                try:
+                    _rdt = datetime.date.fromisoformat(d[:10])
+                    # 检查该天在本期是否有对应（推一年后在 today_s~today_e 内）
+                    _cur_eq = _rdt.replace(year=_rdt.year + 1)
+                    if not (str(start) <= str(_cur_eq) <= str(end)): continue
+                except Exception:
+                    continue
+                ym = d[:7]
+                if ym not in _pm_yoy_dict:
+                    _pm_yoy_dict[ym] = {'_花费':0,'_展现数':0,'_点击数':0,'_直接订单金额':0,'_总订单金额':0,'_直接订单量':0,'_总成交订单量':0}
+                for fk in ('_花费','_展现数','_点击数','_直接订单金额','_总订单金额','_直接订单量','_总成交订单量'):
+                    _pm_yoy_dict[ym][fk] += float(r.get(fk, 0) or 0)
+            # 对应去年月份 key：YYYY-MM -> 去年 (YYYY-1)-MM
+            def _ym_to_yoy(ym):
+                try: return f'{int(ym[:4])-1:04d}-{ym[5:7]}'
+                except: return ym
+            def _pm_yoy_pct(cur, prev):
+                if prev and prev != 0: return (cur - prev) / prev * 100
+                return None
+            # 总花费（用于占比）
+            _pm_total_spend = sum(v['_花费'] for v in _pm_dict.values()) or 1
+            _pm_total_amt = sum(v['_总订单金额'] for v in _pm_dict.values()) or 1
+            _pm_tbl = []
+            for ym in sorted(_pm_dict.keys()):
+                v = _pm_dict[ym]
+                ly = _pm_yoy_dict.get(_ym_to_yoy(ym), {})
+                spend = v['_花费']; clicks = v['_点击数']; impress = v['_展现数']
+                direct_amt = v['_直接订单金额']; total_amt_v = v['_总订单金额']
+                direct_orders = v['_直接订单量']; total_orders = v['_总成交订单量']
+                cpc = spend / clicks if clicks else 0
+                ctr = clicks / impress * 100 if impress else 0
+                droi = direct_amt / spend if spend else 0
+                troi = total_amt_v / spend if spend else 0
+                tcvr = total_orders / clicks * 100 if clicks else 0
+                dcvr = direct_orders / clicks * 100 if clicks else 0
+                ly_spend = ly.get('_花费', 0); ly_clicks = ly.get('_点击数', 0); ly_impress = ly.get('_展现数', 0)
+                ly_direct_amt = ly.get('_直接订单金额', 0); ly_total_amt_v = ly.get('_总订单金额', 0)
+                ly_total_orders = ly.get('_总成交订单量', 0)
+                ly_cpc = ly_spend / ly_clicks if ly_clicks else 0
+                ly_droi = ly_direct_amt / ly_spend if ly_spend else 0
+                ly_troi = ly_total_amt_v / ly_spend if ly_spend else 0
+                ly_tcvr = ly_total_orders / ly_clicks * 100 if ly_clicks else 0
+                _pm_tbl.append({
+                    '年月': ym,
+                    '花费': f"¥{spend:,.0f}",
+                    'CPC': f"¥{cpc:.2f}",
+                    '点击数': f"{int(clicks):,}",
+                    '点击率': f"{ctr:.2f}%",
+                    '直接订单金额': f"¥{direct_amt:,.0f}",
+                    '直接金额占比': f"{direct_amt/_pm_total_amt*100:.2f}%" if _pm_total_amt else '0.00%',
+                    '总订单金额': f"¥{total_amt_v:,.0f}",
+                    '总金额占比': f"{total_amt_v/_pm_total_amt*100:.2f}%" if _pm_total_amt else '0.00%',
+                    '直接ROI': f"{droi:.2f}",
+                    '总ROI': f"{troi:.2f}",
+                    '总转化率': f"{tcvr:.2f}%",
+                    '花费同比': f"{_pm_yoy_pct(spend,ly_spend):+.1f}%" if _pm_yoy_pct(spend,ly_spend) is not None else '--',
+                    '直接ROI同比': f"{_pm_yoy_pct(droi,ly_droi):+.1f}%" if _pm_yoy_pct(droi,ly_droi) is not None else '--',
+                    '总ROI同比': f"{_pm_yoy_pct(troi,ly_troi):+.1f}%" if _pm_yoy_pct(troi,ly_troi) is not None else '--',
+                    'CPC同比': f"{_pm_yoy_pct(cpc,ly_cpc):+.1f}%" if _pm_yoy_pct(cpc,ly_cpc) is not None else '--',
+                    '转化率同比': f"{_pm_yoy_pct(tcvr,ly_tcvr):+.1f}%" if _pm_yoy_pct(tcvr,ly_tcvr) is not None else '--',
+                })
+            # 推广月度合计行（同比也按精确天数）
+            if _pm_tbl:
+                _pmt_spend = sum(v['_花费'] for v in _pm_dict.values())
+                _pmt_clicks = sum(v['_点击数'] for v in _pm_dict.values())
+                _pmt_impress = sum(v['_展现数'] for v in _pm_dict.values())
+                _pmt_direct = sum(v['_直接订单金额'] for v in _pm_dict.values())
+                _pmt_total = sum(v['_总订单金额'] for v in _pm_dict.values())
+                _pmt_dorders = sum(v['_直接订单量'] for v in _pm_dict.values())
+                _pmt_torders = sum(v['_总成交订单量'] for v in _pm_dict.values())
+                _pmt_cpc = _pmt_spend / _pmt_clicks if _pmt_clicks else 0
+                _pmt_ctr = _pmt_clicks / _pmt_impress * 100 if _pmt_impress else 0
+                _pmt_droi = _pmt_direct / _pmt_spend if _pmt_spend else 0
+                _pmt_troi = _pmt_total / _pmt_spend if _pmt_spend else 0
+                _pmt_tcvr = _pmt_torders / _pmt_clicks * 100 if _pmt_clicks else 0
+                # 合计同比（精确天数）
+                _ly_pmt_spend = sum(v['_花费'] for v in _pm_yoy_dict.values())
+                _ly_pmt_clicks = sum(v['_点击数'] for v in _pm_yoy_dict.values())
+                _ly_pmt_direct = sum(v['_直接订单金额'] for v in _pm_yoy_dict.values())
+                _ly_pmt_total = sum(v['_总订单金额'] for v in _pm_yoy_dict.values())
+                _ly_pmt_torders = sum(v['_总成交订单量'] for v in _pm_yoy_dict.values())
+                _ly_pmt_cpc = _ly_pmt_spend / _ly_pmt_clicks if _ly_pmt_clicks else 0
+                _ly_pmt_droi = _ly_pmt_direct / _ly_pmt_spend if _ly_pmt_spend else 0
+                _ly_pmt_troi = _ly_pmt_total / _ly_pmt_spend if _ly_pmt_spend else 0
+                _ly_pmt_tcvr = _ly_pmt_torders / _ly_pmt_clicks * 100 if _ly_pmt_clicks else 0
+                _pm_tbl.append({
+                    '年月': '合计',
+                    '花费': f"¥{_pmt_spend:,.0f}",
+                    'CPC': f"¥{_pmt_cpc:.2f}",
+                    '点击数': f"{int(_pmt_clicks):,}",
+                    '点击率': f"{_pmt_ctr:.2f}%",
+                    '直接订单金额': f"¥{_pmt_direct:,.0f}",
+                    '直接金额占比': '100.00%',
+                    '总订单金额': f"¥{_pmt_total:,.0f}",
+                    '总金额占比': '100.00%',
+                    '直接ROI': f"{_pmt_droi:.2f}",
+                    '总ROI': f"{_pmt_troi:.2f}",
+                    '总转化率': f"{_pmt_tcvr:.2f}%",
+                    '花费同比': f"{_pm_yoy_pct(_pmt_spend,_ly_pmt_spend):+.1f}%" if _pm_yoy_pct(_pmt_spend,_ly_pmt_spend) is not None else '--',
+                    '直接ROI同比': f"{_pm_yoy_pct(_pmt_droi,_ly_pmt_droi):+.1f}%" if _pm_yoy_pct(_pmt_droi,_ly_pmt_droi) is not None else '--',
+                    '总ROI同比': f"{_pm_yoy_pct(_pmt_troi,_ly_pmt_troi):+.1f}%" if _pm_yoy_pct(_pmt_troi,_ly_pmt_troi) is not None else '--',
+                    'CPC同比': f"{_pm_yoy_pct(_pmt_cpc,_ly_pmt_cpc):+.1f}%" if _pm_yoy_pct(_pmt_cpc,_ly_pmt_cpc) is not None else '--',
+                    '转化率同比': f"{_pm_yoy_pct(_pmt_tcvr,_ly_pmt_tcvr):+.1f}%" if _pm_yoy_pct(_pmt_tcvr,_ly_pmt_tcvr) is not None else '--',
+                })
+            _pm_headers = ['年月','花费','CPC','点击数','点击率','直接订单金额','直接金额占比','总订单金额','总金额占比','直接ROI','总ROI','总转化率','花费同比','直接ROI同比','总ROI同比','CPC同比','转化率同比']
+            _render_html_table(_pm_tbl, _pm_headers, _pm_headers, title='📢 推广月度趋势')
+            _render_download_panel(_pm_tbl, _pm_headers, 'promo_monthly_trend.csv', '📥 下载推广月度趋势')
+
         st.markdown('---')
     t1, t2 = st.columns(2)
     with t1:
