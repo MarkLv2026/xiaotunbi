@@ -3426,19 +3426,27 @@ with tabs[7]:
             return f'{sign}{v:.1f}%', color
 
         _p1_cols = _p1_vals
-        # 排序控件
+        # 排序控件：行维度字段（日期/年月等）+ 值指标
+        _p1_dim_sort_opts = [d for d in _p1_row_dims if d in ('日期', '年月')]
+        _p1_sort_opts = _p1_dim_sort_opts + list(_p1_vals)
+        # 默认：若有日期/年月维度，默认选升序；否则默认降序
+        _p1_sort_default_idx = 0
+        _p1_sort_default_dir = '升序' if _p1_dim_sort_opts else '降序'
         _p1_sort_col, _p1_sort_dir = st.columns([2, 1])
         with _p1_sort_col:
-            _p1_sort_key = st.selectbox('排序列', _p1_vals, index=0, key='pv1_sort')
+            _p1_sort_key = st.selectbox('排序列', _p1_sort_opts, index=_p1_sort_default_idx, key='pv1_sort')
         with _p1_sort_dir:
-            _p1_asc = st.radio('', ['降序', '升序'], horizontal=True, key='pv1_asc', index=0)
-        # 按选定列排序（映射格式化前的原始值）
-        def _get_raw(rk, mc):
-            v = _p1_agg.get(rk, {}).get(mc, 0)
-            return v
+            _p1_asc = st.radio('', ['降序', '升序'], horizontal=True, key='pv1_asc',
+                               index=0 if _p1_sort_default_dir == '降序' else 1)
+        # 按选定列排序：维度字段用字符串自然排序，值指标用数值排序
+        def _get_p1_sort_val(rk, mc):
+            if mc in _p1_row_dims:
+                idx = _p1_row_dims.index(mc)
+                return rk[idx] if isinstance(rk, tuple) else str(rk)
+            return _p1_agg.get(rk, {}).get(mc, 0) or 0
         _p1_row_keys = sorted(_p1_row_keys,
-                                 key=lambda k: _get_raw(k, _p1_sort_key),
-                                 reverse=(_p1_asc == '降序'))
+                              key=lambda k: _get_p1_sort_val(k, _p1_sort_key),
+                              reverse=(_p1_asc == '降序'))
         _yoy_cols = ['访客数同比', '转化率同比', '销售额同比', '销售量同比']
         _yoy_keys = ['_YOY_访客数', '_YOY_转化率', '_YOY_销售额', '_YOY_销售量']
 
@@ -3611,17 +3619,31 @@ with tabs[7]:
         # 排序控件（仅在前N行=0时启用自由排序）
         _p2_sort_enabled = (_p2_top_n == 0)
         if _p2_sort_enabled:
-            # 构建可排序的指标列表
-            _p2_sort_metrics = ['花费', '展现数', '点击数', '点击率', 'CPC', '总ROI', '直接ROI',
+            # 行维度中的日期/年月字段（不带下划线前缀）
+            _p2_dim_sort_opts = [d.lstrip('_') for d in _p2_row_dims if d.lstrip('_') in ('日期', '年月')]
+            # 构建可排序的指标列表（日期维度在前）
+            _p2_sort_metrics_base = ['花费', '展现数', '点击数', '点击率', 'CPC', '总ROI', '直接ROI',
                                '总转化率', '总订单金额', '直接订单金额', '花费占比']
+            _p2_sort_metrics = _p2_dim_sort_opts + _p2_sort_metrics_base
+            _p2_sort_default_dir = '升序' if _p2_dim_sort_opts else '降序'
             _p2_sort_col, _p2_sort_dir = st.columns([2, 1])
             with _p2_sort_col:
                 _p2_sort_key = st.selectbox('排序列', _p2_sort_metrics, index=0, key='pv2_sort')
             with _p2_sort_dir:
-                _p2_asc = st.radio('', ['降序', '升序'], horizontal=True, key='pv2_asc', index=0)
-            _key = '_' + _p2_sort_key
+                _p2_asc = st.radio('', ['降序', '升序'], horizontal=True, key='pv2_asc',
+                                   index=0 if _p2_sort_default_dir == '降序' else 1)
+            # 维度字段用字符串排序，值指标用数值排序
+            def _get_p2_sort_val(rk, mc):
+                if mc in ('日期', '年月'):
+                    raw_dim = mc  # 推广透视表维度字段不带下划线
+                    dim_list_stripped = [d.lstrip('_') for d in _p2_row_dims]
+                    if mc in dim_list_stripped:
+                        idx = dim_list_stripped.index(mc)
+                        return rk[idx] if isinstance(rk, tuple) else str(rk)
+                    return ''
+                return _p2_agg.get(rk, {}).get('_' + mc, 0) or 0
             _p2_row_keys = sorted(_p2_row_keys,
-                                   key=lambda k: _p2_agg.get(k, {}).get(_key, 0) or 0,
+                                   key=lambda k: _get_p2_sort_val(k, _p2_sort_key),
                                    reverse=(_p2_asc == '降序'))
         elif _p2_top_n > 0:
             _p2_row_keys = sorted(_p2_agg.keys(),
