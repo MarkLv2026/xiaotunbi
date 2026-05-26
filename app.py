@@ -2238,6 +2238,9 @@ with tabs[3]:
             yoy_amt = (amt - ly_amt) / ly_amt if ly_amt else None
             yoy_vis = (vis - ly_vis) / ly_vis if ly_vis else None
             yoy_cvr = (cvr - ly_cvr) / ly_cvr if ly_cvr else None
+            atv_v = amt / v['支付买家数'] if v['支付买家数'] else 0
+            ly_atv_v = ly_amt / ly_buyers if ly_buyers else None
+            yoy_atv = (atv_v - ly_atv_v) / ly_atv_v if ly_atv_v else None
             spend = _dim_promo.get(dv, 0)
             _dim_tbl.append({
                 '维度': dv,
@@ -2256,6 +2259,7 @@ with tabs[3]:
                 '销额同比': f"{yoy_amt*100:+.2f}%" if yoy_amt is not None else '--',
                 '访客同比': f"{yoy_vis*100:+.2f}%" if yoy_vis is not None else '--',
                 '转化率同比': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
+                '客单价同比': f"{yoy_atv*100:+.2f}%" if yoy_atv is not None else '--',
             })
         # 合计行
         _dim_total_buyers = sum(v['支付买家数'] for v in _dim_agg.values())
@@ -2267,6 +2271,9 @@ with tabs[3]:
         _dim_total_spend = sum(_dim_promo.values())
         _dim_cvr = _dim_total_buyers / _dim_total_vis if _dim_total_vis else 0
         _ly_dim_cvr = _ly_dim_buyers / _ly_dim_vis if _ly_dim_vis else 0
+        _dim_atv = _dim_total_amt / _dim_total_buyers if _dim_total_buyers else 0
+        _ly_dim_atv = _ly_dim_amt / _ly_dim_buyers if _ly_dim_buyers else None
+        _yoy_dim_atv = (_dim_atv - _ly_dim_atv) / _ly_dim_atv if _ly_dim_atv else None
         _dim_tbl.append({
             '维度': '合计',
             '访客数': f"{int(_dim_total_vis):,}", '访客占比': '100.00%',
@@ -2281,6 +2288,7 @@ with tabs[3]:
             '销额同比': f"{(_dim_total_amt-_ly_dim_amt)/_ly_dim_amt*100:+.2f}%" if _ly_dim_amt else '--',
             '访客同比': f"{(_dim_total_vis-_ly_dim_vis)/_ly_dim_vis*100:+.2f}%" if _ly_dim_vis else '--',
             '转化率同比': f"{(_dim_cvr-_ly_dim_cvr)/_ly_dim_cvr*100:+.2f}%" if _ly_dim_cvr else '--',
+            '客单价同比': f"{_yoy_dim_atv*100:+.2f}%" if _yoy_dim_atv is not None else '--',
         })
         # 排序控件
         _ds_sort_cols = ['维度','访客数','买家数','支付件数','成交金额(万)','转化率','客单价','加购人数','加购率','UV价值','费率']
@@ -2295,7 +2303,7 @@ with tabs[3]:
             _dim_data_rows.sort(key=lambda r: r.get('维度', ''), reverse=(_ds_sort_desc == '降序'))
         else:
             _dim_data_rows.sort(key=lambda r: _parse_num(r.get(_ds_sort_by, 0)), reverse=(_ds_sort_desc == '降序'))
-        _dim_headers = ['维度','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
+        _dim_headers = ['维度','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比','客单价同比']
         _render_html_table(_dim_data_rows + _dim_total_rows, _dim_headers, _dim_headers, title=f'📦 销售{_sales_dim}汇总')
         _render_download_panel(_dim_data_rows + _dim_total_rows, _dim_headers, 'sales_dim_summary.csv', '📥 下载维度汇总')
     else:
@@ -2330,6 +2338,9 @@ with tabs[3]:
                 cvr = v['支付买家数'] / vis if vis else 0
                 ly_cvr = ly_v['支付买家数'] / ly_v['商品访客数'] if ly_v and ly_v['商品访客数'] else None
                 yoy_cvr = (cvr - ly_cvr) / ly_cvr if ly_cvr else None
+                atv_d = amt / v['支付买家数'] if v['支付买家数'] else 0
+                ly_atv_d = ly_v['支付金额'] / ly_v['支付买家数'] if ly_v and ly_v['支付买家数'] else None
+                yoy_atv_d = (atv_d - ly_atv_d) / ly_atv_d if ly_atv_d else None
                 row = {
                     '日期': dt_str, '访客数': f"{int(vis):,}",
                     '访客占比': f"{vis/total_vis*100:.2f}%" if total_vis else "0.00%",
@@ -2345,6 +2356,7 @@ with tabs[3]:
                     '销额同比': f"{yoy_amt*100:+.2f}%" if yoy_amt is not None else '--',
                     '访客同比': f"{yoy_vis*100:+.2f}%" if yoy_vis is not None else '--',
                     '转化率同比': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
+                    '客单价同比': f"{yoy_atv_d*100:+.2f}%" if yoy_atv_d is not None else '--',
                 }
                 if _s_dim_field:
                     row['维度'] = dv
@@ -2359,6 +2371,9 @@ with tabs[3]:
                 _total_cvr_d = total_buyers / total_vis if total_vis else 0
                 _ly_total_cvr_d = _ly_total_buyers_d / _ly_total_vis_d if _ly_total_vis_d else 0
                 _total_yoy_cvr_d = (_total_cvr_d - _ly_total_cvr_d) / _ly_total_cvr_d if _ly_total_cvr_d else None
+                _total_atv_d = total_amt / total_buyers if total_buyers else 0
+                _ly_total_atv_d = _ly_total_amt_d / _ly_total_buyers_d if _ly_total_buyers_d else None
+                _total_yoy_atv_d = (_total_atv_d - _ly_total_atv_d) / _ly_total_atv_d if _ly_total_atv_d else None
                 _total_promo_d = sum(_day_promo.values())
                 _total_rate_d = _total_promo_d / total_amt * 100 if total_amt else None
                 _total_qty = sum(v['支付件数'] for v in _sales_day.values())
@@ -2375,6 +2390,7 @@ with tabs[3]:
                     '销额同比': f"{_total_yoy_amt_d*100:+.2f}%" if _total_yoy_amt_d is not None else '--',
                     '访客同比': f"{_total_yoy_vis_d*100:+.2f}%" if _total_yoy_vis_d is not None else '--',
                     '转化率同比': f"{_total_yoy_cvr_d*100:+.2f}%" if _total_yoy_cvr_d is not None else '--',
+                    '客单价同比': f"{_total_yoy_atv_d*100:+.2f}%" if _total_yoy_atv_d is not None else '--',
                 }
                 if _s_dim_field:
                     total_row['维度'] = '合计'
@@ -2397,7 +2413,7 @@ with tabs[3]:
             else:
                 _daily_data_rows.sort(key=lambda r: _parse_num(r.get(_daily_sort_by, 0)), reverse=(_daily_sort_desc == '降序'))
             _daily_tbl_sorted = _daily_data_rows + _daily_total_row
-            _daily_headers = ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
+            _daily_headers = ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比','客单价同比']
             if _s_dim_field:
                 _daily_headers = ['维度'] + _daily_headers
             _render_html_table(_daily_tbl_sorted, _daily_headers, _daily_headers, title='📦 销售日度趋势')
@@ -2436,6 +2452,9 @@ with tabs[3]:
                 cvr = v['支付买家数'] / vis if vis else 0
                 ly_cvr = ly_buyers / ly_vis if ly_vis else 0
                 yoy_cvr = (cvr - ly_cvr) / ly_cvr if ly_cvr else None
+                atv_m = amt / v['支付买家数'] if v['支付买家数'] else 0
+                ly_atv_m = ly_amt / ly_buyers if ly_buyers else None
+                yoy_atv_m = (atv_m - ly_atv_m) / ly_atv_m if ly_atv_m else None
                 row = {
                     '月份': ym, '访客数': f"{int(vis):,}",
                     '访客占比': f"{vis/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
@@ -2451,6 +2470,7 @@ with tabs[3]:
                     '销额同比': f"{yoy_amt*100:+.2f}%" if yoy_amt is not None else '--',
                     '访客同比': f"{yoy_vis*100:+.2f}%" if yoy_vis is not None else '--',
                     '转化率同比': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
+                    '客单价同比': f"{yoy_atv_m*100:+.2f}%" if yoy_atv_m is not None else '--',
                 }
                 if _s_dim_field:
                     row['维度'] = dv
@@ -2465,6 +2485,9 @@ with tabs[3]:
                 _total_cvr = total_buyers_m / total_vis_m if total_vis_m else 0
                 _ly_total_cvr = _ly_daily_buyers / _ly_daily_vis if _ly_daily_vis else 0
                 _total_yoy_cvr = (_total_cvr - _ly_total_cvr) / _ly_total_cvr if _ly_total_cvr else None
+                _total_atv_m = total_amt_m / total_buyers_m if total_buyers_m else 0
+                _ly_total_atv_m = _ly_daily_amt / _ly_daily_buyers if _ly_daily_buyers else None
+                _total_yoy_atv_m = (_total_atv_m - _ly_total_atv_m) / _ly_total_atv_m if _ly_total_atv_m else None
                 _total_promo_m = sum(_month_promo.values())
                 _total_rate_m = _total_promo_m / total_amt_m * 100 if total_amt_m else None
                 total_row = {
@@ -2480,6 +2503,7 @@ with tabs[3]:
                     '销额同比': f"{_total_yoy_amt*100:+.2f}%" if _total_yoy_amt is not None else '--',
                     '访客同比': f"{_total_yoy_vis*100:+.2f}%" if _total_yoy_vis is not None else '--',
                     '转化率同比': f"{_total_yoy_cvr*100:+.2f}%" if _total_yoy_cvr is not None else '--',
+                    '客单价同比': f"{_total_yoy_atv_m*100:+.2f}%" if _total_yoy_atv_m is not None else '--',
                 }
                 if _s_dim_field:
                     total_row['维度'] = '合计'
@@ -2506,7 +2530,7 @@ with tabs[3]:
                 else:
                     _mm_data_rows.sort(key=lambda r: _parse_num_m(r.get(_mm_sort_by, 0)), reverse=(_mm_sort_desc == '降序'))
                 _mm_sorted = _mm_data_rows + _mm_total_row
-                _mm_headers = ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
+                _mm_headers = ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比','客单价同比']
                 if _s_dim_field:
                     _mm_headers = ['维度'] + _mm_headers
                 _render_html_table(_mm_sorted, _mm_headers, _mm_headers, title='📦 销售月度趋势')
