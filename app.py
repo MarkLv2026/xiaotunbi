@@ -2701,6 +2701,29 @@ with tabs[3]:
             if ly_dt:
                 _p_ly_day[(dv, dt_str)] = _promo_all_day.get((dv, ly_dt)) or {}
 
+        # ── 销售成交金额预计算（用于推广费率：花费/销售支付金额）──
+        # 按日期汇总销售成交金额（跨所有维度）
+        _p_sales_day = {}
+        for (dv_s, dt_str), v in _sales_day.items():
+            _p_sales_day[dt_str] = _p_sales_day.get(dt_str, 0) + v['支付金额']
+        # 按月汇总
+        _p_sales_month = {}
+        for dt_str, amt in _p_sales_day.items():
+            ym = dt_str[:7]
+            _p_sales_month[ym] = _p_sales_month.get(ym, 0) + amt
+        # 按推广维度映射销售维度，汇总各维度值销售成交金额
+        _sales_dim_map = {'_渠道': '渠道', '_店铺': '店铺', '_品类': '品类', '_型号': '型号'}
+        _sales_dim_field = _sales_dim_map.get(_p_dim_field, None)
+        _p_dim_sales = {}
+        if _sales_dim_field:
+            for row in daily:
+                dt = row.get('日期', '')
+                if not dt or not (str(start) <= dt <= str(end)): continue
+                dv_s = row.get(_sales_dim_field, '') or '未标注'
+                _p_dim_sales[dv_s] = _p_dim_sales.get(dv_s, 0) + float(row.get('支付金额', 0) or 0)
+        # 全时段销售总额
+        _p_total_sales = sum(v['支付金额'] for v in _sales_month.values()) if _sales_month else 0
+
         # ── 选择了分析维度时，显示维度汇总表（不按日/月拆分）──
         if _p_use_dim:
             # 按维度值汇总（合并所有日期）
@@ -2744,7 +2767,7 @@ with tabs[3]:
                     '维度': dv,
                     '花费': f'¥{spend:,.0f}',
                     '花费占比': f'{spend/_pdim_total_spend*100:.2f}%' if _pdim_total_spend else '0.00%',
-                    '费率': f'{spend/total_amt_v*100:.2f}%' if total_amt_v else '--',
+                    '费率': f'{spend/(_p_dim_sales.get(dv, _p_total_sales) if _sales_dim_field else _p_total_sales)*100:.2f}%' if (_p_dim_sales.get(dv, _p_total_sales) if _sales_dim_field else _p_total_sales) else '--',
                     'CPC': f'¥{cpc:.2f}',
                     '点击数': f'{int(clicks):,}',
                     '点击率': f'{clicks/impress*100:.2f}%' if impress else '0.00%',
@@ -2786,7 +2809,7 @@ with tabs[3]:
                 '维度': '合计',
                 '花费': f'¥{_pdt_spend:,.0f}',
                 '花费占比': '100.00%',
-                '费率': f'{_pdt_spend/_pdt_total*100:.2f}%' if _pdt_total else '--',
+                '费率': f'{_pdt_spend/_p_total_sales*100:.2f}%' if _p_total_sales else '--',
                 'CPC': f'¥{_pdt_cpc:.2f}',
                 '点击数': f'{int(_pdt_clicks):,}',
                 '点击率': f'{_pdt_clicks/_pdt_impress*100:.2f}%' if _pdt_impress else '0.00%',
@@ -2844,7 +2867,7 @@ with tabs[3]:
                     '日期': dt_str,
                     '花费': f"¥{spend:,.0f}",
                     '花费占比': f"{spend/_pd_total_spend*100:.2f}%" if _pd_total_spend else '0.00%',
-                    '费率': f"{spend/total_amt_v*100:.2f}%" if total_amt_v else '--',
+                    '费率': f"{spend/_p_sales_day.get(dt_str, 0)*100:.2f}%" if _p_sales_day.get(dt_str, 0) else '--',
                     'CPC': f"¥{cpc:.2f}",
                     '点击数': f"{int(clicks):,}",
                     '点击率': f"{clicks/impress*100:.2f}%" if impress else '0.00%',
@@ -2890,7 +2913,7 @@ with tabs[3]:
                     '日期': '总计',
                     '花费': f"¥{_pdt_spend:,.0f}",
                     '花费占比': '100.00%',
-                    '费率': f"{_pdt_spend/_pdt_total*100:.2f}%" if _pdt_total else '--',
+                    '费率': f"{_pdt_spend/_p_total_sales*100:.2f}%" if _p_total_sales else '--',
                     'CPC': f"¥{_pdt_cpc:.2f}", '点击数': f"{int(_pdt_clicks):,}", '点击率': '--',
                     '直接订单金额': f"¥{_pdt_direct:,.0f}",
                     '总订单金额': f"¥{_pdt_total:,.0f}", '总金额占比': '100.00%',
@@ -2952,7 +2975,7 @@ with tabs[3]:
                     '年月': ym,
                     '花费': f"¥{spend:,.0f}",
                     '花费占比': f"{spend/_pm_total_spend*100:.2f}%" if _pm_total_spend else '0.00%',
-                    '费率': f"{spend/total_amt_v*100:.2f}%" if total_amt_v else '--',
+                    '费率': f"{spend/_p_sales_month.get(ym, 0)*100:.2f}%" if _p_sales_month.get(ym, 0) else '--',
                     'CPC': f"¥{cpc:.2f}",
                     '点击数': f"{int(clicks):,}",
                     '点击率': f"{clicks/impress*100:.2f}%" if impress else '0.00%',
@@ -2997,7 +3020,7 @@ with tabs[3]:
                     '年月': '合计',
                     '花费': f"¥{_pmt_spend:,.0f}",
                     '花费占比': '100.00%',
-                    '费率': f"{_pmt_spend/_pmt_total*100:.2f}%" if _pmt_total else '--',
+                    '费率': f"{_pmt_spend/_p_total_sales*100:.2f}%" if _p_total_sales else '--',
                     'CPC': f"¥{_pmt_cpc:.2f}", '点击数': f"{int(_pmt_clicks):,}", '点击率': '--',
                     '直接订单金额': f"¥{_pmt_direct:,.0f}",
                     '总订单金额': f"¥{_pmt_total:,.0f}", '总金额占比': '100.00%',
