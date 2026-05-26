@@ -2190,6 +2190,13 @@ with tabs[3]:
         try: return float(str(v).replace(',','').replace('%','').replace('¥',''))
         except: return 0
 
+    def _date_yoy(dt_str):
+        try:
+            dt_obj = datetime.datetime.strptime(dt_str, '%Y-%m-%d').date()
+            return str(dt_obj.replace(year=dt_obj.year - 1))
+        except ValueError:
+            return None
+
     # ── 当选择了分析维度时，直接展示维度汇总表（不按日/月拆分）──
     if _s_dim_field:
         # 按维度值汇总：合并所有日期
@@ -2277,7 +2284,7 @@ with tabs[3]:
         _ds_sort_cols = ['维度','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值','费率']
         _dsc1, _dsc2 = st.columns([2, 1])
         with _dsc1:
-            _ds_sort_by = st.selectbox('排序字段', _ds_sort_cols, index=5, key='dim_sort_col')
+            _ds_sort_by = st.selectbox('排序字段', _ds_sort_cols, index=4, key='dim_sort_col')
         with _dsc2:
             _ds_sort_desc = st.radio('', ['降序', '升序'], horizontal=True, key='dim_sort_dir', index=0)
         _dim_data_rows = [r for r in _dim_tbl if r.get('维度') != '合计']
@@ -2306,12 +2313,6 @@ with tabs[3]:
             total_buyers = sum(v['支付买家数'] for v in _sales_day.values())
             total_cart = sum(v['商品加购人数'] for v in _sales_day.values())
             # 预计算 YoY：同一 (dim_val, date-1year) 从 _sales_all_day 查找
-            def _date_yoy(dt_str):
-                try:
-                    dt_obj = datetime.datetime.strptime(dt_str, '%Y-%m-%d').date()
-                    return str(dt_obj.replace(year=dt_obj.year - 1))
-                except ValueError:
-                    return None
             ly_day_dict = {}
             for (dv, dt_str), v in _sales_day.items():
                 ly_dt = _date_yoy(dt_str)
