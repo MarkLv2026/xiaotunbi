@@ -2719,6 +2719,7 @@ with tabs[3]:
                 for fk in _p_fields:
                     _p_dim_ly[dv][fk] += v[fk]
             _pdim_total_amt = sum(v['_总订单金额'] for v in _p_dim_agg.values()) or 1
+            _pdim_total_spend = sum(v['_花费'] for v in _p_dim_agg.values()) or 1
             _pdim_tbl = []
             for dv, v in sorted(_p_dim_agg.items()):
                 spend = v['_花费']; clicks = v['_点击数']; impress = v['_展现数']
@@ -2741,7 +2742,10 @@ with tabs[3]:
                     return '--'
                 _pdim_tbl.append({
                     '维度': dv,
-                    '花费': f'¥{spend:,.0f}', 'CPC': f'¥{cpc:.2f}',
+                    '花费': f'¥{spend:,.0f}',
+                    '花费占比': f'{spend/_pdim_total_spend*100:.2f}%' if _pdim_total_spend else '0.00%',
+                    '费率': f'{spend/total_amt_v*100:.2f}%' if total_amt_v else '--',
+                    'CPC': f'¥{cpc:.2f}',
                     '点击数': f'{int(clicks):,}',
                     '点击率': f'{clicks/impress*100:.2f}%' if impress else '0.00%',
                     '直接订单金额': f'¥{direct_amt:,.0f}',
@@ -2780,7 +2784,10 @@ with tabs[3]:
                 return '--'
             _pdim_tbl.append({
                 '维度': '合计',
-                '花费': f'¥{_pdt_spend:,.0f}', 'CPC': f'¥{_pdt_cpc:.2f}',
+                '花费': f'¥{_pdt_spend:,.0f}',
+                '花费占比': '100.00%',
+                '费率': f'{_pdt_spend/_pdt_total*100:.2f}%' if _pdt_total else '--',
+                'CPC': f'¥{_pdt_cpc:.2f}',
                 '点击数': f'{int(_pdt_clicks):,}',
                 '点击率': f'{_pdt_clicks/_pdt_impress*100:.2f}%' if _pdt_impress else '0.00%',
                 '直接订单金额': f'¥{_pdt_direct:,.0f}',
@@ -2794,7 +2801,7 @@ with tabs[3]:
                 '转化率同比': _pdct2(_pdt_tcvr, _ly_pdt_tcvr),
             })
             # 排序控件 — 默认按花费降序
-            _ps_sort_cols = ['维度','花费','CPC','点击数','点击率','直接订单金额','总订单金额','直接ROI','总ROI','总转化率']
+            _ps_sort_cols = ['维度','花费','花费占比','费率','CPC','点击数','点击率','直接订单金额','总订单金额','直接ROI','总ROI','总转化率']
             _psc1, _psc2 = st.columns([2, 1])
             with _psc1:
                 _ps_sort_by = st.selectbox('排序字段', _ps_sort_cols, index=1, key='promo_dim_sort_col')
@@ -2806,12 +2813,13 @@ with tabs[3]:
                 _ps_data.sort(key=lambda r: r.get('维度', ''), reverse=(_ps_sort_desc == '降序'))
             else:
                 _ps_data.sort(key=lambda r: _parse_num(r.get(_ps_sort_by, 0)), reverse=(_ps_sort_desc == '降序'))
-            _pd_headers = ['维度','花费','CPC','点击数','点击率','直接订单金额','总订单金额','总金额占比','直接ROI','总ROI','总转化率','花费同比','直接ROI同比','总ROI同比','CPC同比','转化率同比']
+            _pd_headers = ['维度','花费','花费占比','费率','CPC','点击数','点击率','直接订单金额','总订单金额','总金额占比','直接ROI','总ROI','总转化率','花费同比','直接ROI同比','总ROI同比','CPC同比','转化率同比']
             _render_html_table(_ps_data + _ps_total, _pd_headers, _pd_headers, title=f'📢 推广{_p_dim}汇总')
             _render_download_panel(_ps_data + _ps_total, _pd_headers, 'promo_dim_summary.csv', '📥 下载推广维度汇总')
         else:
             # ── 推广日度表格 ──
             _pd_total_amt = sum(v['_总订单金额'] for v in _promo_day.values()) or 1
+            _pd_total_spend = sum(v['_花费'] for v in _promo_day.values()) or 1
             _pd_tbl = []
             for (dv, dt_str), v in sorted(_promo_day.items()):
                 ly = _p_ly_day.get((dv, dt_str), {})
@@ -2835,6 +2843,8 @@ with tabs[3]:
                 row = {
                     '日期': dt_str,
                     '花费': f"¥{spend:,.0f}",
+                    '花费占比': f"{spend/_pd_total_spend*100:.2f}%" if _pd_total_spend else '0.00%',
+                    '费率': f"{spend/total_amt_v*100:.2f}%" if total_amt_v else '--',
                     'CPC': f"¥{cpc:.2f}",
                     '点击数': f"{int(clicks):,}",
                     '点击率': f"{clicks/impress*100:.2f}%" if impress else '0.00%',
@@ -2878,8 +2888,10 @@ with tabs[3]:
                     return '--'
                 total_row = {
                     '日期': '总计',
-                    '花费': f"¥{_pdt_spend:,.0f}", 'CPC': f"¥{_pdt_cpc:.2f}",
-                    '点击数': f"{int(_pdt_clicks):,}", '点击率': '--',
+                    '花费': f"¥{_pdt_spend:,.0f}",
+                    '花费占比': '100.00%',
+                    '费率': f"{_pdt_spend/_pdt_total*100:.2f}%" if _pdt_total else '--',
+                    'CPC': f"¥{_pdt_cpc:.2f}", '点击数': f"{int(_pdt_clicks):,}", '点击率': '--',
                     '直接订单金额': f"¥{_pdt_direct:,.0f}",
                     '总订单金额': f"¥{_pdt_total:,.0f}", '总金额占比': '100.00%',
                     '直接ROI': f"{_pdt_droi:.2f}", '总ROI': f"{_pdt_troi:.2f}",
@@ -2893,7 +2905,7 @@ with tabs[3]:
                 if _p_use_dim:
                     total_row['维度'] = '合计'
                 _pd_tbl.append(total_row)
-            _pd_headers = ['日期','花费','CPC','点击数','点击率','直接订单金额','总订单金额','总金额占比','直接ROI','总ROI','总转化率','花费同比','直接ROI同比','总ROI同比','CPC同比','转化率同比']
+            _pd_headers = ['日期','花费','花费占比','费率','CPC','点击数','点击率','直接订单金额','总订单金额','总金额占比','直接ROI','总ROI','总转化率','花费同比','直接ROI同比','总ROI同比','CPC同比','转化率同比']
             if _p_use_dim:
                 _pd_headers = ['维度'] + _pd_headers
             _render_html_table(_pd_tbl, _pd_headers, _pd_headers, title='📢 推广日度趋势')
@@ -2909,6 +2921,7 @@ with tabs[3]:
                 for fk in _p_fields:
                     _pm_dict[key][fk] += v[fk]
             _pm_total_amt = sum(v['_总订单金额'] for v in _pm_dict.values()) or 1
+            _pm_total_spend = sum(v['_花费'] for v in _pm_dict.values()) or 1
             _pm_tbl = []
             for (dv, ym), v in sorted(_pm_dict.items()):
                 ly_vals = {}
@@ -2937,7 +2950,10 @@ with tabs[3]:
                     return '--'
                 row = {
                     '年月': ym,
-                    '花费': f"¥{spend:,.0f}", 'CPC': f"¥{cpc:.2f}",
+                    '花费': f"¥{spend:,.0f}",
+                    '花费占比': f"{spend/_pm_total_spend*100:.2f}%" if _pm_total_spend else '0.00%',
+                    '费率': f"{spend/total_amt_v*100:.2f}%" if total_amt_v else '--',
+                    'CPC': f"¥{cpc:.2f}",
                     '点击数': f"{int(clicks):,}",
                     '点击率': f"{clicks/impress*100:.2f}%" if impress else '0.00%',
                     '直接订单金额': f"¥{direct_amt:,.0f}",
@@ -2979,8 +2995,10 @@ with tabs[3]:
                     return '--'
                 trow = {
                     '年月': '合计',
-                    '花费': f"¥{_pmt_spend:,.0f}", 'CPC': f"¥{_pmt_cpc:.2f}",
-                    '点击数': f"{int(_pmt_clicks):,}", '点击率': '--',
+                    '花费': f"¥{_pmt_spend:,.0f}",
+                    '花费占比': '100.00%',
+                    '费率': f"{_pmt_spend/_pmt_total*100:.2f}%" if _pmt_total else '--',
+                    'CPC': f"¥{_pmt_cpc:.2f}", '点击数': f"{int(_pmt_clicks):,}", '点击率': '--',
                     '直接订单金额': f"¥{_pmt_direct:,.0f}",
                     '总订单金额': f"¥{_pmt_total:,.0f}", '总金额占比': '100.00%',
                     '直接ROI': f"{_pmt_droi:.2f}", '总ROI': f"{_pmt_troi:.2f}",
@@ -2994,7 +3012,7 @@ with tabs[3]:
                 if _p_use_dim:
                     trow['维度'] = '合计'
                 _pm_tbl.append(trow)
-            _pm_headers = ['年月','花费','CPC','点击数','点击率','直接订单金额','总订单金额','总金额占比','直接ROI','总ROI','总转化率','花费同比','直接ROI同比','总ROI同比','CPC同比','转化率同比']
+            _pm_headers = ['年月','花费','花费占比','费率','CPC','点击数','点击率','直接订单金额','总订单金额','总金额占比','直接ROI','总ROI','总转化率','花费同比','直接ROI同比','总ROI同比','CPC同比','转化率同比']
             if _p_use_dim:
                 _pm_headers = ['维度'] + _pm_headers
             _render_html_table(_pm_tbl, _pm_headers, _pm_headers, title='📢 推广月度趋势')
