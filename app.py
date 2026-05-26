@@ -128,7 +128,7 @@ if not st.session_state.authenticated:
                 st.error('❌ 用户名或密码错误，或账号未授权')
     st.stop()
 
-st.markdown('''<div class="hero"><div><span class="badge">影锋BI风格</span><span class="badge">全域电商经营驾驶舱</span><span class="badge">上传即更新</span></div><h1 class="hero-title">小豚当家销售经营BI看板</h1><div class="hero-sub">经营总览 · 时间段对比 · 趋势分析 · 渠道矩阵 · 商品诊断 · 智能诊断, 一页完成日常复盘。</div></div>''', unsafe_allow_html=True)
+st.markdown('''<div class="hero"><div><span class="badge">影锋BI风格</span><span class="badge">全域电商经营驾驶舱</span><span class="badge">上传即更新</span></div><h1 class="hero-title">小豚当家销售经营BI看板</h1><div class="hero-sub">经营总览 · 时间段对比 · 趋势分析 · 智能诊断, 一页完成日常复盘。</div></div>''', unsafe_allow_html=True)
 
 with st.sidebar:
     # 用户信息栏
@@ -861,7 +861,7 @@ daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
 # ─────────────────────────────────────────────────────────────
-tabs = st.tabs(['经营总览', '📢 推广分析', '时间段对比', '趋势分析', '渠道矩阵', '商品诊断', '🔍 智能诊断', '📊 透视表分析'])
+tabs = st.tabs(['经营总览', '📢 推广分析', '时间段对比', '趋势分析', '🔍 智能诊断', '📊 透视表分析'])
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 1: 经营总览
@@ -3041,269 +3041,9 @@ with tabs[3]:
             _render_html_table(_pm_tbl, _pm_headers, _pm_headers, title='📢 推广月度趋势')
             _render_download_panel(_pm_tbl, _pm_headers, 'promo_monthly_trend.csv', '📥 下载推广月度趋势')
 
-# ═══════════════════════════════════════════════════════════════
-# TAB 4: 渠道矩阵
-# ═══════════════════════════════════════════════════════════════
-with tabs[4]:
-    st.markdown('<div class="section-title">渠道矩阵分析</div>', unsafe_allow_html=True)
-
-    # 渠道表现: 基于已过滤 daily 数据
-    ch_all = group(daily, '渠道')
-    if ch_all:
-        ch_all = sorted(ch_all, key=lambda x: x['支付金额'], reverse=True)
-        ch_display = []
-        for r in ch_all:
-            ch_name = r['渠道']
-            # 计算环比: 取选定时间段等长的上一期
-            cur_days = (end - start).days + 1
-            mom_end = start - datetime.timedelta(days=1)
-            mom_start = mom_end - datetime.timedelta(days=cur_days - 1)
-            prev_ch_rows = [x for x in data['daily']
-                            if x.get('渠道') == ch_name
-                            and str(mom_start) <= x.get('日期', '') <= str(mom_end)]
-            prev_ch_amt = sum(float(x.get('支付金额', 0) or 0) for x in prev_ch_rows)
-            mo_chg = (r['支付金额'] - prev_ch_amt) / prev_ch_amt if prev_ch_amt else None
-            ch_display.append({
-                '渠道': ch_name, '支付金额': f"¥{_wan(r['支付金额'])}万",
-                '支付件数': f"{r['支付件数']:,.0f}", '访客数': f"{r['商品访客数']:,.0f}",
-                '转化率': f"{r['支付转化率']*100:.2f}%", '客单价': f"¥{r['客单价']:,.0f}",
-                '退款率': f"{r['退款率']*100:.2f}%",
-                '环比': f'{mo_chg*100:+.1f}%' if mo_chg is not None else '--',
-            })
-        st.dataframe(df(ch_display), use_container_width=True, hide_index=True)
-        _render_download_panel(ch_all, ['渠道', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价', '退款率'], 'channel_performance.csv')
-
-    # 渠道可视化
-    if ch_all:
-        vis1, vis2 = st.columns(2)
-        with vis1:
-            ch_all_w = [{**r, '支付金额_万': _wan(r['支付金额'])} for r in ch_all]
-            fig = px.bar(df(ch_all_w), x='渠道', y='支付金额_万', color='渠道',
-                         title='渠道支付金额(万)', color_discrete_sequence=px.colors.qualitative.Set2,
-                         text=[f"{_wan(r['支付金额'])}万" for r in ch_all])
-            fig.update_layout(height=340, template='plotly_white', showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
-            _render_download_panel(ch_all_w, ['渠道', '支付金额_万'], 'channel_amt_bar.csv', '📥 渠道金额柱状图')
-        with vis2:
-            fig = px.scatter(df(ch_all), x='商品访客数', y='支付转化率', size='支付金额',
-                              color='渠道', hover_data=['客单价'],
-                              title='渠道流量-转化散点',
-                              color_discrete_sequence=px.colors.qualitative.Set2)
-            fig.update_layout(height=340, template='plotly_white')
-            st.plotly_chart(fig, use_container_width=True)
-            _render_download_panel(ch_all, ['渠道', '支付金额', '商品访客数', '支付转化率', '客单价'], 'channel_scatter.csv', '📥 渠道散点图')
-
-    # 渠道内店铺明细
-    st.markdown('---')
-    st.markdown('<div class="section-title">渠道内店铺明细</div>', unsafe_allow_html=True)
-    store_rows2 = group(daily, '店铺')
-    store_rows2 = sorted(store_rows2, key=lambda x: x['支付金额'], reverse=True)
-    store_display = []
-    for r in store_rows2:
-        # 找到该店铺对应渠道
-        ch_of_store = '未标注'
-        for dr in daily:
-            if dr.get('店铺') == r['店铺']:
-                ch_of_store = dr.get('渠道', '未标注')
-                break
-        store_display.append({
-            '店铺': r['店铺'], '渠道': ch_of_store,
-            '支付金额': f"¥{_wan(r['支付金额'])}万", '支付件数': f"{r['支付件数']:,.0f}",
-            '访客数': f"{r['商品访客数']:,.0f}", '转化率': f"{r['支付转化率']*100:.2f}%",
-            '客单价': f"¥{r['客单价']:,.0f}"
-        })
-    if store_display:
-        st.dataframe(df(store_display), use_container_width=True, hide_index=True)
-        _render_download_panel(store_display, ['店铺', '渠道', '支付金额', '支付件数', '访客数', '转化率', '客单价'], 'channel_store.csv', '📥 店铺明细')
-
-    # 渠道 × 品类矩阵
-    st.markdown('---')
-    st.markdown('<div class="section-title">渠道 × 品类 金额矩阵</div>', unsafe_allow_html=True)
-    cross = {}
-    for r in daily:
-        ch = r.get('渠道') or '未标注'
-        cat = r.get('品类') or '未标注'
-        cross.setdefault(ch, {}).setdefault(cat, 0.0)
-        cross[ch][cat] += float(r.get('支付金额', 0) or 0)
-    cross_rows = []
-    all_cats = sorted({cat for d in cross.values() for cat in d.keys()})
-    for ch_key, cats in sorted(cross.items()):
-        row = {'渠道': ch_key}
-        for cat in all_cats:
-            row[cat] = f"¥{cats.get(cat, 0):,.0f}"
-        cross_rows.append(row)
-    if cross_rows:
-        st.dataframe(df(cross_rows), use_container_width=True, hide_index=True)
-        # 构建原始数值行用于下载
-        _cross_raw = []
-        for ch_key in sorted(cross.keys()):
-            _r = {'渠道': ch_key}
-            _r.update({cat: cross[ch_key].get(cat, 0) for cat in all_cats})
-            _cross_raw.append(_r)
-        _render_download_panel(_cross_raw, list(_cross_raw[0].keys()), 'channel_category_matrix.csv')
-
-    # 渠道月度趋势（从 daily 重新按月+渠道汇总）
-    st.markdown('---')
-    st.markdown('<div class="section-title">渠道月度销售趋势</div>', unsafe_allow_html=True)
-    ch_monthly_dict = {}
-    for r in data['daily']:
-        d = r.get('日期', '')
-        if len(d) < 7:
-            continue
-        mk = d[:7]
-        ck = r.get('渠道') or '未标注'
-        ch_monthly_dict.setdefault(mk, {})[ck] = ch_monthly_dict.get(mk, {}).get(ck, 0) + float(r.get('支付金额', 0) or 0)
-    if ch_monthly_dict:
-        all_chs = sorted({ck for mdata in ch_monthly_dict.values() for ck in mdata})
-        all_months_sorted = sorted(ch_monthly_dict.keys())
-        fig = go.Figure()
-        colors = px.colors.qualitative.Set2
-        for i, ch_name in enumerate(all_chs):
-            fig.add_trace(go.Scatter(
-                x=all_months_sorted,
-                y=[ch_monthly_dict[m].get(ch_name, 0) for m in all_months_sorted],
-                name=ch_name, mode='lines+markers',
-                line=dict(color=colors[i % len(colors)], width=2)
-            ))
-        fig.update_layout(height=360, template='plotly_white',
-                          legend=dict(orientation='h', y=-0.18),
-                          xaxis_title='月份', yaxis_title='支付金额')
-        st.plotly_chart(fig, use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 5: 商品诊断
-# ═══════════════════════════════════════════════════════════════
-with tabs[5]:
-    st.markdown('<div class="section-title">商品诊断</div>', unsafe_allow_html=True)
-
-    products = data.get('products', [])
-    styles = data.get('styles', [])
-    models_data = data.get('models', [])
-
-    # TOP 商品
-    st.markdown('<div class="section-title">TOP 销售额商品</div>', unsafe_allow_html=True)
-    prod = [r for r in products if
-            (channel == '全部' or r.get('渠道') == channel) and
-            (category == '全部' or r.get('品类') == category) and
-            (model == '全部' or r.get('型号') == model)]
-    if not prod:
-        # 降级: 从 daily 按商品聚合
-        prod_dict = {}
-        for r in daily:
-            pname = r.get('商品名称') or r.get('款式') or r.get('型号') or '未知商品'
-            pid = r.get('商品ID') or ''
-            pkey = (pname[:60], pid, r.get('渠道', ''), r.get('品类', ''), r.get('型号', ''))
-            prod_dict.setdefault(pkey, {m: 0.0 for m in METRICS})
-            for m in METRICS:
-                prod_dict[pkey][m] += float(r.get(m, 0) or 0)
-        for (pname, pid, pch, pcat, pmod), vals in prod_dict.items():
-            vals['商品名称'] = pname
-            vals['商品ID'] = pid
-            vals['渠道'] = pch
-            vals['品类'] = pcat
-            vals['型号'] = pmod
-            vals['支付转化率'] = vals['支付买家数'] / vals['商品访客数'] if vals['商品访客数'] else 0
-            vals['客单价'] = vals['支付金额'] / vals['支付买家数'] if vals['支付买家数'] else 0
-            prod.append(vals)
-        prod = sorted(prod, key=lambda x: x['支付金额'], reverse=True)
-
-    prod_display = [{'商品名称': str(r.get('商品名称', ''))[:40],
-                     '商品ID': r.get('商品ID', ''),
-                     '渠道': r.get('渠道', ''), '品类': r.get('品类', ''), '型号': r.get('型号', ''),
-                     '支付金额': f"¥{_wan(r.get('支付金额', 0))}万",
-                     '支付件数': f"{r.get('支付件数', 0):,.0f}",
-                     '访客数': f"{r.get('商品访客数', 0):,.0f}",
-                     '转化率': f"{r.get('支付转化率', 0)*100:.2f}%",
-                     '客单价': f"¥{r.get('客单价', 0):,.0f}"} for r in prod[:200]]
-    if prod_display:
-        st.dataframe(df(prod_display), use_container_width=True, hide_index=True, height=420)
-        _render_download_panel(prod[:200],
-            ['商品名称', '商品ID', '渠道', '品类', '型号', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价'],
-            'top_products.csv', '📥 TOP 商品')
-    else:
-        st.info('暂无商品数据，请检查数据源是否包含商品名称字段。')
-
-    # 款式 & 型号 Tab
-    st.markdown('---')
-    tab_style, tab_model_tab = st.tabs(['款式分布', '型号分布'])
-    with tab_style:
-        sty = [r for r in styles if
-               (channel == '全部' or r.get('渠道') == channel) and
-               (category == '全部' or r.get('品类') == category) and
-               (model == '全部' or r.get('型号') == model)]
-        if not sty:
-            sty = group(daily, '款式') if any(r.get('款式') for r in daily) else []
-        sty = sorted(sty, key=lambda x: x.get('支付金额', 0), reverse=True)
-        sty_display = [{'款式': r.get('款式', ''), '渠道': r.get('渠道', ''),
-                         '品类': r.get('品类', ''), '型号': r.get('型号', ''),
-                         '支付金额': f"¥{_wan(r.get('支付金额', 0))}万",
-                         '支付件数': f"{r.get('支付件数', 0):,.0f}",
-                         '转化率': f"{r.get('支付转化率', 0)*100:.2f}%",
-                         '客单价': f"¥{r.get('客单价', 0):,.0f}"} for r in sty[:300]]
-        if sty_display:
-            st.dataframe(df(sty_display), use_container_width=True, hide_index=True, height=380)
-            _render_download_panel(sty[:300], ['款式', '渠道', '品类', '型号', '支付金额', '支付件数', '支付转化率', '客单价'], 'styles.csv', '📥 款式分布')
-        else:
-            st.info('暂无款式数据。')
-
-    with tab_model_tab:
-        mdl = [r for r in models_data if
-               (channel == '全部' or r.get('渠道') == channel) and
-               (category == '全部' or r.get('品类') == category) and
-               (model == '全部' or r.get('型号') == model)]
-        if not mdl:
-            mdl = group(daily, '型号')
-        mdl = sorted(mdl, key=lambda x: x.get('支付金额', 0), reverse=True)
-        mdl_display = [{'型号': r.get('型号', ''), '渠道': r.get('渠道', ''),
-                         '品类': r.get('品类', ''), '店铺': r.get('店铺', ''),
-                         '支付金额': f"¥{_wan(r.get('支付金额', 0))}万",
-                         '支付件数': f"{r.get('支付件数', 0):,.0f}",
-                         '转化率': f"{r.get('支付转化率', 0)*100:.2f}%",
-                         '客单价': f"¥{r.get('客单价', 0):,.0f}"} for r in mdl[:300]]
-        if mdl_display:
-            st.dataframe(df(mdl_display), use_container_width=True, hide_index=True, height=380)
-            _render_download_panel(mdl[:300], ['型号', '渠道', '品类', '店铺', '支付金额', '支付件数', '支付转化率', '客单价'], 'models.csv', '📥 型号分布')
-        else:
-            st.info('暂无型号数据。')
-
-    # 品类 TOP 图 + 下钻
-    st.markdown('---')
-    st.markdown('<div class="section-title">品类销售额 TOP10</div>', unsafe_allow_html=True)
-    if cat_rows:
-        cat_w = [{**r, '支付金额_万': _wan(r['支付金额'])} for r in cat_rows[:10]]
-        fig = px.bar(df(cat_w), x='支付金额_万', y='品类', orientation='h',
-                     color='支付转化率', color_continuous_scale='Blues', title='品类排行（颜色=转化率）',
-                     text=[f"{_wan(r['支付金额'])}万" for r in cat_rows[:10]])
-        fig.update_layout(height=380, template='plotly_white', yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig, use_container_width=True)
-        _render_download_panel(cat_w, ['品类', '支付金额_万', '支付转化率'], 'product_cat_bar.csv', '📥 品类销售额')
-
-    st.markdown('---')
-    st.markdown('<div class="section-title">商品层级快速筛选</div>', unsafe_allow_html=True)
-    x1, x2, x3 = st.columns(3)
-    with x1:
-        top_ch = st.selectbox('渠道', ['全部'] + data['filters']['channels'], key='prod_ch')
-    with x2:
-        top_cat = st.selectbox('品类', ['全部'] + data['filters']['categories'], key='prod_cat')
-    with x3:
-        top_mdl = st.selectbox('型号', ['全部'] + data['filters']['models'], key='prod_mdl')
-    filtered_prod = [r for r in products if
-                     (top_ch == '全部' or r.get('渠道') == top_ch) and
-                     (top_cat == '全部' or r.get('品类') == top_cat) and
-                     (top_mdl == '全部' or r.get('型号') == top_mdl)]
-    filtered_prod = sorted(filtered_prod, key=lambda x: x.get('支付金额', 0), reverse=True)
-    fp_display = [{'商品名称': str(r.get('商品名称', ''))[:50], '渠道': r.get('渠道', ''),
-                   '品类': r.get('品类', ''), '型号': r.get('型号', ''),
-                   '支付金额': f"¥{_wan(r.get('支付金额', 0))}万",
-                   '转化率': f"{r.get('支付转化率', 0)*100:.2f}%",
-                   '客单价': f"¥{r.get('客单价', 0):,.0f}"} for r in filtered_prod[:100]]
-    if fp_display:
-        st.dataframe(df(fp_display), use_container_width=True, hide_index=True, height=350)
-        _render_download_panel(filtered_prod[:100], ['商品名称', '渠道', '品类', '型号', '支付金额', '支付转化率', '客单价'], 'filtered_products.csv')
-
-# ═══════════════════════════════════════════════════════════════
-# ═══════════════════════════════════════════════════════════════
-# TAB 6: 智能诊断 V2（多因子归因 + 健康评分 + 可执行措施 + 正向亮点）
+# TAB 4: 智能诊断 V2（多因子归因 + 健康评分 + 可执行措施 + 正向亮点）
 # ═══════════════════════════════════════════════════════════════
 # 构建筛选标签文字
 _filter_parts = []
@@ -3313,19 +3053,20 @@ if category: _filter_parts.append(f'品类={"+".join(category)}')
 if model: _filter_parts.append(f'型号={"+".join(model)}')
 _filter_label = ' | '.join(_filter_parts) if _filter_parts else '全域'
 
-with tabs[6]:
+with tabs[4]:
     st.markdown('<div class="section-title">🔍 智能问题定位诊断 & 优化措施</div>', unsafe_allow_html=True)
-    st.caption(f'诊断区间：{s} ~ {e} | 筛选范围：{_filter_label} | 对比区间：相同天数的上一期')
+    _cmp_label = f'{prev_s} ~ {prev_e}'
+    if comp_mode == '本期 vs 上期(环比)':
+        _cmp_label = f'上期 {prev_s} ~ {prev_e}'
+    elif comp_mode == '本期 vs 去年同期(同比)':
+        _cmp_label = f'去年同期 {prev_s} ~ {prev_e}'
+    elif comp_mode == '自定义时间段对比':
+        _cmp_label = f'B期 {prev_s} ~ {prev_e}'
+    st.caption(f'诊断区间：{s} ~ {e} | 筛选范围：{_filter_label} | 对比区间：{_cmp_label}')
 
     # ══════════════════════════════════════
     # A. 核心数据准备（基于当前筛选条件）
     # ══════════════════════════════════════
-    cur_days = (end - start).days + 1
-    mom_end_dt = start - datetime.timedelta(days=1)
-    mom_start_dt = mom_end_dt - datetime.timedelta(days=cur_days - 1)
-    prev_s_d = str(mom_start_dt)
-    prev_e_d = str(mom_end_dt)
-
     cur_sum = summarize(daily)
 
     def _agg_by_dims(rows, dims):
@@ -3347,7 +3088,7 @@ with tabs[6]:
     for r in data['daily']:
         d = r.get('日期', '')
         if len(d) == 7: d = d + '-01'
-        if prev_s_d <= d <= prev_e_d: prev_rows_all_raw.append(r)
+        if prev_s <= d <= prev_e: prev_rows_all_raw.append(r)
     # 对比期数据也应用同样的筛选条件
     prev_rows_all = []
     for r in prev_rows_all_raw:
@@ -3664,7 +3405,7 @@ with tabs[6]:
 
         # 推广环比数据
         promo_cur_diag = [r for r in promo_rows if s <= r.get('_date', '') <= e]
-        promo_prev_diag = [r for r in promo_rows if prev_s_d <= r.get('_date', '') <= prev_e_d]
+        promo_prev_diag = [r for r in promo_rows if prev_s <= r.get('_date', '') <= prev_e]
         def _promo_sum(rows):
             return {
                 '花费': sum(r.get('_花费', 0) for r in rows),
@@ -3946,7 +3687,7 @@ with tabs[6]:
                '\u5F02\u5E38\u578B\u53F7\u6570','\u8F6C\u5316\u9AA4\u964D\u578B\u53F7\u6570','\u7206\u6B3E\u6389\u91CF\u6570','\u65B0\u661F\u589E\u957F\u6570',
                'P0\u4EFB\u52A1\u6570','P1\u4EFB\u52A1\u6570']
     dl_data=[{
-        '诊断时间': datetime.datetime.now().strftime('%Y-%m-%d %H:%M'), '诊断区间': f'{s}~{e}', '对比区间': f'{prev_s_d}~{prev_e_d}',
+        '诊断时间': datetime.datetime.now().strftime('%Y-%m-%d %H:%M'), '诊断区间': f'{s}~{e}', '对比区间': f'{prev_s}~{prev_e}',
         'GMV变化': _pct(gmv_g), '访客变化': _pct(vis_g),
         '转化率变化': f"{(cur_sum.get('支付转化率',0)-prev_sum_all.get('支付转化率',0))*100:+.2f}pp" if prev_sum_all.get('支付转化率',0) else '--',
         '客单价变化': _pct(aov_g), '退款率变化': _pct(ref_g),
@@ -3968,13 +3709,13 @@ with tabs[6]:
         f'xiaotunbi_diagnosis_{s.replace("-","")}_{e.replace("-","")}.csv', '📥 完整诊断报告')
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 7: 透视表分析（单期数据，无对比列）
+# TAB 5: 透视表分析（单期数据，无对比列）
 # ═══════════════════════════════════════════════════════════════
-with tabs[7]:
+with tabs[5]:
     st.markdown('<div class="section-title">透视表分析</div>', unsafe_allow_html=True)
 
     _pv_dim_opts = ['渠道', '店铺', '品类', '型号', '日期', '年月']
-    _pv_promo_dim_opts = ['_渠道', '_店铺', '_品类', '_型号', '日期', '年月']
+    _pv_promo_dim_opts = ['_渠道', '_店铺', '_品类', '_型号', '_产品线', '_营销场景', '_推广计划', '日期', '年月']
 
     # 销售可选指标（含占比/计算字段标记）
     _pv_sales_metrics_all = [
@@ -4295,6 +4036,9 @@ with tabs[7]:
             d = r.get('_date', '') or r.get('日期', '')
             r['日期'] = d
             r['年月'] = d[:7] if len(d) >= 7 else d
+            # 注入产品线和推广计划字段（与趋势分析推广维度一致）
+            r['_产品线'] = r.get('产品线', '') or '未标注'
+            r['_推广计划'] = r.get('推广计划', '') or r.get('计划ID', '') or '未标注'
 
         _P2_RAW_FIELDS = ['_花费', '_展现数', '_点击数', '_总订单金额', '_直接订单金额', '_总成交订单量', '_直接订单量']
 
@@ -4333,6 +4077,9 @@ with tabs[7]:
             d = r.get('_date', '') or r.get('日期', '')
             r['日期'] = d
             r['年月'] = d[:7] if len(d) >= 7 else d
+            # 注入产品线和推广计划字段（与趋势分析推广维度一致）
+            r['_产品线'] = r.get('产品线', '') or '未标注'
+            r['_推广计划'] = r.get('推广计划', '') or r.get('计划ID', '') or '未标注'
         _p2_yoy_agg = _pv2_group(_p2_yoy_raw, _p2_row_dims)
 
         _p2_total_spend = sum(v['_花费'] for v in _p2_agg.values()) or 1
