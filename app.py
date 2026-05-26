@@ -2250,6 +2250,7 @@ with tabs[3]:
                 '转化率': f"{cvr*100:.2f}%",
                 '加购人数': f"{int(v['商品加购人数']):,}",
                 '加购率': f"{v['商品加购人数']/vis*100:.2f}%" if vis else "0.00%",
+                '客单价': round(amt/v['支付买家数'], 1) if v['支付买家数'] else 0,
                 'UV价值': round(amt/vis, 1) if vis else 0,
                 '费率': f"{spend/amt*100:.2f}%" if amt else '--',
                 '销额同比': f"{yoy_amt*100:+.2f}%" if yoy_amt is not None else '--',
@@ -2274,6 +2275,7 @@ with tabs[3]:
             '转化率': f"{_dim_cvr*100:.2f}%",
             '加购人数': f"{int(_dim_total_cart):,}",
             '加购率': f"{_dim_total_cart/_dim_total_vis*100:.2f}%" if _dim_total_vis else "0.00%",
+            '客单价': round(_dim_total_amt/_dim_total_buyers, 1) if _dim_total_buyers else 0,
             'UV价值': round(_dim_total_amt/_dim_total_vis, 1) if _dim_total_vis else 0,
             '费率': f"{_dim_total_spend/_dim_total_amt*100:.2f}%" if _dim_total_amt else '--',
             '销额同比': f"{(_dim_total_amt-_ly_dim_amt)/_ly_dim_amt*100:+.2f}%" if _ly_dim_amt else '--',
@@ -2281,7 +2283,7 @@ with tabs[3]:
             '转化率同比': f"{(_dim_cvr-_ly_dim_cvr)/_ly_dim_cvr*100:+.2f}%" if _ly_dim_cvr else '--',
         })
         # 排序控件
-        _ds_sort_cols = ['维度','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值','费率']
+        _ds_sort_cols = ['维度','访客数','买家数','支付件数','成交金额(万)','转化率','客单价','加购人数','加购率','UV价值','费率']
         _dsc1, _dsc2 = st.columns([2, 1])
         with _dsc1:
             _ds_sort_by = st.selectbox('排序字段', _ds_sort_cols, index=4, key='dim_sort_col')
@@ -2293,7 +2295,7 @@ with tabs[3]:
             _dim_data_rows.sort(key=lambda r: r.get('维度', ''), reverse=(_ds_sort_desc == '降序'))
         else:
             _dim_data_rows.sort(key=lambda r: _parse_num(r.get(_ds_sort_by, 0)), reverse=(_ds_sort_desc == '降序'))
-        _dim_headers = ['维度','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
+        _dim_headers = ['维度','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
         _render_html_table(_dim_data_rows + _dim_total_rows, _dim_headers, _dim_headers, title=f'📦 销售{_sales_dim}汇总')
         _render_download_panel(_dim_data_rows + _dim_total_rows, _dim_headers, 'sales_dim_summary.csv', '📥 下载维度汇总')
     else:
@@ -2337,6 +2339,7 @@ with tabs[3]:
                     '转化率': f"{v['支付买家数']/vis*100:.2f}%" if vis else "0.00%",
                     '加购人数': f"{int(v['商品加购人数']):,}",
                     '加购率': f"{v['商品加购人数']/vis*100:.2f}%" if vis else "0.00%",
+                    '客单价': round(amt/v['支付买家数'], 1) if v['支付买家数'] else 0,
                     'UV价值': round(amt/vis, 1) if vis else 0,
                     '费率': f"{_day_promo.get(dt_str, 0)/amt*100:.2f}%" if amt else '--',
                     '销额同比': f"{yoy_amt*100:+.2f}%" if yoy_amt is not None else '--',
@@ -2366,6 +2369,7 @@ with tabs[3]:
                     '转化率': f"{total_buyers/total_vis*100:.2f}%" if total_vis else "0.00%",
                     '加购人数': f"{int(total_cart):,}",
                     '加购率': f"{total_cart/total_vis*100:.2f}%" if total_vis else "0.00%",
+                    '客单价': round(total_amt/total_buyers, 1) if total_buyers else 0,
                     'UV价值': round(total_amt/total_vis, 1) if total_vis else 0,
                     '费率': f"{_total_rate_d:.2f}%" if _total_rate_d is not None else '--',
                     '销额同比': f"{_total_yoy_amt_d*100:+.2f}%" if _total_yoy_amt_d is not None else '--',
@@ -2376,7 +2380,7 @@ with tabs[3]:
                     total_row['维度'] = '合计'
                 daily_tbl.append(total_row)
             # 排序控件
-            _daily_sort_cols = ['日期','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值','费率']
+            _daily_sort_cols = ['日期','访客数','买家数','支付件数','成交金额(万)','转化率','客单价','加购人数','加购率','UV价值','费率']
             if _s_dim_field:
                 _daily_sort_cols = ['维度'] + _daily_sort_cols
             _dsc1, _dsc2 = st.columns([2, 1])
@@ -2393,7 +2397,7 @@ with tabs[3]:
             else:
                 _daily_data_rows.sort(key=lambda r: _parse_num(r.get(_daily_sort_by, 0)), reverse=(_daily_sort_desc == '降序'))
             _daily_tbl_sorted = _daily_data_rows + _daily_total_row
-            _daily_headers = ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
+            _daily_headers = ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
             if _s_dim_field:
                 _daily_headers = ['维度'] + _daily_headers
             _render_html_table(_daily_tbl_sorted, _daily_headers, _daily_headers, title='📦 销售日度趋势')
@@ -2441,6 +2445,7 @@ with tabs[3]:
                     '转化率': f"{cvr*100:.2f}%" if vis else "0.00%",
                     '加购人数': f"{int(v['商品加购人数']):,}",
                     '加购率': f"{v['商品加购人数']/vis*100:.2f}%" if vis else "0.00%",
+                    '客单价': round(amt/v['支付买家数'], 1) if v['支付买家数'] else 0,
                     'UV价值': round(amt/vis, 1) if vis else 0,
                     '费率': f"{_month_promo.get(ym, 0)/amt*100:.2f}%" if amt else '--',
                     '销额同比': f"{yoy_amt*100:+.2f}%" if yoy_amt is not None else '--',
@@ -2469,6 +2474,7 @@ with tabs[3]:
                     '转化率': f"{_total_cvr*100:.2f}%",
                     '加购人数': f"{int(total_cart_m):,}",
                     '加购率': f"{total_cart_m/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
+                    '客单价': round(total_amt_m/total_buyers_m, 1) if total_buyers_m else 0,
                     'UV价值': round(total_amt_m/total_vis_m, 1) if total_vis_m else 0,
                     '费率': f"{_total_rate_m:.2f}%" if _total_rate_m is not None else '--',
                     '销额同比': f"{_total_yoy_amt*100:+.2f}%" if _total_yoy_amt is not None else '--',
@@ -2479,7 +2485,7 @@ with tabs[3]:
                     total_row['维度'] = '合计'
                 monthly_tbl.append(total_row)
                 # 排序控件
-                _mm_sort_cols = ['月份','访客数','买家数','支付件数','成交金额(万)','转化率','加购人数','加购率','UV价值','费率']
+                _mm_sort_cols = ['月份','访客数','买家数','支付件数','成交金额(万)','转化率','客单价','加购人数','加购率','UV价值','费率']
                 if _s_dim_field:
                     _mm_sort_cols = ['维度'] + _mm_sort_cols
                 _mmc1, _mmc2 = st.columns([2, 1])
@@ -2500,7 +2506,7 @@ with tabs[3]:
                 else:
                     _mm_data_rows.sort(key=lambda r: _parse_num_m(r.get(_mm_sort_by, 0)), reverse=(_mm_sort_desc == '降序'))
                 _mm_sorted = _mm_data_rows + _mm_total_row
-                _mm_headers = ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
+                _mm_headers = ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','销额同比','访客同比','转化率同比']
                 if _s_dim_field:
                     _mm_headers = ['维度'] + _mm_headers
                 _render_html_table(_mm_sorted, _mm_headers, _mm_headers, title='📦 销售月度趋势')
