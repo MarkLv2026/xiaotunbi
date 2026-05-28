@@ -2626,6 +2626,18 @@ with tabs[3]:
                 day_spend = _day_promo.get(dt_str, 0)
                 day_promo_amt = _day_promo_amt.get(dt_str, 0)
                 day_prs = day_promo_amt / amt if amt else 0
+                # 对比期推广数据（费率、推广成交占比的同比/上月同期）
+                cmp_dt = _date_yoy(dt_str) if _s_comp_mode == '同比' else _date_mom(dt_str)
+                cmp_spend = 0; cmp_promo_amt = 0
+                if cmp_dt and promo_rows:
+                    for (pdv, pdt), pv in _promo_all_day.items():
+                        if pdt == cmp_dt and (not _s_dim_field or pdv == dv):
+                            cmp_spend += float(pv.get('_花费', 0) or 0)
+                            cmp_promo_amt += float(pv.get('_总订单金额', 0) or 0)
+                cmp_fee_rate = cmp_spend / ly_v['支付金额'] if ly_v and ly_v['支付金额'] else None
+                yoy_fee_rate = (day_spend/amt - cmp_fee_rate) / cmp_fee_rate if cmp_fee_rate and cmp_fee_rate > 0 else None
+                cmp_prs = cmp_promo_amt / ly_v['支付金额'] if ly_v and ly_v['支付金额'] else None
+                yoy_prs = (day_prs - cmp_prs) / cmp_prs if cmp_prs and cmp_prs > 0 else None
                 row = {
                     '日期': dt_str, '访客数': f"{int(vis):,}",
                     '访客占比': f"{vis/total_vis*100:.2f}%" if total_vis else "0.00%",
@@ -2643,6 +2655,8 @@ with tabs[3]:
                     f'访客{_s_cmp_suffix}': f"{yoy_vis*100:+.2f}%" if yoy_vis is not None else '--',
                     f'转化率{_s_cmp_suffix}': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
                     f'客单价{_s_cmp_suffix}': f"{yoy_atv_d*100:+.2f}%" if yoy_atv_d is not None else '--',
+                    f'费率{_s_cmp_suffix}': f"{yoy_fee_rate*100:+.2f}%" if yoy_fee_rate is not None else '--',
+                    f'推广成交占比{_s_cmp_suffix}': f"{yoy_prs*100:+.2f}%" if yoy_prs is not None else '--',
                 }
                 if _s_dim_field:
                     row['维度'] = dv
@@ -2770,6 +2784,22 @@ with tabs[3]:
                 month_spend = _month_promo.get(ym, 0)
                 month_promo_amt = _month_promo_amt.get(ym, 0)
                 month_prs = month_promo_amt / amt if amt else 0
+                # 对比期推广数据（按月份聚合对比期各天的推广花费和总成交金额）
+                cmp_spend_m = 0; cmp_promo_amt_m = 0
+                if promo_rows:
+                    for (sdv, sdt), sv in _sales_day.items():
+                        if not sdt.startswith(ym): continue
+                        if _s_dim_field and sdv != dv: continue
+                        cmp_dt_m = _date_yoy(sdt) if _s_comp_mode == '同比' else _date_mom(sdt)
+                        if not cmp_dt_m: continue
+                        for (pdv, pdt), pv in _promo_all_day.items():
+                            if pdt == cmp_dt_m and (not _s_dim_field or pdv == sdv):
+                                cmp_spend_m += float(pv.get('_花费', 0) or 0)
+                                cmp_promo_amt_m += float(pv.get('_总订单金额', 0) or 0)
+                cmp_fee_rate_m = cmp_spend_m / ly_amt if ly_amt else None
+                yoy_fee_rate_m = (month_spend/amt - cmp_fee_rate_m) / cmp_fee_rate_m if cmp_fee_rate_m and cmp_fee_rate_m > 0 else None
+                cmp_prs_m = cmp_promo_amt_m / ly_amt if ly_amt else None
+                yoy_prs_m = (month_prs - cmp_prs_m) / cmp_prs_m if cmp_prs_m and cmp_prs_m > 0 else None
                 row = {
                     '月份': ym, '访客数': f"{int(vis):,}",
                     '访客占比': f"{vis/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
@@ -2787,6 +2817,8 @@ with tabs[3]:
                     f'访客{_s_cmp_suffix}': f"{yoy_vis*100:+.2f}%" if yoy_vis is not None else '--',
                     f'转化率{_s_cmp_suffix}': f"{yoy_cvr*100:+.2f}%" if yoy_cvr is not None else '--',
                     f'客单价{_s_cmp_suffix}': f"{yoy_atv_m*100:+.2f}%" if yoy_atv_m is not None else '--',
+                    f'费率{_s_cmp_suffix}': f"{yoy_fee_rate_m*100:+.2f}%" if yoy_fee_rate_m is not None else '--',
+                    f'推广成交占比{_s_cmp_suffix}': f"{yoy_prs_m*100:+.2f}%" if yoy_prs_m is not None else '--',
                 }
                 if _s_dim_field:
                     row['维度'] = dv
