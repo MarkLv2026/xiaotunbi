@@ -2344,9 +2344,31 @@ with tabs[3]:
         tbl_id = 'tbl_' + _uuid_mod.uuid4().hex[:8]
         overlay_id = tbl_id + '_fs'
         fullscreen_btn = ''
+        fullscreen_js = ''
         if fullscreen:
+            fullscreen_js = f"""
+<script>
+(function() {{
+    var overlay = null;
+    window['_fsOpen_{tbl_id}'] = function() {{
+        if (overlay) return;
+        var tblWrap = document.getElementById('{tbl_id}');
+        var content = tblWrap.innerHTML;
+        overlay = document.createElement('div');
+        overlay.id = '{overlay_id}';
+        overlay.innerHTML = '<style>.styled-table{{width:100%;border-collapse:collapse;font-size:13px;}}.styled-table th{{background:#f8fafc;border-bottom:2px solid #d1d5db;padding:10px 8px;position:sticky;top:0;z-index:1;}}.styled-table td{{padding:7px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;}}</style>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">{title}</span><button onclick="window._fsClose_{tbl_id}()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">' + content + '</div>';
+        overlay.style.cssText = 'display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
+        document.body.appendChild(overlay);
+    }};
+    window['_fsClose_{tbl_id}'] = function() {{
+        if (overlay) {{ overlay.remove(); overlay = null; }}
+    }};
+}})();
+</script>
+"""
             fullscreen_btn = (
-                f'<button onclick="document.getElementById(\'{overlay_id}\').style.display=\'flex\'" '
+                f'<button onclick="window._fsOpen_{tbl_id}()" '
                 f'style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
                 f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
             )
@@ -2376,21 +2398,7 @@ with tabs[3]:
         # 正常视图
         main_html = (f'<div id="{tbl_id}" class="styled-table-wrap" style="max-height:{height}px;overflow:auto;">'
                      f'{table_html}</div>')
-        # 全屏遮罩
-        overlay_html = ''
-        if fullscreen:
-            overlay_html = (
-                f'<div id="{overlay_id}" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;'
-                f'background:rgba(0,0,0,0.82);z-index:99999;flex-direction:column;padding:20px;box-sizing:border-box;">'
-                f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;">'
-                f'<span style="color:#fff;font-size:18px;font-weight:700;">{title}</span>'
-                f'<button onclick="document.getElementById(\'{overlay_id}\').style.display=\'none\'" '
-                f'style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button>'
-                f'</div>'
-                f'<div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">'
-                f'{table_html}</div></div>'
-            )
-        html = f'{title_html}{fullscreen_btn}{main_html}{overlay_html}'
+        html = f'{fullscreen_js}{title_html}{fullscreen_btn}{main_html}'
         st.markdown(html, unsafe_allow_html=True)
 
     st.markdown('<div class="section-title">数据明细</div>', unsafe_allow_html=True)
