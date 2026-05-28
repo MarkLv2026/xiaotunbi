@@ -2062,8 +2062,11 @@ with tabs[2]:
                 v[field] = k
                 v['_cpc'] = v['_花费'] / v['_点击数'] if v['_点击数'] else 0
                 v['_ctr'] = v['_点击数'] / v['_展现数'] if v['_展现数'] else 0
-                v['_roi'] = v['_总订单金额'] / v['_花费'] if v['_花费'] else 0
-                v['_tcvr'] = v['_总成交订单量'] / v['_点击数'] if v['_点击数'] else 0
+                v['_direct_roi'] = v['_直接订单金额'] / v['_花费'] if v['_花费'] else 0
+                v['_total_roi'] = v['_总订单金额'] / v['_花费'] if v['_花费'] else 0
+                v['_direct_tcvr'] = v['_直接订单量'] / v['_点击数'] if v['_点击数'] else 0
+                v['_total_tcvr'] = v['_总成交订单量'] / v['_点击数'] if v['_点击数'] else 0
+                v['_fee_rate'] = v['_花费'] / v['_总订单金额'] if v['_总订单金额'] else 0
                 out.append(v)
             return sorted(out, key=lambda x: x['_花费'], reverse=True)
 
@@ -2074,12 +2077,17 @@ with tabs[2]:
         _p_total_spend = sum(r['_花费'] for r in _p_cur_dim) or 1
 
         _p_metric_defs = [
-            ('花费',       '_花费',          lambda v: f'¥{v:,.0f}',    '#fef3c7'),
-            ('展现量',     '_展现数',         lambda v: f'{v:,.0f}',     '#dbeafe'),
-            ('点击量',     '_点击数',         lambda v: f'{v:,.0f}',     '#dcfce7'),
-            ('直接订单金额','_直接订单金额',   lambda v: f'¥{v:,.0f}',   '#e0e7ff'),
-            ('总订单金额', '_总订单金额',      lambda v: f'¥{v:,.0f}',   '#f3e8ff'),
-            ('总ROI',      '_roi',            lambda v: f'{v:.2f}',      '#ccfbf1'),
+            ('花费',        '_花费',         lambda v: f'¥{v:,.0f}',    '#fef3c7'),
+            ('费率',        '_fee_rate',     lambda v: f'{v*100:.2f}%', '#fee2e2'),
+            ('CPC',         '_cpc',          lambda v: f'¥{v:.2f}',     '#fef3c7'),
+            ('直接ROI',     '_direct_roi',   lambda v: f'{v:.2f}',      '#dcfce7'),
+            ('总ROI',       '_total_roi',    lambda v: f'{v:.2f}',      '#ccfbf1'),
+            ('点击量',      '_点击数',       lambda v: f'{v:,.0f}',      '#dbeafe'),
+            ('点击率',      '_ctr',          lambda v: f'{v*100:.2f}%', '#e0e7ff'),
+            ('直接转化率',  '_direct_tcvr',  lambda v: f'{v*100:.2f}%', '#f3e8ff'),
+            ('总转化率',    '_total_tcvr',   lambda v: f'{v*100:.2f}%', '#fce7f3'),
+            ('直接成交金额', '_直接订单金额', lambda v: f'¥{v:,.0f}',    '#dcfce7'),
+            ('总成交金额',  '_总订单金额',   lambda v: f'¥{v:,.0f}',    '#ccfbf1'),
         ]
 
         _p_cmp_tbl = []
@@ -2093,12 +2101,8 @@ with tabs[2]:
                 '花费占比': f'{_share*100:.1f}%',
             }
             for _ml, _mf, _fmt, _color in _p_metric_defs:
-                if _mf == '_roi':
-                    cur_v = r.get('_roi', 0) or 0
-                    prev_v = prev_r.get('_roi', 0) or 0
-                else:
-                    cur_v = r.get(_mf, 0) or 0
-                    prev_v = prev_r.get(_mf, 0) or 0
+                cur_v = r.get(_mf, 0) or 0
+                prev_v = prev_r.get(_mf, 0) or 0
                 _cur_s = _fmt(cur_v)
                 _prev_s = _fmt(prev_v)
                 chg = (cur_v - prev_v) / prev_v if prev_v else None
@@ -2106,8 +2110,8 @@ with tabs[2]:
                     chg_txt, chg_color = '--', '#94a3b8'
                 else:
                     chg_txt = f"{'+' if chg >= 0 else ''}{chg*100:.1f}%"
-                    # 花费：涨是红（坏），跌是绿（好）；其余：涨是绿，跌是红
-                    if _ml == '花费':
+                    # 花费、CPC、费率：涨是红（坏），跌是绿（好）；其余：涨是绿，跌是红
+                    if _ml in ('花费', 'CPC', '费率'):
                         chg_color = '#dc2626' if chg >= 0 else '#22c55e'
                     else:
                         chg_color = '#22c55e' if chg >= 0 else '#dc2626'
@@ -2120,25 +2124,38 @@ with tabs[2]:
         if _p_cmp_tbl:
             _p_tot_spend_c = sum(r.get('_花费', 0) or 0 for r in _p_cur_dim)
             _p_tot_spend_p = sum(r.get('_花费', 0) or 0 for r in _p_prev_dim)
-            _p_tot_impress_c = sum(r.get('_展现数', 0) or 0 for r in _p_cur_dim)
-            _p_tot_impress_p = sum(r.get('_展现数', 0) or 0 for r in _p_prev_dim)
             _p_tot_clicks_c = sum(r.get('_点击数', 0) or 0 for r in _p_cur_dim)
             _p_tot_clicks_p = sum(r.get('_点击数', 0) or 0 for r in _p_prev_dim)
+            _p_tot_impress_c = sum(r.get('_展现数', 0) or 0 for r in _p_cur_dim)
+            _p_tot_impress_p = sum(r.get('_展现数', 0) or 0 for r in _p_prev_dim)
             _p_tot_direct_c = sum(r.get('_直接订单金额', 0) or 0 for r in _p_cur_dim)
             _p_tot_direct_p = sum(r.get('_直接订单金额', 0) or 0 for r in _p_prev_dim)
             _p_tot_total_c = sum(r.get('_总订单金额', 0) or 0 for r in _p_cur_dim)
             _p_tot_total_p = sum(r.get('_总订单金额', 0) or 0 for r in _p_prev_dim)
             _p_tot_orders_c = sum(r.get('_总成交订单量', 0) or 0 for r in _p_cur_dim)
             _p_tot_orders_p = sum(r.get('_总成交订单量', 0) or 0 for r in _p_prev_dim)
+            _p_tot_direct_orders_c = sum(r.get('_直接订单量', 0) or 0 for r in _p_cur_dim)
+            _p_tot_direct_orders_p = sum(r.get('_直接订单量', 0) or 0 for r in _p_prev_dim)
             _p_sum_row = {_p_cmp_dim_label: '<b>合计</b>', '花费占比': '100%'}
             _p_tot_map = {
-                '花费':       (_p_tot_spend_c, _p_tot_spend_p),
-                '展现量':     (_p_tot_impress_c, _p_tot_impress_p),
-                '点击量':     (_p_tot_clicks_c, _p_tot_clicks_p),
-                '直接订单金额':(_p_tot_direct_c, _p_tot_direct_p),
-                '总订单金额': (_p_tot_total_c, _p_tot_total_p),
-                '总ROI':      (_p_tot_total_c / _p_tot_spend_c if _p_tot_spend_c else 0,
-                               _p_tot_total_p / _p_tot_spend_p if _p_tot_spend_p else 0),
+                '花费':        (_p_tot_spend_c, _p_tot_spend_p),
+                '费率':        (_p_tot_spend_c / _p_tot_total_c if _p_tot_total_c else 0,
+                                _p_tot_spend_p / _p_tot_total_p if _p_tot_total_p else 0),
+                'CPC':         (_p_tot_spend_c / _p_tot_clicks_c if _p_tot_clicks_c else 0,
+                                _p_tot_spend_p / _p_tot_clicks_p if _p_tot_clicks_p else 0),
+                '直接ROI':     (_p_tot_direct_c / _p_tot_spend_c if _p_tot_spend_c else 0,
+                                _p_tot_direct_p / _p_tot_spend_p if _p_tot_spend_p else 0),
+                '总ROI':       (_p_tot_total_c / _p_tot_spend_c if _p_tot_spend_c else 0,
+                                _p_tot_total_p / _p_tot_spend_p if _p_tot_spend_p else 0),
+                '点击量':      (_p_tot_clicks_c, _p_tot_clicks_p),
+                '点击率':      (_p_tot_clicks_c / _p_tot_impress_c if _p_tot_impress_c else 0,
+                                _p_tot_clicks_p / _p_tot_impress_p if _p_tot_impress_p else 0),
+                '直接转化率':  (_p_tot_direct_orders_c / _p_tot_clicks_c if _p_tot_clicks_c else 0,
+                                _p_tot_direct_orders_p / _p_tot_clicks_p if _p_tot_clicks_p else 0),
+                '总转化率':    (_p_tot_orders_c / _p_tot_clicks_c if _p_tot_clicks_c else 0,
+                                _p_tot_orders_p / _p_tot_clicks_p if _p_tot_clicks_p else 0),
+                '直接成交金额': (_p_tot_direct_c, _p_tot_direct_p),
+                '总成交金额':  (_p_tot_total_c, _p_tot_total_p),
             }
             for _ml, _mf, _fmt, _color in _p_metric_defs:
                 _cv, _pv = _p_tot_map[_ml]
@@ -2149,7 +2166,7 @@ with tabs[2]:
                     chg_txt, chg_color = '--', '#94a3b8'
                 else:
                     chg_txt = f"{'+' if chg >= 0 else ''}{chg*100:.1f}%"
-                    if _ml == '花费':
+                    if _ml in ('花费', 'CPC', '费率'):
                         chg_color = '#dc2626' if chg >= 0 else '#22c55e'
                     else:
                         chg_color = '#22c55e' if chg >= 0 else '#dc2626'
