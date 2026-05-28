@@ -1878,8 +1878,8 @@ with tabs[2]:
         _render_download_panel(ch_data, ['指标', '变化率'], 'period_change_rate.csv', '📥 各指标变化率')
 
     st.markdown('---')
-    # ── 维度对比分析（受全局维度筛选影响，日期由时间段对比独立控制）──
-    st.markdown('<div class="section-title">维度对比分析</div>', unsafe_allow_html=True)
+    # ── 销售维度对比分析（受全局维度筛选影响，日期由时间段对比独立控制）──
+    st.markdown('<div class="section-title">销售数据对比分析</div>', unsafe_allow_html=True)
 
     _dim_options = {'渠道': '渠道', '店铺': '店铺', '品类': '品类', '型号': '型号'}
     _dim_label = st.radio('对比维度', list(_dim_options.keys()), horizontal=True, key='dim_compare')
@@ -2021,8 +2021,171 @@ with tabs[2]:
         _html += '</tbody></table></div>'
         st.markdown(_html, unsafe_allow_html=True)
 
-    _render_download_panel(dim_compare if dim_compare else [], _dim_cols, f'dimension_compare_{_dim_label}.csv', '📥 维度对比')
+    _render_download_panel(dim_compare if dim_compare else [], _dim_cols, f'dimension_compare_{_dim_label}.csv', '📥 销售维度对比')
     _render_download_panel(compare_rows, ['指标', '本期数值', '对比期数值', '变化量', '变化率(%)'], 'period_comparison.csv', '📥 时间段对比')
+
+    # ── 推广数据对比分析 ──
+    st.markdown('<div class="section-title">推广数据对比分析</div>', unsafe_allow_html=True)
+
+    if not promo_rows:
+        st.info('请上传推广数据文件以启用推广对比分析。')
+    else:
+        _p_cmp_dim_options = {
+            '渠道': '_渠道', '店铺': '_店铺', '品类': '_品类', '型号': '_型号',
+            '产品线': '产品线', '营销场景': '_营销场景',
+        }
+        _p_cmp_dim_label = st.radio('对比维度', list(_p_cmp_dim_options.keys()), horizontal=True, key='p_dim_compare')
+        _p_cmp_dim_field = _p_cmp_dim_options[_p_cmp_dim_label]
+
+        # 只按渠道/店铺/品类/型号全局过滤，不过滤日期
+        _p_cmp_raw = promo_rows
+        if channel or store or category or model:
+            _p_cmp_filtered = []
+            for r in _p_cmp_raw:
+                if channel and r.get('_渠道') not in channel: continue
+                if store and r.get('_店铺') not in store: continue
+                if category and r.get('_品类') not in category: continue
+                if model and r.get('_型号') not in model: continue
+                _p_cmp_filtered.append(r)
+            _p_cmp_raw = _p_cmp_filtered
+
+        def _p_group(rows, field):
+            d = {}
+            for r in rows:
+                k = r.get(field) or '未标注'
+                if k not in d:
+                    d[k] = {'_花费': 0, '_展现数': 0, '_点击数': 0, '_直接订单金额': 0, '_总订单金额': 0, '_总成交订单量': 0, '_直接订单量': 0}
+                for m in ('_花费', '_展现数', '_点击数', '_直接订单金额', '_总订单金额', '_总成交订单量', '_直接订单量'):
+                    d[k][m] += float(r.get(m, 0) or 0)
+            out = []
+            for k, v in d.items():
+                v[field] = k
+                v['_cpc'] = v['_花费'] / v['_点击数'] if v['_点击数'] else 0
+                v['_ctr'] = v['_点击数'] / v['_展现数'] if v['_展现数'] else 0
+                v['_roi'] = v['_总订单金额'] / v['_花费'] if v['_花费'] else 0
+                v['_tcvr'] = v['_总成交订单量'] / v['_点击数'] if v['_点击数'] else 0
+                out.append(v)
+            return sorted(out, key=lambda x: x['_花费'], reverse=True)
+
+        _p_cur_dim = _p_group(get_period_rows(_p_cmp_raw, today_s, today_e, '_date'), _p_cmp_dim_field)
+        _p_prev_dim = _p_group(get_period_rows(_p_cmp_raw, prev_s, prev_e, '_date'), _p_cmp_dim_field)
+        _p_prev_map = {r[_p_cmp_dim_field]: r for r in _p_prev_dim}
+
+        _p_total_spend = sum(r['_花费'] for r in _p_cur_dim) or 1
+
+        _p_metric_defs = [
+            ('花费',       '_花费',          lambda v: f'¥{v:,.0f}',    '#fef3c7'),
+            ('展现量',     '_展现数',         lambda v: f'{v:,.0f}',     '#dbeafe'),
+            ('点击量',     '_点击数',         lambda v: f'{v:,.0f}',     '#dcfce7'),
+            ('直接订单金额','_直接订单金额',   lambda v: f'¥{v:,.0f}',   '#e0e7ff'),
+            ('总订单金额', '_总订单金额',      lambda v: f'¥{v:,.0f}',   '#f3e8ff'),
+            ('总ROI',      '_roi',            lambda v: f'{v:.2f}',      '#ccfbf1'),
+        ]
+
+        _p_cmp_tbl = []
+        for r in _p_cur_dim:
+            name = r[_p_cmp_dim_field]
+            prev_r = _p_prev_map.get(name, {})
+            _spend = r.get('_花费', 0) or 0
+            _share = _spend / _p_total_spend if _p_total_spend else 0
+            row = {
+                _p_cmp_dim_label: name,
+                '花费占比': f'{_share*100:.1f}%',
+            }
+            for _ml, _mf, _fmt, _color in _p_metric_defs:
+                if _mf == '_roi':
+                    cur_v = r.get('_roi', 0) or 0
+                    prev_v = prev_r.get('_roi', 0) or 0
+                else:
+                    cur_v = r.get(_mf, 0) or 0
+                    prev_v = prev_r.get(_mf, 0) or 0
+                _cur_s = _fmt(cur_v)
+                _prev_s = _fmt(prev_v)
+                chg = (cur_v - prev_v) / prev_v if prev_v else None
+                if chg is None:
+                    chg_txt, chg_color = '--', '#94a3b8'
+                else:
+                    chg_txt = f"{'+' if chg >= 0 else ''}{chg*100:.1f}%"
+                    # 花费：涨是红（坏），跌是绿（好）；其余：涨是绿，跌是红
+                    if _ml == '花费':
+                        chg_color = '#dc2626' if chg >= 0 else '#22c55e'
+                    else:
+                        chg_color = '#22c55e' if chg >= 0 else '#dc2626'
+                row[f'{_ml}(本期)'] = _cur_s
+                row[f'{_ml}(对比期)'] = _prev_s
+                row[f'{_ml}变化率'] = f"<span style='color:{chg_color}'>{chg_txt}</span>"
+            _p_cmp_tbl.append(row)
+
+        # 合计行
+        if _p_cmp_tbl:
+            _p_tot_spend_c = sum(r.get('_花费', 0) or 0 for r in _p_cur_dim)
+            _p_tot_spend_p = sum(r.get('_花费', 0) or 0 for r in _p_prev_dim)
+            _p_tot_impress_c = sum(r.get('_展现数', 0) or 0 for r in _p_cur_dim)
+            _p_tot_impress_p = sum(r.get('_展现数', 0) or 0 for r in _p_prev_dim)
+            _p_tot_clicks_c = sum(r.get('_点击数', 0) or 0 for r in _p_cur_dim)
+            _p_tot_clicks_p = sum(r.get('_点击数', 0) or 0 for r in _p_prev_dim)
+            _p_tot_direct_c = sum(r.get('_直接订单金额', 0) or 0 for r in _p_cur_dim)
+            _p_tot_direct_p = sum(r.get('_直接订单金额', 0) or 0 for r in _p_prev_dim)
+            _p_tot_total_c = sum(r.get('_总订单金额', 0) or 0 for r in _p_cur_dim)
+            _p_tot_total_p = sum(r.get('_总订单金额', 0) or 0 for r in _p_prev_dim)
+            _p_tot_orders_c = sum(r.get('_总成交订单量', 0) or 0 for r in _p_cur_dim)
+            _p_tot_orders_p = sum(r.get('_总成交订单量', 0) or 0 for r in _p_prev_dim)
+            _p_sum_row = {_p_cmp_dim_label: '<b>合计</b>', '花费占比': '100%'}
+            _p_tot_map = {
+                '花费':       (_p_tot_spend_c, _p_tot_spend_p),
+                '展现量':     (_p_tot_impress_c, _p_tot_impress_p),
+                '点击量':     (_p_tot_clicks_c, _p_tot_clicks_p),
+                '直接订单金额':(_p_tot_direct_c, _p_tot_direct_p),
+                '总订单金额': (_p_tot_total_c, _p_tot_total_p),
+                '总ROI':      (_p_tot_total_c / _p_tot_spend_c if _p_tot_spend_c else 0,
+                               _p_tot_total_p / _p_tot_spend_p if _p_tot_spend_p else 0),
+            }
+            for _ml, _mf, _fmt, _color in _p_metric_defs:
+                _cv, _pv = _p_tot_map[_ml]
+                _p_sum_row[f'{_ml}(本期)'] = _fmt(_cv)
+                _p_sum_row[f'{_ml}(对比期)'] = _fmt(_pv)
+                chg = (_cv - _pv) / _pv if _pv else None
+                if chg is None:
+                    chg_txt, chg_color = '--', '#94a3b8'
+                else:
+                    chg_txt = f"{'+' if chg >= 0 else ''}{chg*100:.1f}%"
+                    if _ml == '花费':
+                        chg_color = '#dc2626' if chg >= 0 else '#22c55e'
+                    else:
+                        chg_color = '#22c55e' if chg >= 0 else '#dc2626'
+                _p_sum_row[f'{_ml}变化率'] = f"<span style='color:{chg_color}'>{chg_txt}</span>"
+            _p_cmp_tbl.append(_p_sum_row)
+
+        if _p_cmp_tbl:
+            _p_cmp_cols = list(_p_cmp_tbl[0].keys())
+            _p_html = '<div class="styled-table-wrap" style="max-height:400px;overflow-y:auto;"><table class="styled-table"><thead>'
+            _p_html += '<tr>'
+            _p_html += '<th colspan="2" style="background:#e2e8f0;color:#1e293b;text-align:center;font-size:12px;font-weight:600;">维度信息</th>'
+            for _ml, _mf, _fmt, _color in _p_metric_defs:
+                _p_html += f'<th colspan="3" style="background:{_color};color:#1e293b;text-align:center;font-size:12px;font-weight:600;border-left:2px solid #fff;">{_ml}</th>'
+            _p_html += '</tr>'
+            _p_html += '<tr>'
+            _p_html += f'<th style="min-width:110px;background:#e2e8f0;color:#1e293b;font-weight:600;">{_p_cmp_dim_label}</th>'
+            _p_html += '<th style="min-width:72px;background:#e0f2fe;color:#1e293b;font-weight:600;">花费占比</th>'
+            for _ml, _mf, _fmt, _color in _p_metric_defs:
+                _p_html += f'<th style="min-width:80px;background:{_color};color:#1e293b;font-weight:600;">本期</th>'
+                _p_html += f'<th style="min-width:80px;background:{_color};color:#1e293b;font-weight:600;">对比期</th>'
+                _p_html += f'<th style="min-width:72px;background:{_color};color:#1e293b;font-weight:600;">变化率</th>'
+            _p_html += '</tr></thead><tbody>'
+            _p_total_row_idx = len(_p_cmp_tbl) - 1
+            for i, r in enumerate(_p_cmp_tbl):
+                is_total = (i == _p_total_row_idx)
+                bg = '#fff7ed' if is_total else ('#fafafa' if i % 2 == 0 else 'white')
+                fw = 'bold' if is_total else 'normal'
+                _p_html += f'<tr style="background:{bg};font-weight:{fw};">'
+                for j, c in enumerate(_p_cmp_cols):
+                    val = r.get(c, '')
+                    align = '' if j <= 1 else 'text-align:right;'
+                    _p_html += f'<td style="{align}">{val}</td>'
+                _p_html += '</tr>'
+            _p_html += '</tbody></table></div>'
+            st.markdown(_p_html, unsafe_allow_html=True)
+            _render_download_panel(_p_cmp_tbl, _p_cmp_cols, f'promo_compare_{_p_cmp_dim_label}.csv', '📥 推广维度对比')
 
     # ─────────────────────────────────────────────────────────────
 # TAB 3: 趋势分析
