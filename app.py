@@ -1,4 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
+# 2026-05-28: force redeploy — _promo_all_day fix
 from __future__ import annotations
 import datetime
 import io
