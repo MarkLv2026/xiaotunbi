@@ -2505,7 +2505,7 @@ with tabs[3]:
             ly_spend = _dim_promo_ly.get(dv, 0)
             ly_promo_amt = _dim_promo_amt_ly.get(dv, 0)
             ly_fee = ly_spend / ly_amt if ly_amt else None
-            fee_yoy = (spend/amt - ly_fee) / ly_fee if ly_fee and ly_fee > 0 else None
+            fee_yoy = (spend/amt - ly_fee) / ly_fee if amt and ly_fee and ly_fee > 0 else None
             ly_prs = ly_promo_amt / ly_amt if ly_amt else None
             prs_yoy = (prs - ly_prs) / ly_prs if ly_prs and ly_prs > 0 else None
             _dim_tbl.append({
@@ -2652,7 +2652,7 @@ with tabs[3]:
                             cmp_spend += float(pv.get('_花费', 0) or 0)
                             cmp_promo_amt += float(pv.get('_总订单金额', 0) or 0)
                 cmp_fee_rate = cmp_spend / ly_v['支付金额'] if ly_v and ly_v['支付金额'] else None
-                yoy_fee_rate = (day_spend/amt - cmp_fee_rate) / cmp_fee_rate if cmp_fee_rate and cmp_fee_rate > 0 else None
+                yoy_fee_rate = (day_spend/amt - cmp_fee_rate) / cmp_fee_rate if amt and cmp_fee_rate and cmp_fee_rate > 0 else None
                 cmp_prs = cmp_promo_amt / ly_v['支付金额'] if ly_v and ly_v['支付金额'] else None
                 yoy_prs = (day_prs - cmp_prs) / cmp_prs if cmp_prs and cmp_prs > 0 else None
                 row = {
@@ -2814,7 +2814,7 @@ with tabs[3]:
                                 cmp_spend_m += float(pv.get('_花费', 0) or 0)
                                 cmp_promo_amt_m += float(pv.get('_总订单金额', 0) or 0)
                 cmp_fee_rate_m = cmp_spend_m / ly_amt if ly_amt else None
-                yoy_fee_rate_m = (month_spend/amt - cmp_fee_rate_m) / cmp_fee_rate_m if cmp_fee_rate_m and cmp_fee_rate_m > 0 else None
+                yoy_fee_rate_m = (month_spend/amt - cmp_fee_rate_m) / cmp_fee_rate_m if amt and cmp_fee_rate_m and cmp_fee_rate_m > 0 else None
                 cmp_prs_m = cmp_promo_amt_m / ly_amt if ly_amt else None
                 yoy_prs_m = (month_prs - cmp_prs_m) / cmp_prs_m if cmp_prs_m and cmp_prs_m > 0 else None
                 row = {
