@@ -2601,6 +2601,23 @@ with tabs[3]:
                     if not d or not (str(start) <= d <= str(end)): continue
                     _day_promo[d] = _day_promo.get(d, 0) + float(r.get('_花费', 0) or 0)
                     _day_promo_amt[d] = _day_promo_amt.get(d, 0) + float(r.get('_总订单金额', 0) or 0)
+            # 构建全时段推广日聚合字典（用于对比期推广数据查找，按日期维度）
+            _p_fields_list = ['_花费','_展现数','_点击数','_直接订单金额','_总订单金额','_直接订单量','_总成交订单量']
+            _promo_all_day = {}
+            if promo_rows:
+                for r in promo_rows:
+                    d = r.get('_date', '')
+                    if not d: continue
+                    if channel and r.get('_渠道', '') not in channel: continue
+                    if store and r.get('_店铺', '') not in store: continue
+                    if category and r.get('_品类', '') not in category: continue
+                    if model and r.get('_型号', '') not in model: continue
+                    dv_p = r.get(_s_dim_field, '') or '未标注'
+                    key = (dv_p, d)
+                    if key not in _promo_all_day:
+                        _promo_all_day[key] = {fk: 0.0 for fk in _p_fields_list}
+                    for fk in _p_fields_list:
+                        _promo_all_day[key][fk] += float(r.get(fk, 0) or 0)
             # 使用 _sales_day 作为 day_dict (key: (dim_val, date))
             total_vis = sum(v['商品访客数'] for v in _sales_day.values())
             total_amt = sum(v['支付金额'] for v in _sales_day.values())
