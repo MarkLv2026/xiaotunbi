@@ -5,6 +5,12 @@
       "password_hash": "b9d059f0d2d7f6935136a15ca328be917e3b24dc009ba56e5a3384cf282d4b02",
       "role": "admin",
       "display_name": "管理员"
+    },
+    "viewer": {
+      "password_hash": "bd3bfdab7918d330726a73a4eb02a8ef661d7c237d3909343307acc1c659a144",
+      "role": "viewer",
+      "display_name": "浏览者",
+      "expire_date": "2026-06-12"
     }
   }
 }

@@ -120,6 +120,16 @@ if not st.session_state.authenticated:
                     _users_data = {'users': {}}
                 _user_info = _users_data.get('users', {}).get(_lu.strip())
                 if _user_info:
+                    # 检查账号是否过期
+                    _expire_str = _user_info.get('expire_date', '')
+                    if _expire_str:
+                        try:
+                            _expire_date = datetime.datetime.strptime(_expire_str, '%Y-%m-%d').date()
+                            if datetime.date.today() > _expire_date:
+                                st.error('⏰ 该账号已过期，请联系管理员')
+                                st.stop()
+                        except Exception:
+                            pass
                     _h = hashlib.sha256((_SALT + _lp).encode()).hexdigest()
                     if _h == _user_info.get('password_hash', ''):
                         st.session_state.authenticated = True
