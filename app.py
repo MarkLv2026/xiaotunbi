@@ -1363,13 +1363,13 @@ with tabs[1]:
 
         # ── TOP10 推广计划（按花费）──
         st.markdown('<div class="section-title">TOP10 推广计划（按花费）</div>', unsafe_allow_html=True)
-        _tp = sorted(_pl_r, key=lambda x: x['花费'], reverse=True)[:10]
+        _tp = sorted(_pl_r, key=lambda x: x.get('花费', 0), reverse=True)[:10]
         if _tp:
             fig = go.Figure(go.Bar(
-                x=[x['花费']/10000 for x in _tp],
-                y=[x['推广计划'][:20] for x in _tp],
+                x=[x.get('花费', 0)/10000 for x in _tp],
+                y=[str(x.get('推广计划', '') or '未标注')[:20] for x in _tp],
                 orientation='h',
-                text=[f"¥{x['花费']/10000:.1f}万" for x in _tp],
+                text=[f"¥{x.get('花费', 0)/10000:.1f}万" for x in _tp],
                 textposition='outside',
                 marker=dict(color=px.colors.qualitative.Bold[:len(_tp)])))
             fig.update_layout(height=400, margin=dict(l=10, r=80, t=35, b=10),
