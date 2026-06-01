@@ -870,6 +870,374 @@ unique_days = len(set(r['日期'] for r in daily))
 daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
 
 # ─────────────────────────────────────────────────────────────
+# 麦肯锡风格复盘PPT生成函数
+# ─────────────────────────────────────────────────────────────
+def _generate_mckinsey_ppt(**kwargs):
+    """生成麦肯锡风格复盘PPT（6页），返回文件路径"""
+    import os, tempfile
+    from pptx import Presentation
+    from pptx.util import Inches, Pt, Emu
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+    from pptx.enum.shapes import MSO_SHAPE
+
+    # 解包参数
+    period_cur = kwargs.get('period_cur', '')
+    period_prev = kwargs.get('period_prev', '')
+    comp_mode = kwargs.get('comp_mode', '')
+    filter_label = kwargs.get('filter_label', '')
+    health_score = kwargs.get('health_score', 0)
+    health_status = kwargs.get('health_status', '')
+    health_color = kwargs.get('health_color', '#64748b')
+    gmv_g = kwargs.get('gmv_g')
+    vis_g = kwargs.get('vis_g')
+    cvr_g = kwargs.get('cvr_g')
+    aov_g = kwargs.get('aov_g')
+    ref_g = kwargs.get('ref_g')
+    cur_sum = kwargs.get('cur_sum', {})
+    prev_sum = kwargs.get('prev_sum', {})
+    cur_by_channel = kwargs.get('cur_by_channel', {})
+    prev_by_channel = kwargs.get('prev_by_channel', {})
+    cur_by_cat = kwargs.get('cur_by_cat', {})
+    prev_by_cat = kwargs.get('prev_by_cat', {})
+    rising_stars = kwargs.get('rising_stars', [])
+    drop_stars = kwargs.get('drop_stars', [])
+    cvr_drop_models = kwargs.get('cvr_drop_models', [])
+    aov_drop_rows = kwargs.get('aov_drop_rows', [])
+    ch_model_issues = kwargs.get('ch_model_issues', [])
+    promo_suggestions = kwargs.get('promo_suggestions', [])
+    actions = kwargs.get('actions', [])
+    WARN_T = kwargs.get('WARN_T', -0.05)
+    DANGER_T = kwargs.get('DANGER_T', -0.15)
+    s = kwargs.get('s', '')
+    e = kwargs.get('e', '')
+
+    # 麦肯锡配色
+    MCK_DARK = RGBColor(0x00, 0x33, 0x6B)    # 深蓝
+    MCK_BLUE = RGBColor(0x00, 0x5B, 0x96)     # 中蓝
+    MCK_LIGHT = RGBColor(0xE8, 0xEF, 0xF5)    # 浅蓝
+    MCK_GRAY = RGBColor(0x5A, 0x5A, 0x5A)     # 文字灰
+    MCK_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+    MCK_RED = RGBColor(0xCC, 0x33, 0x33)      # 警示红
+    MCK_GREEN = RGBColor(0x00, 0x7A, 0x33)    # 正面绿
+    MCK_YELLOW = RGBColor(0xE6, 0xA8, 0x17)   # 关注黄
+
+    def _pct(v):
+        if v is None: return '--'
+        return f'{v*100:+.1f}%'
+
+    def _num(v, unit=''):
+        if v is None: return '--'
+        if abs(v) >= 10000:
+            return f'{v/10000:.1f}万{unit}'
+        return f'{v:,.0f}{unit}'
+
+    def _add_mck_slide(prs, title, subtitle=''):
+        """创建麦肯锡风格页面：顶部深蓝色条 + 标题"""
+        slide_layout = prs.slide_layouts[6]  # blank
+        slide = prs.slides.add_slide(slide_layout)
+        # 顶部深蓝条
+        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, Inches(1.1))
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = MCK_DARK
+        bar.line.fill.background()
+        # 标题文字
+        txBox = slide.shapes.add_textbox(Inches(0.6), Inches(0.2), Inches(9), Inches(0.7))
+        tf = txBox.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.text = title
+        p.font.size = Pt(28)
+        p.font.bold = True
+        p.font.color.rgb = MCK_WHITE
+        # 副标题
+        if subtitle:
+            txBox2 = slide.shapes.add_textbox(Inches(0.6), Inches(0.72), Inches(9), Inches(0.35))
+            tf2 = txBox2.text_frame
+            p2 = tf2.paragraphs[0]
+            p2.text = subtitle
+            p2.font.size = Pt(12)
+            p2.font.color.rgb = RGBColor(0xB0, 0xC4, 0xDE)
+        # 底部分隔线
+        line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(1.1), prs.slide_width, Pt(3))
+        line.fill.solid()
+        line.fill.fore_color.rgb = MCK_YELLOW
+        line.line.fill.background()
+        return slide
+
+    def _add_table(slide, left, top, headers, rows, col_widths=None):
+        """添加简洁表格"""
+        n_rows = len(rows) + 1
+        n_cols = len(headers)
+        tbl_shape = slide.shapes.add_table(n_rows, n_cols, Inches(left), Inches(top),
+                                            Inches(sum(col_widths) if col_widths else n_cols * 1.5),
+                                            Inches(0.35 * n_rows))
+        tbl = tbl_shape.table
+        if col_widths:
+            for i, w in enumerate(col_widths):
+                tbl.columns[i].width = Inches(w)
+        # 表头
+        for j, h in enumerate(headers):
+            cell = tbl.cell(0, j)
+            cell.text = h
+            for paragraph in cell.text_frame.paragraphs:
+                paragraph.font.size = Pt(9)
+                paragraph.font.bold = True
+                paragraph.font.color.rgb = MCK_WHITE
+                paragraph.alignment = PP_ALIGN.CENTER
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = MCK_BLUE
+        # 数据行
+        for i, row in enumerate(rows):
+            for j, val in enumerate(row):
+                cell = tbl.cell(i + 1, j)
+                cell.text = str(val)
+                for paragraph in cell.text_frame.paragraphs:
+                    paragraph.font.size = Pt(8)
+                    paragraph.font.color.rgb = MCK_GRAY
+                    paragraph.alignment = PP_ALIGN.CENTER
+                if i % 2 == 0:
+                    cell.fill.solid()
+                    cell.fill.fore_color.rgb = MCK_LIGHT
+        return tbl_shape
+
+    def _add_kpi_box(slide, left, top, width, height, label, value, change, color=MCK_BLUE):
+        """添加KPI卡片"""
+        shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left), Inches(top), Inches(width), Inches(height))
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = MCK_LIGHT
+        shape.line.color.rgb = color
+        shape.line.width = Pt(1.5)
+        # 标签
+        txBox = slide.shapes.add_textbox(Inches(left + 0.1), Inches(top + 0.05), Inches(width - 0.2), Inches(0.3))
+        tf = txBox.text_frame
+        p = tf.paragraphs[0]
+        p.text = label
+        p.font.size = Pt(8)
+        p.font.color.rgb = MCK_GRAY
+        p.alignment = PP_ALIGN.CENTER
+        # 值
+        txBox2 = slide.shapes.add_textbox(Inches(left + 0.1), Inches(top + 0.28), Inches(width - 0.2), Inches(0.35))
+        tf2 = txBox2.text_frame
+        p2 = tf2.paragraphs[0]
+        p2.text = str(value)
+        p2.font.size = Pt(18)
+        p2.font.bold = True
+        p2.font.color.rgb = MCK_DARK
+        p2.alignment = PP_ALIGN.CENTER
+        # 变化
+        if change:
+            txBox3 = slide.shapes.add_textbox(Inches(left + 0.1), Inches(top + 0.6), Inches(width - 0.2), Inches(0.25))
+            tf3 = txBox3.text_frame
+            p3 = tf3.paragraphs[0]
+            p3.text = str(change)
+            p3.font.size = Pt(9)
+            p3.font.color.rgb = MCK_RED if (isinstance(change, str) and change.startswith('-')) else MCK_GREEN
+            p3.alignment = PP_ALIGN.CENTER
+
+    def _add_bullet_text(slide, left, top, width, height, items, font_size=Pt(10)):
+        """添加要点列表"""
+        txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
+        tf = txBox.text_frame
+        tf.word_wrap = True
+        for i, item in enumerate(items):
+            if i == 0:
+                p = tf.paragraphs[0]
+            else:
+                p = tf.add_paragraph()
+            p.text = item
+            p.font.size = font_size
+            p.font.color.rgb = MCK_GRAY
+            p.space_after = Pt(4)
+
+    # ═══════════════ 开始构建PPT ═══════════════
+    prs = Presentation()
+    prs.slide_width = Inches(10)
+    prs.slide_height = Inches(7.5)
+
+    # ═══════════════ P1: 封面 ═══════════════
+    slide = _add_mck_slide(prs, '', '')
+    # 封面覆盖整个背景
+    bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, prs.slide_height)
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = MCK_DARK
+    bg.line.fill.background()
+    # 标题
+    txBox = slide.shapes.add_textbox(Inches(1), Inches(1.8), Inches(8), Inches(1.2))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.text = '电商经营复盘'
+    p.font.size = Pt(42)
+    p.font.bold = True
+    p.font.color.rgb = MCK_WHITE
+    p.alignment = PP_ALIGN.CENTER
+    p2 = tf.add_paragraph()
+    p2.text = '人·货·场 三维诊断报告'
+    p2.font.size = Pt(28)
+    p2.font.color.rgb = RGBColor(0xB0, 0xC4, 0xDE)
+    p2.alignment = PP_ALIGN.CENTER
+    # 分隔线
+    line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(3.5), Inches(3.3), Inches(3), Pt(4))
+    line.fill.solid()
+    line.fill.fore_color.rgb = MCK_YELLOW
+    line.line.fill.background()
+    # 信息
+    txBox2 = slide.shapes.add_textbox(Inches(1.5), Inches(3.7), Inches(7), Inches(1.5))
+    tf2 = txBox2.text_frame
+    info_lines = [
+        f'分析区间：{period_cur}',
+        f'对比区间：{period_prev}',
+        f'对比模式：{comp_mode}',
+        f'筛选范围：{filter_label}',
+        f'报告日期：{s} ~ {e}',
+    ]
+    for i, txt in enumerate(info_lines):
+        if i == 0:
+            p = tf2.paragraphs[0]
+        else:
+            p = tf2.add_paragraph()
+        p.text = txt
+        p.font.size = Pt(14)
+        p.font.color.rgb = RGBColor(0xCC, 0xD5, 0xE0)
+        p.alignment = PP_ALIGN.CENTER
+        p.space_after = Pt(6)
+
+    # ═══════════════ P2: 执行摘要 ═══════════════
+    slide = _add_mck_slide(prs, '执行摘要', f'健康评分 {health_score:.0f}/100 — {health_status}')
+
+    # 5 KPI 卡片
+    _kpi_data = [
+        ('支付金额', _num(cur_sum.get('支付金额',0), '¥'), _pct(gmv_g)),
+        ('访客数', _num(cur_sum.get('商品访客数',0)), _pct(vis_g)),
+        ('转化率', f"{cur_sum.get('支付转化率',0)*100:.2f}%", _pct(cvr_g)),
+        ('客单价', f"¥{cur_sum.get('客单价',0):,.0f}", _pct(aov_g)),
+        ('退款率', f"{cur_sum.get('退款率',0)*100:.2f}%", _pct(ref_g)),
+    ]
+    for i, (label, val, chg) in enumerate(_kpi_data):
+        _add_kpi_box(slide, 0.3 + i * 1.9, 1.5, 1.7, 0.95, label, val, chg,
+                     MCK_GREEN if chg and not chg.startswith('-') and chg != '--' else MCK_RED)
+
+    # GMV 归因分析
+    _add_bullet_text(slide, 0.5, 2.8, 9, 2.5, [
+        '▎GMV归因分析',
+        f'• GMV变化：{_pct(gmv_g)} | 流量贡献：{_pct(vis_g)} | 转化率贡献：{_pct(cvr_g)} | 客单价贡献：{_pct(aov_g)}',
+        f'• 本期GMV：¥{cur_sum.get("支付金额",0):,.0f} | 对比期GMV：¥{prev_sum.get("支付金额",0):,.0f}',
+        '',
+        '▎关键发现',
+        f'• 健康评分：{health_score:.0f}/100 — {health_status}',
+        f'• P0级问题数：{sum(1 for a in actions if a["p"]=="P0")} | P1级：{sum(1 for a in actions if a["p"]=="P1")}',
+        f'• 渠道异常型号数：{len(ch_model_issues)} | 转化骤降型号数：{len(cvr_drop_models)}',
+    ], Pt(10))
+
+    # ═══════════════ P3: 人 — 流量&用户 ═══════════════
+    slide = _add_mck_slide(prs, '👥 人 — 流量来源 & 用户结构诊断')
+
+    # 渠道流量分布表（Top 6）
+    ch_rows = []
+    total_gmv_c = sum(v.get('支付金额',0) for v in cur_by_channel.values())
+    for ch_key, cv in sorted(cur_by_channel.items(), key=lambda x: x[1].get('支付金额',0), reverse=True)[:6]:
+        ch_name = ch_key[0] if isinstance(ch_key, tuple) else str(ch_key)
+        pv = prev_by_channel.get(ch_key, {})
+        gmv_chg = (cv.get('支付金额',0) - pv.get('支付金额',0)) / pv.get('支付金额',1) if pv.get('支付金额',1) else None
+        share = cv.get('支付金额',0) / total_gmv_c * 100 if total_gmv_c else 0
+        ch_rows.append([ch_name, _num(cv.get('支付金额',0), '¥'), f'{share:.1f}%', _pct(gmv_chg)])
+
+    _add_table(slide, 0.5, 1.5, ['渠道', 'GMV', '占比', '环比变化'], ch_rows, [2.5, 2.5, 1.5, 1.5])
+
+    # 增长亮点
+    _add_bullet_text(slide, 0.5, 1.5 + 0.35 * (len(ch_rows) + 1) + 0.3, 9, 2, [
+        '▎增长亮点型号 (Top 5)',
+    ] + [f'• {r.get("型号","")} | GMV增长：{_pct(r.get("环比"))} | {r.get("渠道","")}'
+         for r in rising_stars[:5]], Pt(9))
+
+    # 加购漏斗
+    if cur_sum.get('商品访客数', 0):
+        _add_bullet_text(slide, 0.5, 5.5, 9, 1.5, [
+            '▎全域加购漏斗',
+            f'• 访客数：{_num(cur_sum.get("商品访客数",0))} → 加购人数：{_num(cur_sum.get("商品加购人数",0))} → 支付买家数：{_num(cur_sum.get("支付买家数",0))}',
+            f'• 加购率：{cur_sum.get("商品加购人数",0)/cur_sum.get("商品访客数",1)*100:.1f}% | 支付转化率：{cur_sum.get("支付转化率",0)*100:.2f}%',
+        ], Pt(9))
+
+    # ═══════════════ P4: 货 — 商品&转化 ═══════════════
+    slide = _add_mck_slide(prs, '📦 货 — 商品结构 & 转化诊断')
+
+    # 品类销售结构
+    cat_rows = []
+    for cat_key, cv in sorted(cur_by_cat.items(), key=lambda x: x[1].get('支付金额',0), reverse=True)[:5]:
+        cat_name = cat_key[1] if len(cat_key) > 1 else str(cat_key)
+        pv = prev_by_cat.get(cat_key, {})
+        gmv_chg = (cv.get('支付金额',0) - pv.get('支付金额',0)) / pv.get('支付金额',1) if pv.get('支付金额',1) else None
+        cat_rows.append([cat_name, _num(cv.get('支付金额',0), '¥'), _pct(gmv_chg)])
+
+    _add_table(slide, 0.5, 1.5, ['品类', 'GMV', '环比变化'], cat_rows, [3, 3, 2])
+
+    # 爆款掉量
+    drop_top5 = sorted(drop_stars, key=lambda x: x.get('缩水幅度', 0))[:5]
+    _add_bullet_text(slide, 0.5, 1.5 + 0.35 * (len(cat_rows) + 1) + 0.3, 9, 1.5, [
+        '▎爆款掉量型号 (Top 5)',
+    ] + [f'• {d.get("型号","")} | 缩水：{_pct(d.get("缩水幅度"))} | {d.get("渠道","")}'
+         for d in drop_top5], Pt(9))
+
+    # 转化骤降
+    _add_bullet_text(slide, 0.5, 4.2, 4.5, 1.5, [
+        '▎转化率骤降型号 (降幅>20%)',
+    ] + [f'• {m.get("型号","")} | 降幅：{_pct(m.get("转化率降幅"))}'
+         for m in cvr_drop_models[:5]], Pt(8))
+
+    # 客单价下跌
+    _add_bullet_text(slide, 5.2, 4.2, 4.5, 1.5, [
+        '▎客单价下跌型号',
+    ] + [f'• {m.get("型号","")} | 变化：{_pct(m.get("客单价变化"))}'
+         for m in aov_drop_rows[:5]], Pt(8))
+
+    # ═══════════════ P5: 场 — 渠道&推广 ═══════════════
+    slide = _add_mck_slide(prs, '🏪 场 — 渠道效率 & 推广诊断')
+
+    # 渠道经营矩阵
+    ch_matrix = []
+    for ch_key, cv in sorted(cur_by_channel.items(), key=lambda x: x[1].get('支付金额',0), reverse=True)[:6]:
+        ch_name = ch_key[0] if isinstance(ch_key, tuple) else str(ch_key)
+        pv = prev_by_channel.get(ch_key, {})
+        gmv_chg = (cv.get('支付金额',0) - pv.get('支付金额',0)) / pv.get('支付金额',1) if pv.get('支付金额',1) else None
+        vis_chg = (cv.get('商品访客数',0) - pv.get('商品访客数',0)) / pv.get('商品访客数',1) if pv.get('商品访客数',1) else None
+        ch_matrix.append([ch_name, _num(cv.get('支付金额',0), '¥'), _pct(gmv_chg), _pct(vis_chg)])
+
+    _add_table(slide, 0.5, 1.5, ['渠道', 'GMV', 'GMV变化', '流量变化'], ch_matrix, [2, 2.5, 2, 2])
+
+    # 下滑型号归因
+    if ch_model_issues:
+        _add_bullet_text(slide, 0.5, 1.5 + 0.35 * (len(ch_matrix) + 1) + 0.3, 9, 1.5, [
+            '▎渠道内下滑型号归因',
+        ] + [f'• [{issue.get("渠道","")}] {issue.get("型号","")} | {issue.get("归因","")}'
+             for issue in ch_model_issues[:5]], Pt(8))
+
+    # 推广效率
+    if promo_suggestions:
+        _add_bullet_text(slide, 0.5, 5.0, 9, 2, [
+            '▎推广效率诊断',
+        ] + [f'• {p}' for p in promo_suggestions[:6]], Pt(9))
+
+    # ═══════════════ P6: 执行清单 ═══════════════
+    slide = _add_mck_slide(prs, '🛠️ 执行清单', f'共 {len(actions)} 项行动 | P0: {sum(1 for a in actions if a["p"]=="P0")} | P1: {sum(1 for a in actions if a["p"]=="P1")}')
+
+    actions_sorted = sorted(actions, key=lambda x: ['P0','P1','P2','P3'].index(x['p']))
+    action_rows = []
+    for act in actions_sorted[:12]:  # 最多12条
+        action_rows.append([act['p'], act['t'][:30], act['o'], act['tl'], act['mt'][:20]])
+
+    _add_table(slide, 0.3, 1.5,
+               ['优先级', '措施标题', '负责人', '见效周期', '量化目标'],
+               action_rows, [0.8, 3.5, 1.2, 1.2, 1.8])
+
+    # 保存文件
+    tmpdir = tempfile.gettempdir()
+    ppt_path = os.path.join(tmpdir, f'xiaotunbi_ppt_{s.replace("-","")}_{e.replace("-","")}.pptx')
+    prs.save(ppt_path)
+    return ppt_path
+
+
+# ─────────────────────────────────────────────────────────────
 # Tab 结构
 # ─────────────────────────────────────────────────────────────
 tabs = st.tabs(['经营总览', '📢 推广分析', '时间段对比', '趋势分析', '🔍 智能诊断', '📊 透视表分析'])
@@ -3496,6 +3864,34 @@ with tabs[4]:
         _cmp_label = f'B期 {prev_s} ~ {prev_e}'
     st.caption(f'诊断区间：{s} ~ {e} | 筛选范围：{_filter_label} | 对比区间：{_cmp_label}')
 
+    # ── 时间段对比横幅 ──
+    _period_label_cur = f'本期 {s} ~ {e}'
+    _period_label_prev = _cmp_label
+    st.markdown(
+        f"<div style='background:linear-gradient(135deg, #1e293b 0%, #334155 100%);border-radius:14px;"
+        f"padding:16px 24px;margin:8px 0 16px 0;display:flex;align-items:center;justify-content:center;gap:24px;'>"
+        f"<div style='text-align:center;'>"
+        f"<div style='font-size:11px;color:#94a3b8;margin-bottom:4px;'>📅 本期分析区间</div>"
+        f"<div style='font-size:16px;font-weight:800;color:#f8fafc;'>{_period_label_cur}</div>"
+        f"</div>"
+        f"<div style='font-size:28px;color:#64748b;'>VS</div>"
+        f"<div style='text-align:center;'>"
+        f"<div style='font-size:11px;color:#94a3b8;margin-bottom:4px;'>📊 对比区间</div>"
+        f"<div style='font-size:16px;font-weight:800;color:#facc15;'>{_period_label_prev}</div>"
+        f"</div>"
+        f"<div style='width:1px;height:40px;background:#475569;margin:0 8px;'></div>"
+        f"<div style='text-align:center;'>"
+        f"<div style='font-size:11px;color:#94a3b8;margin-bottom:4px;'>🔍 筛选范围</div>"
+        f"<div style='font-size:13px;font-weight:600;color:#cbd5e1;'>{_filter_label}</div>"
+        f"</div>"
+        f"<div style='width:1px;height:40px;background:#475569;margin:0 8px;'></div>"
+        f"<div style='text-align:center;'>"
+        f"<div style='font-size:11px;color:#94a3b8;margin-bottom:4px;'>📋 对比模式</div>"
+        f"<div style='font-size:13px;font-weight:600;color:#e2e8f0;'>{comp_mode}</div>"
+        f"</div>"
+        f"</div>",
+        unsafe_allow_html=True)
+
     # ══════════════════════════════════════
     # A. 核心数据准备（基于当前筛选条件）
     # ══════════════════════════════════════
@@ -3649,6 +4045,43 @@ with tabs[4]:
                 f'<div style="font-size:19px;font-weight:900;color:#0f172a;margin:3px 0;">{pre}{cv_s}</div>'
                 f'<div style="font-size:10px;color:#94a3b8;">vs上期 {pre}{pv_s} ({ch_s})</div>{hint}</div>',
                 unsafe_allow_html=True)
+
+    # ── 生成麦肯锡复盘PPT按钮 ──
+    st.markdown('<hr style="margin:20px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
+    _ppt_col1, _ppt_col2 = st.columns([3, 1])
+    with _ppt_col1:
+        st.markdown(
+            "<div style='font-size:13px;color:#64748b;'>📑 <b>一键生成麦肯锡风格复盘PPT</b> — "
+            "包含封面、健康总览、人货场分析、执行清单共6页</div>",
+            unsafe_allow_html=True)
+    with _ppt_col2:
+        _gen_ppt = st.button('🎯 生成复盘PPT', use_container_width=True, key='gen_mck_ppt')
+
+    if _gen_ppt:
+        with st.spinner('正在生成麦肯锡风格复盘PPT...'):
+            _ppt_path = _generate_mckinsey_ppt(
+                period_cur=_period_label_cur, period_prev=_period_label_prev,
+                comp_mode=comp_mode, filter_label=_filter_label,
+                health_score=health_score, health_status=hv[0], health_color=hv[1],
+                gmv_g=gmv_g, vis_g=vis_g, cvr_g=cvr_g, aov_g=aov_g, ref_g=ref_g,
+                cur_sum=cur_sum, prev_sum=prev_sum_all,
+                cur_by_channel=cur_by_channel, prev_by_channel=prev_by_channel,
+                cur_by_cat=cur_by_cat, prev_by_cat=prev_by_cat,
+                cur_by_model=cur_by_model, prev_by_model=prev_by_model,
+                rising_stars=rising_stars, drop_stars=drop_stars,
+                cvr_drop_models=cvr_drop_models, aov_drop_rows=aov_drop_rows,
+                ch_model_issues=ch_model_issues, promo_suggestions=promo_suggestions,
+                actions=actions, WARN_T=WARN_T, DANGER_T=DANGER_T,
+                s=s, e=e,
+            )
+            if _ppt_path:
+                with open(_ppt_path, 'rb') as f:
+                    st.download_button(
+                        label=f'📥 下载复盘PPT ({_period_label_cur})',
+                        data=f, file_name=f'xiaotunbi_复盘_{s.replace("-","")}_{e.replace("-","")}.pptx',
+                        mime='application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                        key='dl_mck_ppt')
+                st.success(f'✅ PPT已生成（{_ppt_path}），点击上方按钮下载')
 
     # ══════════════════════════════════════════════════════════════
     # 人货场三大板块（子Tab）
