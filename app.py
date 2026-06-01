@@ -4046,43 +4046,6 @@ with tabs[4]:
                 f'<div style="font-size:10px;color:#94a3b8;">vs上期 {pre}{pv_s} ({ch_s})</div>{hint}</div>',
                 unsafe_allow_html=True)
 
-    # ── 生成麦肯锡复盘PPT按钮 ──
-    st.markdown('<hr style="margin:20px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
-    _ppt_col1, _ppt_col2 = st.columns([3, 1])
-    with _ppt_col1:
-        st.markdown(
-            "<div style='font-size:13px;color:#64748b;'>📑 <b>一键生成麦肯锡风格复盘PPT</b> — "
-            "包含封面、健康总览、人货场分析、执行清单共6页</div>",
-            unsafe_allow_html=True)
-    with _ppt_col2:
-        _gen_ppt = st.button('🎯 生成复盘PPT', use_container_width=True, key='gen_mck_ppt')
-
-    if _gen_ppt:
-        with st.spinner('正在生成麦肯锡风格复盘PPT...'):
-            _ppt_path = _generate_mckinsey_ppt(
-                period_cur=_period_label_cur, period_prev=_period_label_prev,
-                comp_mode=comp_mode, filter_label=_filter_label,
-                health_score=health_score, health_status=hv[0], health_color=hv[1],
-                gmv_g=gmv_g, vis_g=vis_g, cvr_g=cvr_g, aov_g=aov_g, ref_g=ref_g,
-                cur_sum=cur_sum, prev_sum=prev_sum_all,
-                cur_by_channel=cur_by_channel, prev_by_channel=prev_by_channel,
-                cur_by_cat=cur_by_cat, prev_by_cat=prev_by_cat,
-                cur_by_model=cur_by_model, prev_by_model=prev_by_model,
-                rising_stars=rising_stars, drop_stars=drop_stars,
-                cvr_drop_models=cvr_drop_models, aov_drop_rows=aov_drop_rows,
-                ch_model_issues=ch_model_issues, promo_suggestions=promo_suggestions,
-                actions=actions, WARN_T=WARN_T, DANGER_T=DANGER_T,
-                s=s, e=e,
-            )
-            if _ppt_path:
-                with open(_ppt_path, 'rb') as f:
-                    st.download_button(
-                        label=f'📥 下载复盘PPT ({_period_label_cur})',
-                        data=f, file_name=f'xiaotunbi_复盘_{s.replace("-","")}_{e.replace("-","")}.pptx',
-                        mime='application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                        key='dl_mck_ppt')
-                st.success(f'✅ PPT已生成（{_ppt_path}），点击上方按钮下载')
-
     # ══════════════════════════════════════════════════════════════
     # 人货场三大板块（子Tab）
     # ══════════════════════════════════════════════════════════════
@@ -4721,6 +4684,43 @@ with tabs[4]:
             dl_data if dl_data else [],
             list(dl_data[0].keys()) if dl_data else [],
             f'xiaotunbi_diagnosis_{s.replace("-","")}_{e.replace("-","")}.csv', '📥 完整诊断报告（含执行清单）')
+
+    # ── 生成麦肯锡复盘PPT按钮（放在所有子Tab之后，确保变量已定义）──
+    st.markdown('<hr style="margin:20px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
+    _ppt_col1, _ppt_col2 = st.columns([3, 1])
+    with _ppt_col1:
+        st.markdown(
+            "<div style='font-size:13px;color:#64748b;'>📑 <b>一键生成麦肯锡风格复盘PPT</b> — "
+            "包含封面、健康总览、人货场分析、执行清单共6页</div>",
+            unsafe_allow_html=True)
+    with _ppt_col2:
+        _gen_ppt = st.button('🎯 生成复盘PPT', use_container_width=True, key='gen_mck_ppt')
+
+    if _gen_ppt:
+        with st.spinner('正在生成麦肯锡风格复盘PPT...'):
+            _ppt_path = _generate_mckinsey_ppt(
+                period_cur=_period_label_cur, period_prev=_period_label_prev,
+                comp_mode=comp_mode, filter_label=_filter_label,
+                health_score=health_score, health_status=hv[0], health_color=hv[1],
+                gmv_g=gmv_g, vis_g=vis_g, cvr_g=cvr_g, aov_g=aov_g, ref_g=ref_g,
+                cur_sum=cur_sum, prev_sum=prev_sum_all,
+                cur_by_channel=cur_by_channel, prev_by_channel=prev_by_channel,
+                cur_by_cat=cur_by_cat, prev_by_cat=prev_by_cat,
+                cur_by_model=cur_by_model, prev_by_model=prev_by_model,
+                rising_stars=rising_stars, drop_stars=drop_stars,
+                cvr_drop_models=cvr_drop_models, aov_drop_rows=aov_drop_rows,
+                ch_model_issues=ch_model_issues, promo_suggestions=promo_suggestions,
+                actions=actions, WARN_T=WARN_T, DANGER_T=DANGER_T,
+                s=s, e=e,
+            )
+            if _ppt_path:
+                with open(_ppt_path, 'rb') as f:
+                    st.download_button(
+                        label=f'📥 下载复盘PPT ({_period_label_cur})',
+                        data=f, file_name=f'xiaotunbi_复盘_{s.replace("-","")}_{e.replace("-","")}.pptx',
+                        mime='application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                        key='dl_mck_ppt')
+                st.success(f'✅ PPT已生成（{_ppt_path}），点击上方按钮下载')
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 5: 透视表分析（单期数据，无对比列）
