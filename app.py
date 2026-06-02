@@ -2353,7 +2353,7 @@ with tabs[2]:
         _raw = _filtered
 
     cur_dim = group(get_period_rows(_raw, today_s, today_e), _dim_field)
-    prev_dim = group(get_period_rows(_raw, prev_s, prev_e), _dim_field)
+    prev_dim = group(get_period_rows(_raw, _t2_prev_s, _t2_prev_e), _dim_field)
     prev_dim_map = {r[_dim_field]: r for r in prev_dim}
 
     _metric_defs = [
@@ -2542,11 +2542,6 @@ with tabs[2]:
                 if _t2_prev_s <= d <= _t2_prev_e:
                     _p_sales_total_prev += amt
 
-        # DEBUG: 打印销售支付金额预计算状态
-        st.caption(f'DEBUG — 本期销售总额: ¥{_p_sales_total_cur:.0f}, 对比期销售总额: ¥{_p_sales_total_prev:.0f}')
-        st.caption(f'DEBUG — 对比期范围: {_t2_prev_s} ~ {_t2_prev_e}, 维度字段: {_sales_field_pc}')
-        st.caption(f'DEBUG — _p_sales_by_dim_prev keys: {list(_p_sales_by_dim_prev.keys())[:10]}')
-
         def _p_group(rows, field):
             d = {}
             for r in rows:
@@ -2595,10 +2590,17 @@ with tabs[2]:
             _spend = r.get('_花费', 0) or 0
             _share = _spend / _p_total_spend if _p_total_spend else 0
             # 按维度计算费率（花费/销售支付金额）
-            _s_amt_c = _p_sales_by_dim_cur.get(name, _p_sales_total_cur) if _sales_field_pc else _p_sales_total_cur
-            _s_amt_p = _p_sales_by_dim_prev.get(name, _p_sales_total_prev) if _sales_field_pc else _p_sales_total_prev
+            # 只有对应维度在销售数据中有记录时才计算费率，否则显示 --
+            if _sales_field_pc:
+                _s_amt_c = _p_sales_by_dim_cur.get(name, 0)
+                _s_amt_p = _p_sales_by_dim_prev.get(name, 0)
+            else:
+                _s_amt_c = _p_sales_total_cur
+                _s_amt_p = _p_sales_total_prev
             _fee_c = _spend / _s_amt_c if _s_amt_c else None
-            _fee_p = prev_r.get('_花费', 0) / _s_amt_p if _s_amt_p else None
+            # 对比期费率：只有对比期有花费且销售数据存在时才计算
+            _prev_spend = prev_r.get('_花费', 0) if prev_r else 0
+            _fee_p = _prev_spend / _s_amt_p if _prev_spend and _s_amt_p else None
             r['_fee_rate'] = _fee_c  # 临时赋值供后续读取
             # 同时给 prev_r 也赋上费率，供统一循环读取
             prev_r['_fee_rate'] = _fee_p
@@ -2607,10 +2609,18 @@ with tabs[2]:
                 '花费占比': f'{_share*100:.1f}%',
             }
             for _ml, _mf, _fmt, _color in _p_metric_defs:
-                cur_v = r.get(_mf, 0) or 0
+                cur_v = r.get(_mf, 0)
                 # 费率可能为 None（分母为0），保持 None 供 _fmt 正确显示 --
+                if _mf == '_fee_rate':
+                    cur_v = cur_v if cur_v is not None else None  # preserve None
+                else:
+                    cur_v = cur_v or 0
                 _pv = prev_r.get(_mf, 0)
-                prev_v = _pv if _pv is not None else 0
+                # 对费率特殊处理：如果值为 None，保持 None 让 _fmt 显示 --
+                if _mf == '_fee_rate':
+                    prev_v = _pv  # None stays None
+                else:
+                    prev_v = _pv if _pv is not None else 0
                 _cur_s = _fmt(cur_v)
                 _prev_s = _fmt(prev_v)
                 chg = (cur_v - prev_v) / prev_v if prev_v else None
