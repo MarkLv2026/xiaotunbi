@@ -2540,6 +2540,11 @@ with tabs[2]:
                 if _t2_prev_s <= d <= _t2_prev_e:
                     _p_sales_total_prev += amt
 
+        # DEBUG: 打印销售支付金额预计算状态
+        st.caption(f'DEBUG — 本期销售总额: ¥{_p_sales_total_cur:.0f}, 对比期销售总额: ¥{_p_sales_total_prev:.0f}')
+        st.caption(f'DEBUG — 对比期范围: {_t2_prev_s} ~ {_t2_prev_e}, 维度字段: {_sales_field_pc}')
+        st.caption(f'DEBUG — _p_sales_by_dim_prev keys: {list(_p_sales_by_dim_prev.keys())[:10]}')
+
         def _p_group(rows, field):
             d = {}
             for r in rows:
