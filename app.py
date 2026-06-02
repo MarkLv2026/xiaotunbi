@@ -2507,8 +2507,10 @@ with tabs[2]:
         _p_sales_by_dim_prev = {}
         _p_sales_total_cur = 0
         _p_sales_total_prev = 0
+        # 注意：必须用 data['daily']（原始全量数据），不能用 daily（已被全局日期范围 start~end 过滤）
+        _raw_daily = data['daily']
         if _sales_field_pc:
-            for r in daily:
+            for r in _raw_daily:
                 d = r.get('日期', '')
                 if len(d) == 7: d = d + '-01'
                 if not d: continue
@@ -2526,7 +2528,7 @@ with tabs[2]:
                     _p_sales_total_prev += amt
         else:
             # 产品线/营销场景没有对应销售维度，用销售总额
-            for r in daily:
+            for r in _raw_daily:
                 d = r.get('日期', '')
                 if len(d) == 7: d = d + '-01'
                 if not d: continue
