@@ -1522,6 +1522,27 @@ with tabs[1]:
     if not promo_rows:
         st.info('请先在左侧选择「推广数据」，然后上传含「京东推广数据源」和「天猫推广数据源」工作表的Excel文件。')
     else:
+        # ── 销售支付金额预计算（按维度聚合，用于费率=花费/销售支付金额）──
+        _sales_by_channel = {}
+        _sales_by_store = {}
+        _sales_by_cat = {}
+        _sales_by_model = {}
+        _sales_total_amt = 0
+        for r in daily:
+            d = r.get('日期', '')
+            if len(d) == 7: d = d + '-01'
+            if not d or not (str(start) <= d <= str(end)): continue
+            if channel and r.get('渠道', '') not in channel: continue
+            if store and r.get('店铺', '') not in store: continue
+            if category and r.get('品类', '') not in category: continue
+            if model and r.get('型号', '') not in model: continue
+            amt = float(r.get('支付金额', 0) or 0)
+            _sales_total_amt += amt
+            _sales_by_channel[r.get('渠道', '') or '未标注'] = _sales_by_channel.get(r.get('渠道', '') or '未标注', 0) + amt
+            _sales_by_store[r.get('店铺', '') or '未标注'] = _sales_by_store.get(r.get('店铺', '') or '未标注', 0) + amt
+            _sales_by_cat[r.get('品类', '') or '未标注'] = _sales_by_cat.get(r.get('品类', '') or '未标注', 0) + amt
+            _sales_by_model[r.get('型号', '') or '未标注'] = _sales_by_model.get(r.get('型号', '') or '未标注', 0) + amt
+
         # ── KPI 指标 ──
         _ps = promo_spend
         _ro = promo_roi
@@ -1658,6 +1679,7 @@ with tabs[1]:
             _cpc_yoy, _ = _yoy_text(_cpc, (vy.get('花费', 0) / vy.get('点击数', 1)) if vy.get('点击数', 0) else None)
             _yc = vy.get('总加购数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
             _cv_yoy, _ = _yoy_text(_cv, _yc) if _cv and _yc else ('--', '')
+            _s_amt = _sales_by_store.get(k, 0)
             _sm_r.append({
                 '店铺': k,
                 '花费(万)': f"{_fc/10000:.1f}",
@@ -1669,7 +1691,7 @@ with tabs[1]:
                 '直接成交(万)': f"{v['直接订单金额']/10000:.1f}",
                 'ROI': f"{v['总订单金额']/_fc:.2f}" if _fc else '--',
                 '直接ROI': f"{_d_roi:.2f}" if _fc else '--',
-                '费率': f"{_fc/v['总订单金额']*100:.1f}%" if v['总订单金额'] else '--',
+                '费率': f"{_fc/_s_amt*100:.2f}%" if _s_amt else '--',
                 '转化率': f"{_cv:.1f}%" if _cv else '--',
                 '花费同比': f"<span style='color:{'#22c55e' if _fc_yoy and '+' in _fc_yoy else '#dc2626' if _fc_yoy and '-' in _fc_yoy else '#94a3b8'}'>{_fc_yoy}</span>",
                 '直接ROI同比': f"<span style='color:{'#22c55e' if _droi_yoy and '+' in _droi_yoy else '#dc2626' if _droi_yoy and '-' in _droi_yoy else '#94a3b8'}'>{_droi_yoy}</span>",
@@ -1740,6 +1762,7 @@ with tabs[1]:
             _cpc_yoy, _ = _yoy_text(_cpc, (vy.get('花费', 0) / vy.get('点击数', 1)) if vy.get('点击数', 0) else None)
             _yc = vy.get('成交客户数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
             _cv_yoy, _ = _yoy_text(_cv, _yc) if _cv and _yc else ('--', '')
+            _s_amt_cm = _sales_by_channel.get(k, 0)
             _cm_r.append({
                 '渠道': k,
                 '花费(万)': f"{_fc/10000:.1f}",
@@ -1750,7 +1773,7 @@ with tabs[1]:
                 '总成交(万)': f"{v['总订单金额']/10000:.1f}",
                 'ROI': f"{v['总订单金额']/_fc:.2f}" if _fc else '--',
                 '直接ROI': f"{_d_roi:.2f}" if _fc else '--',
-                '费率': f"{_fc/v['总订单金额']*100:.1f}%" if v['总订单金额'] else '--',
+                '费率': f"{_fc/_s_amt_cm*100:.2f}%" if _s_amt_cm else '--',
                 '转化率': f"{_cv:.1f}%" if _cv else '--',
                 '花费同比': f"<span style='color:{'#22c55e' if _fc_yoy and '+' in _fc_yoy else '#dc2626' if _fc_yoy and '-' in _fc_yoy else '#94a3b8'}'>{_fc_yoy}</span>",
                 '直接ROI同比': f"<span style='color:{'#22c55e' if _droi_yoy and '+' in _droi_yoy else '#dc2626' if _droi_yoy and '-' in _droi_yoy else '#94a3b8'}'>{_droi_yoy}</span>",
@@ -1813,6 +1836,17 @@ with tabs[1]:
             _dp[dt]['点击数'] += r.get('_点击数', 0)
             _dp[dt]['总订单金额'] += r.get('_总订单金额', 0)
             _dp[dt]['总加购数'] += r.get('_总加购数', 0)
+        # 按日期汇总销售支付金额（用于推广日明细费率）
+        _sales_amt_by_day = {}
+        for r in daily:
+            d = r.get('日期', '')
+            if len(d) == 7: d = d + '-01'
+            if not d or not (str(start) <= d <= str(end)): continue
+            if channel and r.get('渠道', '') not in channel: continue
+            if store and r.get('店铺', '') not in store: continue
+            if category and r.get('品类', '') not in category: continue
+            if model and r.get('型号', '') not in model: continue
+            _sales_amt_by_day[d] = _sales_amt_by_day.get(d, 0) + float(r.get('支付金额', 0) or 0)
         _pt = []
         for dt in sorted(_dp.keys()):
             v = _dp[dt]
@@ -1820,7 +1854,8 @@ with tabs[1]:
             _clk = v['点击数']
             _ctr = _clk / _imp if _imp else 0
             _roi = v['总订单金额'] / v['花费'] if v['花费'] else 0
-            _rate = v['花费'] / v['总订单金额'] * 100 if v['总订单金额'] else None
+            _s_day = _sales_amt_by_day.get(dt, 0)
+            _rate = v['花费'] / _s_day * 100 if _s_day else None
             _pt.append({
                 '日期': dt, '花费(万)': round(v['花费']/10000, 1), '展现数': f"{int(_imp):,}",
                 '点击数': f"{int(_clk):,}", '点击率': f"{_ctr*100:.2f}%",
@@ -1861,6 +1896,7 @@ with tabs[1]:
             _cpc_yoy, _ = _yoy_text(_cpc, (vy.get('花费', 0) / vy.get('点击数', 1)) if vy.get('点击数', 0) else None)
             _yc = vy.get('成交客户数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
             _cv_yoy, _ = _yoy_text(_cv, _yc) if _cv and _yc else ('--', '')
+            _s_mdl = _sales_by_model.get(k, 0)
             _sku_r.append({
                 '型号': k,
                 '花费(万)': f"{_fc/10000:.2f}",
@@ -1872,7 +1908,7 @@ with tabs[1]:
                 '直接成交(万)': f"{v['直接订单金额']/10000:.2f}",
                 'ROI': f"{v['总订单金额']/_fc:.2f}" if _fc else '--',
                 '直接ROI': f"{_d_roi:.2f}" if _fc else '--',
-                '费率': f"{_fc/v['总订单金额']*100:.2f}%" if v['总订单金额'] else '--',
+                '费率': f"{_fc/_s_mdl*100:.2f}%" if _s_mdl else '--',
                 '转化率': f"{_cv:.1f}%" if _cv else '--',
                 '花费同比': f"<span style='color:{'#22c55e' if _fc_yoy and '+' in _fc_yoy else '#dc2626' if _fc_yoy and '-' in _fc_yoy else '#94a3b8'}'>{_fc_yoy}</span>",
                 '直接ROI同比': f"<span style='color:{'#22c55e' if _droi_yoy and '+' in _droi_yoy else '#dc2626' if _droi_yoy and '-' in _droi_yoy else '#94a3b8'}'>{_droi_yoy}</span>",
@@ -1931,7 +1967,8 @@ with tabs[1]:
                 _da_w = f"¥{_wan(_da)}万" if _da >= 10000 else f"¥{_da:,.0f}"
                 _ri = _oa / _fc if _fc else 0
                 _dri = _da / _fc if _fc else 0
-                _rate = _fc / _oa * 100 if _oa else 0
+                _s_cat = _sales_by_cat.get(k, 0)
+                _rate = _fc / _s_cat * 100 if _s_cat else 0
                 _imp = v['展现数'] or 0; _clk = v['点击数'] or 0
                 _ctr_v = _clk / _imp * 100 if _imp else 0
                 _cpc_v = _fc / _clk if _clk else 0
@@ -1983,7 +2020,7 @@ with tabs[1]:
                 _da_w = f"¥{_wan(_da)}万" if _da >= 10000 else f"¥{_da:,.0f}"
                 _ri = _oa / _fc if _fc else 0
                 _dri = _da / _fc if _fc else 0
-                _rate = _fc / _oa * 100 if _oa else 0
+                _rate = _fc / _sales_total_amt * 100 if _sales_total_amt else 0
                 _imp = v['展现数'] or 0; _clk = v['点击数'] or 0
                 _ctr_v = _clk / _imp * 100 if _imp else 0
                 _cpc_v = _fc / _clk if _clk else 0
@@ -2442,6 +2479,46 @@ with tabs[2]:
                 _p_cmp_filtered.append(r)
             _p_cmp_raw = _p_cmp_filtered
 
+        # ── 销售支付金额预计算（按推广维度映射到销售维度，用于费率=花费/销售支付金额）──
+        _sales_dim_map_pc = {'_渠道': '渠道', '_店铺': '店铺', '_品类': '品类', '_型号': '型号'}
+        _sales_field_pc = _sales_dim_map_pc.get(_p_cmp_dim_field, None)
+        _p_sales_by_dim_cur = {}
+        _p_sales_by_dim_prev = {}
+        _p_sales_total_cur = 0
+        _p_sales_total_prev = 0
+        if _sales_field_pc:
+            for r in daily:
+                d = r.get('日期', '')
+                if len(d) == 7: d = d + '-01'
+                if not d: continue
+                if channel and r.get('渠道', '') not in channel: continue
+                if store and r.get('店铺', '') not in store: continue
+                if category and r.get('品类', '') not in category: continue
+                if model and r.get('型号', '') not in model: continue
+                amt = float(r.get('支付金额', 0) or 0)
+                dv = r.get(_sales_field_pc, '') or '未标注'
+                if today_s <= d <= today_e:
+                    _p_sales_by_dim_cur[dv] = _p_sales_by_dim_cur.get(dv, 0) + amt
+                    _p_sales_total_cur += amt
+                if prev_s <= d <= prev_e:
+                    _p_sales_by_dim_prev[dv] = _p_sales_by_dim_prev.get(dv, 0) + amt
+                    _p_sales_total_prev += amt
+        else:
+            # 产品线/营销场景没有对应销售维度，用销售总额
+            for r in daily:
+                d = r.get('日期', '')
+                if len(d) == 7: d = d + '-01'
+                if not d: continue
+                if channel and r.get('渠道', '') not in channel: continue
+                if store and r.get('店铺', '') not in store: continue
+                if category and r.get('品类', '') not in category: continue
+                if model and r.get('型号', '') not in model: continue
+                amt = float(r.get('支付金额', 0) or 0)
+                if today_s <= d <= today_e:
+                    _p_sales_total_cur += amt
+                if prev_s <= d <= prev_e:
+                    _p_sales_total_prev += amt
+
         def _p_group(rows, field):
             d = {}
             for r in rows:
@@ -2459,7 +2536,7 @@ with tabs[2]:
                 v['_total_roi'] = v['_总订单金额'] / v['_花费'] if v['_花费'] else 0
                 v['_direct_tcvr'] = v['_直接订单量'] / v['_点击数'] if v['_点击数'] else 0
                 v['_total_tcvr'] = v['_总成交订单量'] / v['_点击数'] if v['_点击数'] else 0
-                v['_fee_rate'] = v['_花费'] / v['_总订单金额'] if v['_总订单金额'] else 0
+                # _fee_rate 不在此预计算，改为在渲染时用销售支付金额动态计算
                 out.append(v)
             return sorted(out, key=lambda x: x['_花费'], reverse=True)
 
@@ -2471,7 +2548,7 @@ with tabs[2]:
 
         _p_metric_defs = [
             ('花费',        '_花费',         lambda v: f'¥{v:,.0f}',    '#fef3c7'),
-            ('费率',        '_fee_rate',     lambda v: f'{v*100:.2f}%', '#fee2e2'),
+            ('费率',        '_fee_rate',     lambda v: f'{v*100:.2f}%' if v is not None else '--', '#fee2e2'),
             ('CPC',         '_cpc',          lambda v: f'¥{v:.2f}',     '#fef3c7'),
             ('直接ROI',     '_direct_roi',   lambda v: f'{v:.2f}',      '#dcfce7'),
             ('总ROI',       '_total_roi',    lambda v: f'{v:.2f}',      '#ccfbf1'),
@@ -2489,6 +2566,12 @@ with tabs[2]:
             prev_r = _p_prev_map.get(name, {})
             _spend = r.get('_花费', 0) or 0
             _share = _spend / _p_total_spend if _p_total_spend else 0
+            # 按维度计算费率（花费/销售支付金额）
+            _s_amt_c = _p_sales_by_dim_cur.get(name, _p_sales_total_cur) if _sales_field_pc else _p_sales_total_cur
+            _s_amt_p = _p_sales_by_dim_prev.get(name, _p_sales_total_prev) if _sales_field_pc else _p_sales_total_prev
+            _fee_c = _spend / _s_amt_c if _s_amt_c else None
+            _fee_p = prev_r.get('_花费', 0) / _s_amt_p if _s_amt_p else None
+            r['_fee_rate'] = _fee_c  # 临时赋值供后续读取
             row = {
                 _p_cmp_dim_label: name,
                 '花费占比': f'{_share*100:.1f}%',
@@ -2530,10 +2613,12 @@ with tabs[2]:
             _p_tot_direct_orders_c = sum(r.get('_直接订单量', 0) or 0 for r in _p_cur_dim)
             _p_tot_direct_orders_p = sum(r.get('_直接订单量', 0) or 0 for r in _p_prev_dim)
             _p_sum_row = {_p_cmp_dim_label: '<b>合计</b>', '花费占比': '100%'}
+            # 合计行费率 = 总花费 / 总销售支付金额
+            _p_fee_c_total = _p_tot_spend_c / _p_sales_total_cur if _p_sales_total_cur else 0
+            _p_fee_p_total = _p_tot_spend_p / _p_sales_total_prev if _p_sales_total_prev else 0
             _p_tot_map = {
                 '花费':        (_p_tot_spend_c, _p_tot_spend_p),
-                '费率':        (_p_tot_spend_c / _p_tot_total_c if _p_tot_total_c else 0,
-                                _p_tot_spend_p / _p_tot_total_p if _p_tot_total_p else 0),
+                '费率':        (_p_fee_c_total, _p_fee_p_total),
                 'CPC':         (_p_tot_spend_c / _p_tot_clicks_c if _p_tot_clicks_c else 0,
                                 _p_tot_spend_p / _p_tot_clicks_p if _p_tot_clicks_p else 0),
                 '直接ROI':     (_p_tot_direct_c / _p_tot_spend_c if _p_tot_spend_c else 0,
@@ -4429,6 +4514,10 @@ with tabs[4]:
             p_cur  = _promo_sum(promo_cur_diag)
             p_prev = _promo_sum(promo_prev_diag)
 
+            # 销售支付金额（本期和对比期）
+            _diag_sales_cur = sum(float(r.get('支付金额', 0) or 0) for r in cur_data if r.get('支付金额'))
+            _diag_sales_prev = sum(float(r.get('支付金额', 0) or 0) for r in prev_data if r.get('支付金额'))
+
             p_fc_g   = (p_cur['花费']       - p_prev['花费'])       / p_prev['花费']       if p_prev['花费'] else None
             p_roi_cur  = p_cur['总订单金额']  / p_cur['花费']         if p_cur['花费']  else 0
             p_roi_prev = p_prev['总订单金额'] / p_prev['花费']        if p_prev['花费'] else 0
@@ -4439,8 +4528,8 @@ with tabs[4]:
             p_cpc_cur  = p_cur['花费']  / p_cur['点击数']            if p_cur['点击数']  else 0
             p_cpc_prev = p_prev['花费'] / p_prev['点击数']           if p_prev['点击数'] else 0
             p_cpc_g    = (p_cpc_cur - p_cpc_prev) / p_cpc_prev       if p_cpc_prev else None
-            p_rate_cur  = p_cur['花费']  / p_cur['总订单金额']  * 100 if p_cur['总订单金额']  else 0
-            p_rate_prev = p_prev['花费'] / p_prev['总订单金额'] * 100 if p_prev['总订单金额'] else 0
+            p_rate_cur  = p_cur['花费']  / _diag_sales_cur  * 100 if _diag_sales_cur  else 0
+            p_rate_prev = p_prev['花费'] / _diag_sales_prev * 100 if _diag_sales_prev else 0
             p_rate_g    = (p_rate_cur - p_rate_prev) / p_rate_prev    if p_rate_prev else None
 
             # 推广KPI 5卡片
