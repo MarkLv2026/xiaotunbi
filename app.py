@@ -350,8 +350,54 @@ with fc:
         mdl_opts = sorted({r.get('型号', '') for r in filtered_cat if r.get('型号')})
         model = _slicer('型号', mdl_opts, 'mdl')
 
+    # 对比模式选择（全局，影响所有tab）
+    st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
+    _cmp_row1, _cmp_row2 = st.columns([2, 2])
+    with _cmp_row1:
+        comp_mode = st.radio(
+            '对比模式',
+            ['本期 vs 上期(环比)', '本期 vs 去年同期(同比)', '自定义时间段对比'],
+            horizontal=True, key='global_comp_mode')
+    with _cmp_row2:
+        if comp_mode == '自定义时间段对比':
+            _cmp_c1, _cmp_c2 = st.columns(2)
+            with _cmp_c1:
+                cmp_start = st.date_input('对比期 开始', value=start - datetime.timedelta(days=30), key='cmp_start')
+            with _cmp_c2:
+                cmp_end = st.date_input('对比期 结束', value=end - datetime.timedelta(days=30), key='cmp_end')
+
 s = str(start)
 e = str(end)
+today_s = s
+today_e = e
+
+# 计算对比期（全局，供所有 Tab 使用）
+if comp_mode == '本期 vs 上期(环比)':
+    _cur_days = (end - start).days + 1
+    _b_end = start - datetime.timedelta(days=1)
+    _b_start = _b_end - datetime.timedelta(days=_cur_days - 1)
+    prev_s = str(_b_start)
+    prev_e = str(_b_end)
+    label_a = f'本期 {today_s} ~ {today_e}'
+    label_b = f'上期 {prev_s} ~ {prev_e}'
+elif comp_mode == '本期 vs 去年同期(同比)':
+    try:
+        _y_start = start.replace(year=start.year - 1)
+    except ValueError:
+        _y_start = start.replace(year=start.year - 1, day=28)
+    try:
+        _y_end = end.replace(year=end.year - 1)
+    except ValueError:
+        _y_end = end.replace(year=end.year - 1, day=28)
+    prev_s = str(_y_start)
+    prev_e = str(_y_end)
+    label_a = f'本期 {today_s} ~ {today_e}'
+    label_b = f'去年同期 {prev_s} ~ {prev_e}'
+else:
+    prev_s = str(cmp_start)
+    prev_e = str(cmp_end)
+    label_a = f'A期 {today_s} ~ {today_e}'
+    label_b = f'B期 {prev_s} ~ {prev_e}'
 
 METRICS = ['商品访客数', '商品浏览量', '商品加购人数', '商品加购件数', '支付买家数', '支付件数', '支付金额', '成功退款金额']
 
@@ -707,27 +753,33 @@ def _promo_yoy_rows(date_range_start, date_range_end):
     return out
 
 _yoy_cur = (end - start).days
-try:
-    _ystart = start.replace(year=start.year-1)
-except ValueError:
-    _ystart = start.replace(year=start.year-1, day=28)
-try:
-    _yend = end.replace(year=end.year-1)
-except ValueError:
-    _yend = end.replace(year=end.year-1, day=28)
+# 使用全局对比期 prev_s/prev_e（由对比模式决定）
+promo_prev = _promo_yoy_rows(prev_s, prev_e)
+promo_prev_fc = sum(r.get('_花费', 0) for r in promo_prev)
+promo_prev_amt = sum(r.get('_总订单金额', 0) for r in promo_prev)
+promo_prev_direct = sum(r.get('_直接订单金额', 0) for r in promo_prev)
+promo_prev_impress = sum(r.get('_展现数', 0) for r in promo_prev)
+promo_prev_clicks = sum(r.get('_点击数', 0) for r in promo_prev)
+promo_prev_roi = promo_prev_amt / promo_prev_fc if promo_prev_fc else 0
+promo_prev_droi = promo_prev_direct / promo_prev_fc if promo_prev_fc else 0
+promo_prev_cpc = promo_prev_fc / promo_prev_clicks if promo_prev_clicks else 0
+promo_prev_ctr = promo_prev_clicks / promo_prev_impress if promo_prev_impress else 0
+promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
+promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals['支付买家数'] else 0
 
-promo_yoy = _promo_yoy_rows(_ystart, _yend)
-promo_yoy_fc = sum(r.get('_花费', 0) for r in promo_yoy)
-promo_yoy_amt = sum(r.get('_总订单金额', 0) for r in promo_yoy)
-promo_yoy_direct = sum(r.get('_直接订单金额', 0) for r in promo_yoy)
-promo_yoy_impress = sum(r.get('_展现数', 0) for r in promo_yoy)
-promo_yoy_clicks = sum(r.get('_点击数', 0) for r in promo_yoy)
-promo_yoy_roi = promo_yoy_amt / promo_yoy_fc if promo_yoy_fc else 0
-promo_yoy_droi = promo_yoy_direct / promo_yoy_fc if promo_yoy_fc else 0
-promo_yoy_cpc = promo_yoy_fc / promo_yoy_clicks if promo_yoy_clicks else 0
-promo_yoy_ctr = promo_yoy_clicks / promo_yoy_impress if promo_yoy_impress else 0
-promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
-promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+# 兼容性别名（供 tabs[0]/tabs[1] 使用）
+promo_yoy = promo_prev
+promo_yoy_fc = promo_prev_fc
+promo_yoy_amt = promo_prev_amt
+promo_yoy_direct = promo_prev_direct
+promo_yoy_impress = promo_prev_impress
+promo_yoy_clicks = promo_prev_clicks
+promo_yoy_roi = promo_prev_roi
+promo_yoy_droi = promo_prev_droi
+promo_yoy_cpc = promo_prev_cpc
+promo_yoy_ctr = promo_prev_ctr
+promo_yoy_rate = promo_prev_rate
+promo_yoy_order_cost = promo_prev_order_cost
 
 # YoY 聚合辅助
 def _promo_agg(rows, key_field):
@@ -758,18 +810,19 @@ def _yoy_text(cur, prev):
 _mom_days = (end - start).days
 _mom_end = start - datetime.timedelta(days=1)
 _mom_start = _mom_end - datetime.timedelta(days=_mom_days)
-promo_mom = _promo_yoy_rows(_mom_start, _mom_end)
-promo_mom_fc = sum(r.get('_花费', 0) for r in promo_mom)
-promo_mom_amt = sum(r.get('_总订单金额', 0) for r in promo_mom)
-promo_mom_direct = sum(r.get('_直接订单金额', 0) for r in promo_mom)
-promo_mom_impress = sum(r.get('_展现数', 0) for r in promo_mom)
-promo_mom_clicks = sum(r.get('_点击数', 0) for r in promo_mom)
-promo_mom_roi = promo_mom_amt / promo_mom_fc if promo_mom_fc else 0
-promo_mom_droi = promo_mom_direct / promo_mom_fc if promo_mom_fc else 0
-promo_mom_cpc = promo_mom_fc / promo_mom_clicks if promo_mom_clicks else 0
-promo_mom_ctr = promo_mom_clicks / promo_mom_impress if promo_mom_impress else 0
-promo_mom_rate = promo_mom_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0  # 粗略用当前销售额作分母
-promo_mom_order_cost = promo_mom_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+# promo_mom 也使用全局对比期（由对比模式决定）
+promo_mom = promo_prev
+promo_mom_fc = promo_prev_fc
+promo_mom_amt = promo_prev_amt
+promo_mom_direct = promo_prev_direct
+promo_mom_impress = promo_prev_impress
+promo_mom_clicks = promo_prev_clicks
+promo_mom_roi = promo_prev_roi
+promo_mom_droi = promo_prev_droi
+promo_mom_cpc = promo_prev_cpc
+promo_mom_ctr = promo_prev_ctr
+promo_mom_rate = promo_prev_rate
+promo_mom_order_cost = promo_prev_order_cost
 
 def _promo_delta(cur, mom, yoy, suffix='%'):
     """推广指标环比/同比delta字符串，格式：'环比 +X% / 同比 +Y%'"""
@@ -1972,47 +2025,8 @@ with tabs[1]:
 with tabs[2]:
     st.markdown('<div class="section-title">时间段对比分析</div>', unsafe_allow_html=True)
 
-    comp_mode = st.radio('对比模式', ['本期 vs 上期(环比)', '本期 vs 去年同期(同比)', '自定义时间段对比'], horizontal=True)
-
-    today_s = str(start)
-    today_e = str(end)
-
-    if comp_mode == '本期 vs 上期(环比)':
-        cur_days = (end - start).days + 1
-        b_end = start - datetime.timedelta(days=1)
-        b_start = b_end - datetime.timedelta(days=cur_days - 1)
-        prev_s = str(b_start)
-        prev_e = str(b_end)
-        label_a = f'本期 {today_s} ~ {today_e}'
-        label_b = f'上期 {prev_s} ~ {prev_e}'
-    elif comp_mode == '本期 vs 去年同期(同比)':
-        try:
-            y_start = start.replace(year=start.year - 1)
-        except ValueError:
-            y_start = start.replace(year=start.year - 1, day=28)
-        try:
-            y_end = end.replace(year=end.year - 1)
-        except ValueError:
-            y_end = end.replace(year=end.year - 1, day=28)
-        prev_s = str(y_start)
-        prev_e = str(y_end)
-        label_a = f'本期 {today_s} ~ {today_e}'
-        label_b = f'去年同期 {prev_s} ~ {prev_e}'
-    else:
-        st.markdown('**选择对比时间段**')
-        cp1, cp2, cp3, cp4 = st.columns(4)
-        with cp1:
-            cmp_start = st.date_input('对比期 开始', value=start - datetime.timedelta(days=30), key='cmp_start')
-        with cp2:
-            cmp_end = st.date_input('对比期 结束', value=end - datetime.timedelta(days=30), key='cmp_end')
-        with cp3:
-            st.empty()
-        with cp4:
-            st.empty()
-        prev_s = str(cmp_start)
-        prev_e = str(cmp_end)
-        label_a = f'A期 {today_s} ~ {today_e}'
-        label_b = f'B期 {prev_s} ~ {prev_e}'
+    # 对比模式已在全局筛选器中设置（comp_mode/prev_s/prev_e/label_a/label_b），此处直接显示
+    st.info(f'当前对比模式：**{comp_mode}** | 本期：{label_a} | 对比期：{label_b}', icon='📊')
 
     def calc_period_summary(s0, e0):
         rows = []
