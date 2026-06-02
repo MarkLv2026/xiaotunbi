@@ -350,54 +350,32 @@ with fc:
         mdl_opts = sorted({r.get('型号', '') for r in filtered_cat if r.get('型号')})
         model = _slicer('型号', mdl_opts, 'mdl')
 
-    # 对比模式选择（全局，影响所有tab）
-    st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
-    _cmp_row1, _cmp_row2 = st.columns([2, 2])
-    with _cmp_row1:
-        comp_mode = st.radio(
-            '对比模式',
-            ['本期 vs 上期(环比)', '本期 vs 去年同期(同比)', '自定义时间段对比'],
-            horizontal=True, key='global_comp_mode')
-    with _cmp_row2:
-        if comp_mode == '自定义时间段对比':
-            _cmp_c1, _cmp_c2 = st.columns(2)
-            with _cmp_c1:
-                cmp_start = st.date_input('对比期 开始', value=start - datetime.timedelta(days=30), key='cmp_start')
-            with _cmp_c2:
-                cmp_end = st.date_input('对比期 结束', value=end - datetime.timedelta(days=30), key='cmp_end')
-
 s = str(start)
 e = str(end)
 today_s = s
 today_e = e
 
-# 计算对比期（全局，供所有 Tab 使用）
-if comp_mode == '本期 vs 上期(环比)':
-    _cur_days = (end - start).days + 1
-    _b_end = start - datetime.timedelta(days=1)
-    _b_start = _b_end - datetime.timedelta(days=_cur_days - 1)
-    prev_s = str(_b_start)
-    prev_e = str(_b_end)
-    label_a = f'本期 {today_s} ~ {today_e}'
-    label_b = f'上期 {prev_s} ~ {prev_e}'
-elif comp_mode == '本期 vs 去年同期(同比)':
-    try:
-        _y_start = start.replace(year=start.year - 1)
-    except ValueError:
-        _y_start = start.replace(year=start.year - 1, day=28)
-    try:
-        _y_end = end.replace(year=end.year - 1)
-    except ValueError:
-        _y_end = end.replace(year=end.year - 1, day=28)
-    prev_s = str(_y_start)
-    prev_e = str(_y_end)
-    label_a = f'本期 {today_s} ~ {today_e}'
-    label_b = f'去年同期 {prev_s} ~ {prev_e}'
-else:
-    prev_s = str(cmp_start)
-    prev_e = str(cmp_end)
-    label_a = f'A期 {today_s} ~ {today_e}'
-    label_b = f'B期 {prev_s} ~ {prev_e}'
+# 全局对比期（环比和同比固定计算，供 tabs[1] 推广分析和 tabs[4] 智能诊断使用）
+# tabs[2] 有自己的对比模式控件，独立控制其对比期
+_cur_days = (end - start).days + 1
+_b_end = start - datetime.timedelta(days=1)
+_b_start = _b_end - datetime.timedelta(days=_cur_days - 1)
+prev_s = str(_b_start)
+prev_e = str(_b_end)
+label_a = f'本期 {today_s} ~ {today_e}'
+label_b = f'上期 {prev_s} ~ {prev_e}'
+
+# 同比（供 tabs[4] 智能诊断使用）
+try:
+    _y_start = start.replace(year=start.year - 1)
+except ValueError:
+    _y_start = start.replace(year=start.year - 1, day=28)
+try:
+    _y_end = end.replace(year=end.year - 1)
+except ValueError:
+    _y_end = end.replace(year=end.year - 1, day=28)
+yoy_s = str(_y_start)
+yoy_e = str(_y_end)
 
 METRICS = ['商品访客数', '商品浏览量', '商品加购人数', '商品加购件数', '支付买家数', '支付件数', '支付金额', '成功退款金额']
 
@@ -753,7 +731,7 @@ def _promo_yoy_rows(date_range_start, date_range_end):
     return out
 
 _yoy_cur = (end - start).days
-# 使用全局对比期 prev_s/prev_e（由对比模式决定）
+# 使用全局环比对比期 prev_s/prev_e
 promo_prev = _promo_yoy_rows(prev_s, prev_e)
 promo_prev_fc = sum(r.get('_花费', 0) for r in promo_prev)
 promo_prev_amt = sum(r.get('_总订单金额', 0) for r in promo_prev)
@@ -2062,8 +2040,51 @@ with tabs[1]:
 with tabs[2]:
     st.markdown('<div class="section-title">时间段对比分析</div>', unsafe_allow_html=True)
 
-    # 对比模式已在全局筛选器中设置（comp_mode/prev_s/prev_e/label_a/label_b），此处直接显示
-    st.info(f'当前对比模式：**{comp_mode}** | 本期：{label_a} | 对比期：{label_b}', icon='📊')
+    # ── tabs[2] 独立的对比模式控件 ──
+    _cmp_row1, _cmp_row2 = st.columns([2, 2])
+    with _cmp_row1:
+        comp_mode = st.radio(
+            '对比模式',
+            ['本期 vs 上期(环比)', '本期 vs 去年同期(同比)', '自定义时间段对比'],
+            horizontal=True, key='tab2_comp_mode')
+    with _cmp_row2:
+        if comp_mode == '自定义时间段对比':
+            _cmp_c1, _cmp_c2 = st.columns(2)
+            with _cmp_c1:
+                cmp_start = st.date_input('对比期 开始', value=start - datetime.timedelta(days=30), key='tab2_cmp_start')
+            with _cmp_c2:
+                cmp_end = st.date_input('对比期 结束', value=end - datetime.timedelta(days=30), key='tab2_cmp_end')
+
+    # 计算 tabs[2] 的对比期
+    _tab2_cur_days = (end - start).days + 1
+    _tab2_b_end = start - datetime.timedelta(days=1)
+    _tab2_b_start = _tab2_b_end - datetime.timedelta(days=_tab2_cur_days - 1)
+
+    if comp_mode == '本期 vs 上期(环比)':
+        _t2_prev_s = str(_tab2_b_start)
+        _t2_prev_e = str(_tab2_b_end)
+        _t2_label_a = f'本期 {today_s} ~ {today_e}'
+        _t2_label_b = f'上期 {_t2_prev_s} ~ {_t2_prev_e}'
+    elif comp_mode == '本期 vs 去年同期(同比)':
+        try:
+            _t2_y_start = start.replace(year=start.year - 1)
+        except ValueError:
+            _t2_y_start = start.replace(year=start.year - 1, day=28)
+        try:
+            _t2_y_end = end.replace(year=end.year - 1)
+        except ValueError:
+            _t2_y_end = end.replace(year=end.year - 1, day=28)
+        _t2_prev_s = str(_t2_y_start)
+        _t2_prev_e = str(_t2_y_end)
+        _t2_label_a = f'本期 {today_s} ~ {today_e}'
+        _t2_label_b = f'去年同期 {_t2_prev_s} ~ {_t2_prev_e}'
+    else:
+        _t2_prev_s = str(cmp_start)
+        _t2_prev_e = str(cmp_end)
+        _t2_label_a = f'A期 {today_s} ~ {today_e}'
+        _t2_label_b = f'B期 {_t2_prev_s} ~ {_t2_prev_e}'
+
+    st.info(f'当前对比模式：**{comp_mode}** | 本期：{_t2_label_a} | 对比期：{_t2_label_b}', icon='📊')
 
     def calc_period_summary(s0, e0):
         rows = []
@@ -2085,7 +2106,7 @@ with tabs[2]:
         return summarize(rows)
 
     cur_sum = calc_period_summary(today_s, today_e)
-    prev_sum = calc_period_summary(prev_s, prev_e)
+    prev_sum = calc_period_summary(_t2_prev_s, _t2_prev_e)
 
     st.markdown('---')
     st.markdown('<div class="section-title" style="border-left:4px solid #1d4ed8;padding-left:12px;">📊 销售对比分析</div>', unsafe_allow_html=True)
@@ -2118,8 +2139,8 @@ with tabs[2]:
         with kpi_cols[idx]:
             st.markdown(
                 f'<p style="font-weight:800;color:#1d4ed8;font-size:13px;margin:0 0 6px 0;text-align:center;">{k_name}</p>'
-                f'<div class="comp-card" style="padding:10px;"><div class="comp-period">{label_a[:16]}</div><div class="comp-value" style="font-size:18px;">{cur_str}</div></div>'
-                f'<div class="comp-card" style="padding:10px;"><div class="comp-period">{label_b[:16]}</div><div class="comp-value" style="font-size:18px;color:#64748b;">{prev_str}</div></div>'
+                f'<div class="comp-card" style="padding:10px;"><div class="comp-period">{_t2_label_a[:16]}</div><div class="comp-value" style="font-size:18px;">{cur_str}</div></div>'
+                f'<div class="comp-card" style="padding:10px;"><div class="comp-period">{_t2_label_b[:16]}</div><div class="comp-value" style="font-size:18px;color:#64748b;">{prev_str}</div></div>'
                 f'<div class="comp-card" style="padding:10px;background:#f0f9ff;"><div class="comp-period">变化率</div><div style="font-size:16px;font-weight:700;">{delta_label}</div></div>',
                 unsafe_allow_html=True
             )
@@ -2171,7 +2192,7 @@ with tabs[2]:
             return rows
 
         promo_cur_rows = calc_promo_period(today_s, today_e)
-        promo_prev_rows = calc_promo_period(prev_s, prev_e)
+        promo_prev_rows = calc_promo_period(_t2_prev_s, _t2_prev_e)
 
         def promo_sum(rows):
             s = {}
@@ -2237,8 +2258,8 @@ with tabs[2]:
             with promo_cols[idx]:
                 st.markdown(
                     f'<p style="font-weight:800;color:#f59e0b;font-size:13px;margin:0 0 6px 0;text-align:center;">{k_name}</p>'
-                    f'<div class="comp-card" style="padding:10px;"><div class="comp-period">{label_a[:16]}</div><div class="comp-value" style="font-size:18px;">{cur_str}</div></div>'
-                    f'<div class="comp-card" style="padding:10px;"><div class="comp-period">{label_b[:16]}</div><div class="comp-value" style="font-size:18px;color:#64748b;">{prev_str}</div></div>'
+                    f'<div class="comp-card" style="padding:10px;"><div class="comp-period">{_t2_label_a[:16]}</div><div class="comp-value" style="font-size:18px;">{cur_str}</div></div>'
+                    f'<div class="comp-card" style="padding:10px;"><div class="comp-period">{_t2_label_b[:16]}</div><div class="comp-value" style="font-size:18px;color:#64748b;">{prev_str}</div></div>'
                     f'<div class="comp-card" style="padding:10px;background:#fffbeb;"><div class="comp-period">变化率</div><div style="font-size:16px;font-weight:700;">{delta_label}</div></div>',
                     unsafe_allow_html=True
                 )
@@ -2500,7 +2521,7 @@ with tabs[2]:
                 if today_s <= d <= today_e:
                     _p_sales_by_dim_cur[dv] = _p_sales_by_dim_cur.get(dv, 0) + amt
                     _p_sales_total_cur += amt
-                if prev_s <= d <= prev_e:
+                if _t2_prev_s <= d <= _t2_prev_e:
                     _p_sales_by_dim_prev[dv] = _p_sales_by_dim_prev.get(dv, 0) + amt
                     _p_sales_total_prev += amt
         else:
@@ -2516,7 +2537,7 @@ with tabs[2]:
                 amt = float(r.get('支付金额', 0) or 0)
                 if today_s <= d <= today_e:
                     _p_sales_total_cur += amt
-                if prev_s <= d <= prev_e:
+                if _t2_prev_s <= d <= _t2_prev_e:
                     _p_sales_total_prev += amt
 
         def _p_group(rows, field):
@@ -2541,7 +2562,7 @@ with tabs[2]:
             return sorted(out, key=lambda x: x['_花费'], reverse=True)
 
         _p_cur_dim = _p_group(get_period_rows(_p_cmp_raw, today_s, today_e, '_date'), _p_cmp_dim_field)
-        _p_prev_dim = _p_group(get_period_rows(_p_cmp_raw, prev_s, prev_e, '_date'), _p_cmp_dim_field)
+        _p_prev_dim = _p_group(get_period_rows(_p_cmp_raw, _t2_prev_s, _t2_prev_e, '_date'), _p_cmp_dim_field)
         _p_prev_map = {r[_p_cmp_dim_field]: r for r in _p_prev_dim}
 
         _p_total_spend = sum(r['_花费'] for r in _p_cur_dim) or 1
@@ -2572,13 +2593,17 @@ with tabs[2]:
             _fee_c = _spend / _s_amt_c if _s_amt_c else None
             _fee_p = prev_r.get('_花费', 0) / _s_amt_p if _s_amt_p else None
             r['_fee_rate'] = _fee_c  # 临时赋值供后续读取
+            # 同时给 prev_r 也赋上费率，供统一循环读取
+            prev_r['_fee_rate'] = _fee_p
             row = {
                 _p_cmp_dim_label: name,
                 '花费占比': f'{_share*100:.1f}%',
             }
             for _ml, _mf, _fmt, _color in _p_metric_defs:
                 cur_v = r.get(_mf, 0) or 0
-                prev_v = prev_r.get(_mf, 0) or 0
+                # 费率可能为 None（分母为0），保持 None 供 _fmt 正确显示 --
+                _pv = prev_r.get(_mf, 0)
+                prev_v = _pv if _pv is not None else 0
                 _cur_s = _fmt(cur_v)
                 _prev_s = _fmt(prev_v)
                 chg = (cur_v - prev_v) / prev_v if prev_v else None
@@ -2614,8 +2639,8 @@ with tabs[2]:
             _p_tot_direct_orders_p = sum(r.get('_直接订单量', 0) or 0 for r in _p_prev_dim)
             _p_sum_row = {_p_cmp_dim_label: '<b>合计</b>', '花费占比': '100%'}
             # 合计行费率 = 总花费 / 总销售支付金额
-            _p_fee_c_total = _p_tot_spend_c / _p_sales_total_cur if _p_sales_total_cur else 0
-            _p_fee_p_total = _p_tot_spend_p / _p_sales_total_prev if _p_sales_total_prev else 0
+            _p_fee_c_total = _p_tot_spend_c / _p_sales_total_cur if _p_sales_total_cur else None
+            _p_fee_p_total = _p_tot_spend_p / _p_sales_total_prev if _p_sales_total_prev else None
             _p_tot_map = {
                 '花费':        (_p_tot_spend_c, _p_tot_spend_p),
                 '费率':        (_p_fee_c_total, _p_fee_p_total),
@@ -3954,13 +3979,7 @@ _filter_label = ' | '.join(_filter_parts) if _filter_parts else '全域'
 
 with tabs[4]:
     st.markdown('<div class="section-title">🔍 智能诊断 — 人货场复盘模型</div>', unsafe_allow_html=True)
-    _cmp_label = f'{prev_s} ~ {prev_e}'
-    if comp_mode == '本期 vs 上期(环比)':
-        _cmp_label = f'上期 {prev_s} ~ {prev_e}'
-    elif comp_mode == '本期 vs 去年同期(同比)':
-        _cmp_label = f'去年同期 {prev_s} ~ {prev_e}'
-    elif comp_mode == '自定义时间段对比':
-        _cmp_label = f'B期 {prev_s} ~ {prev_e}'
+    _cmp_label = f'上期 {prev_s} ~ {prev_e}'
     st.caption(f'诊断区间：{s} ~ {e} | 筛选范围：{_filter_label} | 对比区间：{_cmp_label}')
 
     # ── 时间段对比横幅 ──
@@ -3986,7 +4005,7 @@ with tabs[4]:
         f"<div style='width:1px;height:40px;background:#475569;margin:0 8px;'></div>"
         f"<div style='text-align:center;'>"
         f"<div style='font-size:11px;color:#94a3b8;margin-bottom:4px;'>📋 对比模式</div>"
-        f"<div style='font-size:13px;font-weight:600;color:#e2e8f0;'>{comp_mode}</div>"
+        f"<div style='font-size:13px;font-weight:600;color:#e2e8f0;'>本期 vs 上期(环比)</div>"
         f"</div>"
         f"</div>",
         unsafe_allow_html=True)
@@ -4515,8 +4534,8 @@ with tabs[4]:
             p_prev = _promo_sum(promo_prev_diag)
 
             # 销售支付金额（本期和对比期）
-            _diag_sales_cur = sum(float(r.get('支付金额', 0) or 0) for r in cur_data if r.get('支付金额'))
-            _diag_sales_prev = sum(float(r.get('支付金额', 0) or 0) for r in prev_data if r.get('支付金额'))
+            _diag_sales_cur = sum(float(r.get('支付金额', 0) or 0) for r in cur_rows_all if r.get('支付金额'))
+            _diag_sales_prev = sum(float(r.get('支付金额', 0) or 0) for r in prev_rows_all if r.get('支付金额'))
 
             p_fc_g   = (p_cur['花费']       - p_prev['花费'])       / p_prev['花费']       if p_prev['花费'] else None
             p_roi_cur  = p_cur['总订单金额']  / p_cur['花费']         if p_cur['花费']  else 0
@@ -4803,7 +4822,7 @@ with tabs[4]:
         with st.spinner('正在生成麦肯锡风格复盘PPT...'):
             _ppt_path = _generate_mckinsey_ppt(
                 period_cur=_period_label_cur, period_prev=_period_label_prev,
-                comp_mode=comp_mode, filter_label=_filter_label,
+                comp_mode='本期 vs 上期(环比)', filter_label=_filter_label,
                 health_score=health_score, health_status=hv[0], health_color=hv[1],
                 gmv_g=gmv_g, vis_g=vis_g, cvr_g=cvr_g, aov_g=aov_g, ref_g=ref_g,
                 cur_sum=cur_sum, prev_sum=prev_sum_all,
