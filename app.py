@@ -3996,7 +3996,7 @@ _filter_label = ' | '.join(_filter_parts) if _filter_parts else '全域'
 
 with tabs[4]:
     st.markdown('<div class="section-title">🔍 智能诊断 — 人货场复盘模型</div>', unsafe_allow_html=True)
-    _cmp_label = f'上期 {prev_s} ~ {prev_e}'
+    _cmp_label = f'上期 {_t2_prev_s} ~ {_t2_prev_e}'
     st.caption(f'诊断区间：{s} ~ {e} | 筛选范围：{_filter_label} | 对比区间：{_cmp_label}')
 
     # ── 时间段对比横幅 ──
@@ -4051,7 +4051,7 @@ with tabs[4]:
     for r in data['daily']:
         d = r.get('日期', '')
         if len(d) == 7: d = d + '-01'
-        if prev_s <= d <= prev_e: prev_rows_all_raw.append(r)
+        if _t2_prev_s <= d <= _t2_prev_e: prev_rows_all_raw.append(r)
     # 对比期数据也应用同样的筛选条件
     prev_rows_all = []
     for r in prev_rows_all_raw:
@@ -4543,8 +4543,8 @@ with tabs[4]:
             st.markdown('<hr style="margin:16px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
             st.markdown('#### 📢 推广效率诊断（场：推广投放）')
 
-            promo_cur_diag  = [r for r in promo_rows if s      <= r.get('_date','') <= e     ]
-            promo_prev_diag = [r for r in promo_rows if prev_s <= r.get('_date','') <= prev_e]
+            promo_cur_diag  = [r for r in promo_rows if s            <= r.get('_date','') <= e           ]
+            promo_prev_diag = [r for r in promo_rows if _t2_prev_s <= r.get('_date','') <= _t2_prev_e]
             def _promo_sum(rows):
                 return {k: sum(r.get(f'_{k}',0) for r in rows) for k in ['花费','展现数','点击数','总订单金额','直接订单金额','总加购数']}
             p_cur  = _promo_sum(promo_cur_diag)
@@ -4839,7 +4839,7 @@ with tabs[4]:
         with st.spinner('正在生成麦肯锡风格复盘PPT...'):
             _ppt_path = _generate_mckinsey_ppt(
                 period_cur=_period_label_cur, period_prev=_period_label_prev,
-                comp_mode='本期 vs 上期(环比)', filter_label=_filter_label,
+                comp_mode=comp_mode, filter_label=_filter_label,
                 health_score=health_score, health_status=hv[0], health_color=hv[1],
                 gmv_g=gmv_g, vis_g=vis_g, cvr_g=cvr_g, aov_g=aov_g, ref_g=ref_g,
                 cur_sum=cur_sum, prev_sum=prev_sum_all,
