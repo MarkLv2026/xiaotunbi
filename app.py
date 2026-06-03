@@ -15,12 +15,108 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from dashboard_core import parse_sales_workbook, month_shift, rows_to_csv
 
-# 上次数据缓存路径
+# 上次数据缓存路径（容器本地临时缓存）
 _CACHE_DIR = pathlib.Path(__file__).parent / '.data_cache'
 _CACHE_DIR.mkdir(exist_ok=True)
 _CACHE_FILE = _CACHE_DIR / 'last_upload.xlsx'
 _CACHE_SALES = _CACHE_DIR / 'last_sales.xlsx'
 _CACHE_PROMO = _CACHE_DIR / 'last_promo.xlsx'
+
+# 仓库内置数据路径（GitHub 持久化，容器重启后仍有效）
+_REPO_DATA_DIR = pathlib.Path(__file__).parent / 'data'
+_REPO_SALES = _REPO_DATA_DIR / 'sales.xlsx'
+_REPO_PROMO = _REPO_DATA_DIR / 'promo.xlsx'
+
+
+def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> tuple[bool, str]:
+    """
+    通过 GitHub API 将文件推送到仓库。
+    需要在 Streamlit secrets 里配置：
+        [github]
+        token = "ghp_xxxx"
+        repo  = "MarkLv2026/xiaotunbi"
+    返回 (success: bool, message: str)
+    """
+    import base64
+    import json
+    import urllib.request
+    import urllib.error
+
+    # 读取 secrets
+    try:
+        _gh_secrets = st.secrets.get('github', {})
+        token = _gh_secrets.get('token', '')
+        repo  = _gh_secrets.get('repo', 'MarkLv2026/xiaotunbi')
+    except Exception:
+        return False, 'Streamlit secrets 未配置 [github] 节点，请联系管理员配置。'
+
+    if not token:
+        return False, 'GitHub token 未配置，请在 Streamlit Cloud → App settings → Secrets 填写。'
+
+    api_base = f'https://api.github.com/repos/{repo}'
+    headers_base = {
+        'Authorization': f'token {token}',
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github+json',
+    }
+
+    def _api(method: str, url: str, body=None):
+        data = json.dumps(body).encode('utf-8') if body else None
+        req = urllib.request.Request(url, data=data, headers=headers_base, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read().decode('utf-8')), None
+        except urllib.error.HTTPError as exc:
+            return None, f'HTTP {exc.code}: {exc.read().decode("utf-8", errors="replace")[:200]}'
+        except Exception as exc:
+            return None, str(exc)
+
+    # ── Step 1: 获取远程 HEAD ──
+    ref_data, err = _api('GET', f'{api_base}/git/refs/heads/main')
+    if err:
+        return False, f'获取远程 HEAD 失败: {err}'
+    remote_head_sha = ref_data['object']['sha']
+
+    # ── Step 2: 获取远程 HEAD 的 tree ──
+    commit_data, err = _api('GET', f'{api_base}/git/commits/{remote_head_sha}')
+    if err:
+        return False, f'获取 commit 详情失败: {err}'
+    base_tree_sha = commit_data['tree']['sha']
+
+    # ── Step 3: 创建 blob ──
+    b64_content = base64.b64encode(file_bytes).decode('ascii')
+    blob_data, err = _api('POST', f'{api_base}/git/blobs',
+                          {'content': b64_content, 'encoding': 'base64'})
+    if err:
+        return False, f'创建 blob 失败: {err}'
+    blob_sha = blob_data['sha']
+
+    # ── Step 4: 创建 tree ──
+    tree_data, err = _api('POST', f'{api_base}/git/trees', {
+        'base_tree': base_tree_sha,
+        'tree': [{'path': repo_path, 'mode': '100644', 'type': 'blob', 'sha': blob_sha}]
+    })
+    if err:
+        return False, f'创建 tree 失败: {err}'
+    new_tree_sha = tree_data['sha']
+
+    # ── Step 5: 创建 commit ──
+    new_commit_data, err = _api('POST', f'{api_base}/git/commits', {
+        'message': commit_msg,
+        'tree': new_tree_sha,
+        'parents': [remote_head_sha]
+    })
+    if err:
+        return False, f'创建 commit 失败: {err}'
+    new_commit_sha = new_commit_data['sha']
+
+    # ── Step 6: 更新 ref（fast-forward，不强推）──
+    _, err = _api('PATCH', f'{api_base}/git/refs/heads/main',
+                  {'sha': new_commit_sha, 'force': False})
+    if err:
+        return False, f'更新 ref 失败（可能存在并发冲突，请稍后重试）: {err}'
+
+    return True, f'同步成功 ✅ commit: {new_commit_sha[:7]}'
 
 def _slicer(label, options, key):
     """Empty=select all, click item in dropdown to choose"""
@@ -153,26 +249,64 @@ with st.sidebar:
             uploaded_sales = st.file_uploader('上传销售 Excel 数据源', type=['xlsx'], key='sales_up')
             if uploaded_sales is not None:
                 _CACHE_SALES.write_bytes(uploaded_sales.getvalue())
-                st.caption('✅ 销售数据已保存')
+                st.caption('✅ 销售数据已保存（本次会话）')
             elif _CACHE_SALES.exists():
                 mtime = datetime.datetime.fromtimestamp(_CACHE_SALES.stat().st_mtime)
                 st.caption(f'📂 销售数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
+            elif _REPO_SALES.exists():
+                mtime = datetime.datetime.fromtimestamp(_REPO_SALES.stat().st_mtime)
+                st.caption(f'☁️ 销售数据（云端）：{mtime.strftime("%Y-%m-%d %H:%M")}')
             else:
                 st.caption('请上传销售数据')
             st.markdown('**建议工作表**')
             st.caption('天猫数据源 / 京东抖音数据源')
+            # 同步按钮
+            _sales_ready = _CACHE_SALES.exists()
+            if _sales_ready:
+                if st.button('📤 同步销售数据到云端', use_container_width=True, key='sync_sales'):
+                    with st.spinner('正在同步销售数据到 GitHub...'):
+                        _ok, _msg = _push_xlsx_to_github(
+                            _CACHE_SALES.read_bytes(),
+                            'data/sales.xlsx',
+                            f'数据更新：销售数据 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}'
+                        )
+                    if _ok:
+                        st.success(_msg + '\n\n所有账号刷新后即可看到最新数据（约1分钟部署）')
+                    else:
+                        st.error(f'同步失败：{_msg}')
+            else:
+                st.caption('💡 上传数据后可同步到云端，使所有账号持久可见')
         elif data_type == '推广数据':
             uploaded_promo = st.file_uploader('上传推广 Excel（含京东/天猫推广sheet）', type=['xlsx'], key='promo_up')
             if uploaded_promo is not None:
                 _CACHE_PROMO.write_bytes(uploaded_promo.getvalue())
-                st.caption('✅ 推广数据已保存')
+                st.caption('✅ 推广数据已保存（本次会话）')
             elif _CACHE_PROMO.exists():
                 mtime = datetime.datetime.fromtimestamp(_CACHE_PROMO.stat().st_mtime)
                 st.caption(f'📂 推广数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
+            elif _REPO_PROMO.exists():
+                mtime = datetime.datetime.fromtimestamp(_REPO_PROMO.stat().st_mtime)
+                st.caption(f'☁️ 推广数据（云端）：{mtime.strftime("%Y-%m-%d %H:%M")}')
             else:
                 st.caption('请上传推广数据（京东+天猫）')
             st.markdown('**建议工作表**')
             st.caption('京东推广数据源 / 天猫推广数据源')
+            # 同步按钮
+            _promo_ready = _CACHE_PROMO.exists()
+            if _promo_ready:
+                if st.button('📤 同步推广数据到云端', use_container_width=True, key='sync_promo'):
+                    with st.spinner('正在同步推广数据到 GitHub...'):
+                        _ok, _msg = _push_xlsx_to_github(
+                            _CACHE_PROMO.read_bytes(),
+                            'data/promo.xlsx',
+                            f'数据更新：推广数据 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}'
+                        )
+                    if _ok:
+                        st.success(_msg + '\n\n所有账号刷新后即可看到最新数据（约1分钟部署）')
+                    else:
+                        st.error(f'同步失败：{_msg}')
+            else:
+                st.caption('💡 上传数据后可同步到云端，使所有账号持久可见')
         else:
             st.info('🚧 入口已预留，后续开放')
         if data_type in ('销售数据', '推广数据'):
@@ -288,14 +422,23 @@ def load_promo_data(file_bytes: bytes):
     return rows
 
 # Load sales data
+# 优先用本次会话上传的缓存，其次用仓库内置持久化文件（data/sales.xlsx）
 _sales_bytes = None
 if _CACHE_SALES.exists():
     _sales_bytes = _CACHE_SALES.read_bytes()
+elif _REPO_SALES.exists():
+    _sales_bytes = _REPO_SALES.read_bytes()
+    # 回写到缓存，避免每次重读文件
+    _CACHE_SALES.write_bytes(_sales_bytes)
 
 # Load promotion data
+# 优先用本次会话上传的缓存，其次用仓库内置持久化文件（data/promo.xlsx）
 _promo_bytes = None
 if _CACHE_PROMO.exists():
     _promo_bytes = _CACHE_PROMO.read_bytes()
+elif _REPO_PROMO.exists():
+    _promo_bytes = _REPO_PROMO.read_bytes()
+    _CACHE_PROMO.write_bytes(_promo_bytes)
 
 if not _sales_bytes:
     st.info('请在左侧上传销售数据。上传后，页面会生成可筛选、可导出的 BI 看板。')

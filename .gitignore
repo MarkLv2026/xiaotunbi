@@ -1,3 +1,8 @@
 __pycache__/
 .workbuddy/
 NUL
+# 本地临时缓存（不提交）
+.data_cache/
+# data/ 目录下的 xlsx 由同步按钮通过 API 推送，不走本地 git 提交
+# 若需要本地 git 管理数据文件，删除下面这行
+# data/*.xlsx
