@@ -537,6 +537,9 @@ def load_targets(file_bytes: bytes):
                     current_shop = str(c3).strip()
                 if c4 and current_shop:
                     indicator = str(c4).strip()
+                    # 跳过"实际达成"行——由系统根据销售数据自动计算
+                    if '达成' in indicator and '目标' not in indicator:
+                        continue
                     # 只取核心目标指标（跳过费率等派生指标）
                     row_data = {'店铺': current_shop, '指标': indicator}
                     for col_idx, date_str in date_cols:
@@ -554,6 +557,9 @@ def load_targets(file_bytes: bytes):
                     current_model = str(c4).strip()
                 if c5 and str(c5).strip():
                     indicator = str(c5).strip()
+                    # 跳过"实际达成"行
+                    if '达成' in indicator and '目标' not in indicator:
+                        continue
                     row_data = {'店铺': current_shop, '型号': current_model, '指标': indicator}
                     for col_idx, date_str in date_cols:
                         v = ws.cell(r, col_idx).value
@@ -5815,6 +5821,57 @@ with tabs[6]:
                 daily_by_model_date[key_md]['支付金额'] += pay_amt
                 daily_by_model_date[key_md]['支付件数'] += pay_qty
 
+            import uuid as _uuid_mod
+
+            def _build_fullscreen_js(tbl_id, title):
+                """为目标达成表格生成全屏 JS"""
+                return f"""
+<script>
+(function() {{
+    var overlay = null;
+    window['_fsOpen_{tbl_id}'] = function() {{
+        if (overlay) return;
+        var tblWrap = document.getElementById('{tbl_id}');
+        var content = tblWrap.innerHTML;
+        overlay = document.createElement('div');
+        overlay.id = '{tbl_id}_fs';
+        overlay.innerHTML = '<style>.styled-table{{width:100%;border-collapse:collapse;font-size:13px;}}.styled-table th{{background:#1e293b;color:#e2e8f0;border-bottom:2px solid #334155;padding:10px 8px;position:sticky;top:0;z-index:1;}}.styled-table td{{padding:7px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#1e293b;}}.styled-table tbody tr:nth-child(even){{background:#f8fafc;}}.styled-table tbody tr:hover{{background:#e2e8f0;}}</style>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">{title}</span><button onclick="window._fsClose_{tbl_id}()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">' + content + '</div>';
+        overlay.style.cssText = 'display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
+        document.body.appendChild(overlay);
+    }};
+    window['_fsClose_{tbl_id}'] = function() {{
+        if (overlay) {{ overlay.remove(); overlay = null; }}
+    }};
+}})();
+</script>
+"""
+
+            def _render_target_table(rows_data, header_cols, title, table_data):
+                """渲染带全屏按钮的目标达成表格"""
+                tbl_id = 'tgt_' + _uuid_mod.uuid4().hex[:8]
+                fs_js = _build_fullscreen_js(tbl_id, title)
+                fs_btn = (
+                    f'<button onclick="window._fsOpen_{tbl_id}()" '
+                    f'style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
+                    f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
+                )
+                html = fs_js
+                html += f'<div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-weight:700;font-size:14px;">{title}</span>{fs_btn}</div>'
+                html += f'<div id="{tbl_id}" class="styled-table-wrap"><table class="styled-table">'
+                html += '<thead><tr>'
+                for h in header_cols:
+                    html += f'<th style="text-align:center;white-space:nowrap;">{h}</th>'
+                html += '</tr></thead><tbody>'
+                for row in table_data:
+                    html += '<tr>'
+                    for j, cell in enumerate(row):
+                        align = 'left' if j == 0 else 'right'
+                        html += f'<td style="text-align:{align};white-space:nowrap;">{cell}</td>'
+                    html += '</tr>'
+                html += '</tbody></table></div>'
+                st.markdown(html, unsafe_allow_html=True)
+
             # ── 店铺目标达成表 ──
             st.subheader('🏪 店铺目标达成')
             if shop_rows:
@@ -5826,42 +5883,40 @@ with tabs[6]:
                         shops_order.append(s)
                         seen_shops.add(s)
 
-                all_shop_total_target = 0.0
-                all_shop_total_actual = 0.0
+                # 全店铺合计（排除天猫小豚）
+                all_shop_target = {}     # {指标: {date: total, ...}}
+                all_shop_actual = {}     # {指标: {date: total, ...}}
+                all_shop_total_target = {}  # {指标: sum}
+                all_shop_total_actual = {}
 
                 for shop_name in shops_order:
                     shop_data = [sr for sr in shop_rows if sr['店铺'] == shop_name]
                     if not shop_data:
                         continue
 
-                    st.markdown(f"**{shop_name}**")
-
-                    header_cols = ['指标'] + date_list + ['合计']
+                    header_cols = ['指标', '合计'] + date_list
                     table_data = []
 
-                    # 第一遍：列出原始指标行（目标/达成）
                     for sr in shop_data:
                         indicator = sr['指标']
+                        # 目标行
                         row_vals = [indicator]
+                        row_vals.append(f'{sr.get("合计", 0):,.0f}')
                         for d in date_list:
                             v = sr.get(d, 0) or 0
                             row_vals.append(f'{v:,.0f}' if v else '--')
-                        row_vals.append(f'{sr.get("合计", 0):,.0f}')
                         table_data.append(row_vals)
 
-                    # 第二遍：自动计算达成行（从销售数据匹配）
-                    for sr in shop_data:
-                        indicator = sr['指标']
-                        if '目标' not in indicator or '达成' in indicator or '费率' in indicator:
+                        # 自动计算达成行（从销售数据匹配）
+                        if '目标' not in indicator or '费率' in indicator:
                             continue
 
                         is_volume = '销量' in indicator or '件数' in indicator
-                        if is_volume:
-                            actual_label = '📊 自动' + indicator.replace('销量目标', '实际销量').replace('件数目标', '实际件数')
-                        else:
-                            actual_label = '📊 自动' + indicator.replace('销额目标', '销额达成').replace('成交金额目标', '成交金额达成')
+                        actual_label = indicator.replace('销量目标', '达成率(%)').replace('件数目标', '达成率(%)').replace('销额目标', '达成率(%)').replace('成交金额目标', '达成率(%)')
+                        if '达成率' not in actual_label:
+                            actual_label = indicator + '达成率(%)'
 
-                        row_vals = [actual_label]
+                        row_vals2 = [actual_label]
                         shop_total_target = 0.0
                         shop_total_actual = 0.0
                         for d in date_list:
@@ -5875,47 +5930,75 @@ with tabs[6]:
                             if target_val > 0:
                                 rate = actual_val / target_val * 100
                                 color = '#22c55e' if rate >= 100 else '#ef4444' if rate < 80 else '#f59e0b'
-                                row_vals.append(f'<span style="color:{color};font-weight:bold;">{_wan(actual_val)} ({rate:.0f}%)</span>')
+                                row_vals2.append(f'<span style="color:{color};font-weight:bold;">{rate:.1f}%</span>')
                             else:
-                                row_vals.append(f'{_wan(actual_val)}')
+                                row_vals2.append('--')
 
                         shop_rate = shop_total_actual / shop_total_target * 100 if shop_total_target > 0 else 0
                         tc = '#22c55e' if shop_rate >= 100 else '#ef4444' if shop_rate < 80 else '#f59e0b'
-                        row_vals.append(f'<span style="color:{tc};font-weight:bold;">{_wan(shop_total_actual)} ({shop_rate:.0f}%)</span>')
-                        table_data.append(row_vals)
+                        row_vals2.append(f'<span style="color:{tc};font-weight:bold;">{shop_rate:.1f}%</span>')
+                        table_data.append(row_vals2)
 
-                        all_shop_total_target += shop_total_target
-                        all_shop_total_actual += shop_total_actual
+                        # 累计全店铺数据（排除天猫小豚）
+                        if shop_name != '天猫小豚':
+                            key_ind = indicator
+                            if key_ind not in all_shop_target:
+                                all_shop_target[key_ind] = {}
+                                all_shop_actual[key_ind] = {}
+                            for d in date_list:
+                                all_shop_target[key_ind][d] = all_shop_target[key_ind].get(d, 0.0) + (sr.get(d, 0) or 0)
+                                if is_volume:
+                                    all_shop_actual[key_ind][d] = all_shop_actual[key_ind].get(d, 0.0) + daily_by_shop_date.get((shop_name, d), {}).get('支付件数', 0)
+                                else:
+                                    all_shop_actual[key_ind][d] = all_shop_actual[key_ind].get(d, 0.0) + daily_by_shop_date.get((shop_name, d), {}).get('支付金额', 0)
+                            all_shop_total_target[key_ind] = all_shop_total_target.get(key_ind, 0.0) + shop_total_target
+                            all_shop_total_actual[key_ind] = all_shop_total_actual.get(key_ind, 0.0) + shop_total_actual
 
                     if table_data:
-                        html = '<div class="styled-table-wrap"><table class="styled-table">'
-                        html += '<thead><tr>'
-                        for h in header_cols:
-                            html += f'<th style="text-align:center;white-space:nowrap;">{h}</th>'
-                        html += '</tr></thead><tbody>'
-                        for i, row in enumerate(table_data):
-                            html += '<tr>'
-                            for j, cell in enumerate(row):
-                                align = 'left' if j == 0 else 'right'
-                                html += f'<td style="text-align:{align};white-space:nowrap;">{cell}</td>'
-                            html += '</tr>'
-                        html += '</tbody></table></div>'
-                        st.markdown(html, unsafe_allow_html=True)
+                        _render_target_table(shop_data, header_cols, shop_name, table_data)
 
-                # 全店铺合计卡
-                all_rate = all_shop_total_actual / all_shop_total_target * 100 if all_shop_total_target > 0 else 0
-                arc = '#22c55e' if all_rate >= 100 else '#ef4444' if all_rate < 80 else '#f59e0b'
-                st.markdown(
-                    f'<div style="background:#1e293b;padding:12px 16px;border-radius:8px;margin-bottom:20px;">'
-                    f'<span style="color:#94a3b8;">全店铺目标合计：</span>'
-                    f'<span style="color:#e2e8f0;font-size:18px;font-weight:bold;">{_wan(all_shop_total_target)}</span>'
-                    f'<span style="color:#94a3b8;margin-left:24px;">实际合计：</span>'
-                    f'<span style="color:{arc};font-size:18px;font-weight:bold;">{_wan(all_shop_total_actual)}</span>'
-                    f'<span style="color:#94a3b8;margin-left:24px;">达成率：</span>'
-                    f'<span style="color:{arc};font-size:18px;font-weight:bold;">{all_rate:.1f}%</span>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
+                # ── 全店铺合计（排除天猫小豚）──
+                if all_shop_target:
+                    st.subheader('🏢 全店铺合计达成（不含天猫小豚）')
+                    header_cols = ['指标', '合计'] + date_list
+                    table_data = []
+                    for indicator in all_shop_target:
+                        # 目标行
+                        row_vals = [indicator]
+                        grand_target_sum = 0.0
+                        for d in date_list:
+                            v = all_shop_target[indicator].get(d, 0)
+                            grand_target_sum += v
+                        row_vals.append(f'{grand_target_sum:,.0f}')
+                        for d in date_list:
+                            v = all_shop_target[indicator].get(d, 0)
+                            row_vals.append(f'{v:,.0f}' if v else '--')
+                        table_data.append(row_vals)
+
+                        # 达成率行
+                        if '目标' not in indicator or '费率' in indicator:
+                            continue
+                        actual_label = indicator.replace('销量目标', '达成率(%)').replace('件数目标', '达成率(%)').replace('销额目标', '达成率(%)').replace('成交金额目标', '达成率(%)')
+                        if '达成率' not in actual_label:
+                            actual_label = indicator + '达成率(%)'
+                        row_vals2 = [actual_label]
+                        grand_total_actual = all_shop_total_actual.get(indicator, 0)
+                        grand_total_target = all_shop_total_target.get(indicator, 0)
+                        grand_rate = grand_total_actual / grand_total_target * 100 if grand_total_target > 0 else 0
+                        gc = '#22c55e' if grand_rate >= 100 else '#ef4444' if grand_rate < 80 else '#f59e0b'
+                        row_vals2.append(f'<span style="color:{gc};font-weight:bold;">{grand_rate:.1f}%</span>')
+                        for d in date_list:
+                            t = all_shop_target[indicator].get(d, 0)
+                            a = all_shop_actual[indicator].get(d, 0)
+                            if t > 0:
+                                r = a / t * 100
+                                c = '#22c55e' if r >= 100 else '#ef4444' if r < 80 else '#f59e0b'
+                                row_vals2.append(f'<span style="color:{c};font-weight:bold;">{r:.1f}%</span>')
+                            else:
+                                row_vals2.append('--')
+                        table_data.append(row_vals2)
+
+                    _render_target_table([], header_cols, '全店铺合计（不含天猫小豚）', table_data)
             else:
                 st.info('该月份无店铺目标数据')
 
@@ -5930,33 +6013,29 @@ with tabs[6]:
                     model_groups[key].append(mr)
 
                 for (shop_name, model_name), mdata in model_groups.items():
-                    st.markdown(f"**{shop_name} · {model_name}**")
-
-                    header_cols = ['指标'] + date_list + ['合计']
+                    header_cols = ['指标', '合计'] + date_list
                     table_data = []
 
                     for mr in mdata:
                         indicator = mr['指标']
+                        # 目标行
                         row_vals = [indicator]
+                        row_vals.append(f'{mr.get("合计", 0):,.0f}')
                         for d in date_list:
                             v = mr.get(d, 0) or 0
                             row_vals.append(f'{v:,.0f}' if v else '--')
-                        row_vals.append(f'{mr.get("合计", 0):,.0f}')
                         table_data.append(row_vals)
 
-                    # 自动计算达成行
-                    for mr in mdata:
-                        indicator = mr['指标']
-                        if '目标' not in indicator or '达成' in indicator or '费率' in indicator:
+                        # 自动计算达成率行
+                        if '目标' not in indicator or '费率' in indicator:
                             continue
 
                         is_volume = '销量' in indicator or '件数' in indicator
-                        if is_volume:
-                            actual_label = '📊 自动' + indicator.replace('销量目标', '实际销量').replace('件数目标', '实际件数')
-                        else:
-                            actual_label = '📊 自动' + indicator.replace('销额目标', '销额达成').replace('成交金额目标', '成交金额达成')
+                        actual_label = indicator.replace('销量目标', '达成率(%)').replace('件数目标', '达成率(%)').replace('销额目标', '达成率(%)').replace('成交金额目标', '达成率(%)')
+                        if '达成率' not in actual_label:
+                            actual_label = indicator + '达成率(%)'
 
-                        row_vals = [actual_label]
+                        row_vals2 = [actual_label]
                         mdl_total_target = 0.0
                         mdl_total_actual = 0.0
                         for d in date_list:
@@ -5970,28 +6049,16 @@ with tabs[6]:
                             if target_val > 0:
                                 rate = actual_val / target_val * 100
                                 color = '#22c55e' if rate >= 100 else '#ef4444' if rate < 80 else '#f59e0b'
-                                row_vals.append(f'<span style="color:{color};font-weight:bold;">{_wan(actual_val)} ({rate:.0f}%)</span>')
+                                row_vals2.append(f'<span style="color:{color};font-weight:bold;">{rate:.1f}%</span>')
                             else:
-                                row_vals.append(f'{_wan(actual_val)}')
+                                row_vals2.append('--')
 
                         mdl_rate = mdl_total_actual / mdl_total_target * 100 if mdl_total_target > 0 else 0
                         tc2 = '#22c55e' if mdl_rate >= 100 else '#ef4444' if mdl_rate < 80 else '#f59e0b'
-                        row_vals.append(f'<span style="color:{tc2};font-weight:bold;">{_wan(mdl_total_actual)} ({mdl_rate:.0f}%)</span>')
-                        table_data.append(row_vals)
+                        row_vals2.append(f'<span style="color:{tc2};font-weight:bold;">{mdl_rate:.1f}%</span>')
+                        table_data.append(row_vals2)
 
                     if table_data:
-                        html = '<div class="styled-table-wrap"><table class="styled-table">'
-                        html += '<thead><tr>'
-                        for h in header_cols:
-                            html += f'<th style="text-align:center;white-space:nowrap;">{h}</th>'
-                        html += '</tr></thead><tbody>'
-                        for i, row in enumerate(table_data):
-                            html += '<tr>'
-                            for j, cell in enumerate(row):
-                                align = 'left' if j == 0 else 'right'
-                                html += f'<td style="text-align:{align};white-space:nowrap;">{cell}</td>'
-                            html += '</tr>'
-                        html += '</tbody></table></div>'
-                        st.markdown(html, unsafe_allow_html=True)
+                        _render_target_table(mdata, header_cols, f'{shop_name} · {model_name}', table_data)
             else:
                 st.info('该月份无单品目标数据')
