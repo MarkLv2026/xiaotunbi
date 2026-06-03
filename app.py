@@ -6008,10 +6008,11 @@ with tabs[6]:
                         calc_total_target = 0.0
                         calc_total_actual = 0.0
                         for d in date_list:
-                            t = target_row.get(d, 0) or 0
                             a = actual_row.get(d, 0)
-                            calc_total_target += t
-                            calc_total_actual += a
+                            if a > 0:
+                                t = target_row.get(d, 0) or 0
+                                calc_total_target += t
+                                calc_total_actual += a
                         rate = calc_total_actual / calc_total_target * 100 if calc_total_target > 0 else 0
                         row_vals.append(_fmt_rate_cell(rate))
                         for d in date_list:
@@ -6026,16 +6027,18 @@ with tabs[6]:
 
                     elif '费率' in indicator and '目标' not in indicator:
                         # 实际费率 = 推广花费 / 实际成交金额 × 100
+                        # 合计列：只统计有实际销售数据的天数
                         actual_key = '实际成交金额' if model_name else '成交金额达成'
                         actual_row = actual_summary.get(actual_key, {})
                         row_vals = [indicator]
                         calc_total_spend = 0.0
                         calc_total_actual_amt = 0.0
                         for d in date_list:
-                            spend = _get_actual_value('实际投入金额', shop_name, d, model_name)
                             actual_amt = actual_row.get(d, 0)
-                            calc_total_spend += spend
-                            calc_total_actual_amt += actual_amt
+                            if actual_amt > 0:
+                                spend = _get_actual_value('实际投入金额', shop_name, d, model_name)
+                                calc_total_spend += spend
+                                calc_total_actual_amt += actual_amt
                         rate = calc_total_spend / calc_total_actual_amt * 100 if calc_total_actual_amt > 0 else 0
                         row_vals.append(_fmt_val(rate, is_pct=True))
                         for d in date_list:
@@ -6166,8 +6169,13 @@ with tabs[6]:
                                 target_data = all_shop_target.get(target_key, {})
                                 actual_data = all_shop_actual.get(actual_key, {})
                                 row_vals = [indicator]
-                                total_t = sum(target_data.values())
-                                total_a = sum(actual_data.values())
+                                total_t = 0.0
+                                total_a = 0.0
+                                for d in date_list:
+                                    a = actual_data.get(d, 0)
+                                    if a > 0:
+                                        total_t += target_data.get(d, 0)
+                                        total_a += a
                                 rate = total_a / total_t * 100 if total_t > 0 else 0
                                 row_vals.append(_fmt_rate_cell(rate))
                                 for d in date_list:
@@ -6186,8 +6194,13 @@ with tabs[6]:
                                 actual_amt_data = all_shop_actual.get(actual_amt_key, {})
                                 spend_data = all_shop_actual.get(spend_key, {})
                                 row_vals = [indicator]
-                                total_amt = sum(actual_amt_data.values())
-                                total_spend = sum(spend_data.values())
+                                total_amt = 0.0
+                                total_spend = 0.0
+                                for d in date_list:
+                                    amt = actual_amt_data.get(d, 0)
+                                    if amt > 0:
+                                        total_amt += amt
+                                        total_spend += spend_data.get(d, 0)
                                 rate = total_spend / total_amt * 100 if total_amt > 0 else 0
                                 row_vals.append(_fmt_val(rate, is_pct=True))
                                 for d in date_list:
