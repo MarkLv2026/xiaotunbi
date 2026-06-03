@@ -537,10 +537,7 @@ def load_targets(file_bytes: bytes):
                     current_shop = str(c3).strip()
                 if c4 and current_shop:
                     indicator = str(c4).strip()
-                    # 跳过"实际达成"行——由系统根据销售数据自动计算
-                    if '达成' in indicator and '目标' not in indicator:
-                        continue
-                    # 只取核心目标指标（跳过费率等派生指标）
+                    # 保留所有指标行（目标/实际/费率），渲染时分类处理
                     row_data = {'店铺': current_shop, '指标': indicator}
                     for col_idx, date_str in date_cols:
                         v = ws.cell(r, col_idx).value
@@ -557,9 +554,7 @@ def load_targets(file_bytes: bytes):
                     current_model = str(c4).strip()
                 if c5 and str(c5).strip():
                     indicator = str(c5).strip()
-                    # 跳过"实际达成"行
-                    if '达成' in indicator and '目标' not in indicator:
-                        continue
+                    # 保留所有指标行（目标/实际/费率），渲染时分类处理
                     row_data = {'店铺': current_shop, '型号': current_model, '指标': indicator}
                     for col_idx, date_str in date_cols:
                         v = ws.cell(r, col_idx).value
@@ -5799,7 +5794,7 @@ with tabs[6]:
                 st.warning('请先上传销售数据，才能自动计算达成率')
                 st.stop()
 
-            # 预计算每日销售汇总
+            # ── 预计算销售日汇总（店铺+单品）──
             daily_by_shop_date = {}
             daily_by_model_date = {}
             for r in daily:
@@ -5821,7 +5816,74 @@ with tabs[6]:
                 daily_by_model_date[key_md]['支付金额'] += pay_amt
                 daily_by_model_date[key_md]['支付件数'] += pay_qty
 
+            # ── 预计算推广花费日汇总（按店铺+日期）──
+            promo_by_shop_date = {}
+            if promo_rows:
+                for r in promo_rows:
+                    p_shop = r.get('_店铺', '')
+                    p_date = r.get('_date', '')
+                    p_spend = r.get('_花费', 0.0)
+                    key_ps = (p_shop, p_date)
+                    if key_ps not in promo_by_shop_date:
+                        promo_by_shop_date[key_ps] = 0.0
+                    promo_by_shop_date[key_ps] += p_spend
+
             import uuid as _uuid_mod
+
+            def _indicator_type(indicator):
+                """判断指标类型: 'target'=目标值, 'actual'=实际值(需填充), 'calc'=计算值(公式)"""
+                # 计算行（需要公式计算）
+                if '达成率' in indicator:
+                    return 'calc'
+                if indicator in ('实际费率', '实际费率(%)'):
+                    return 'calc'
+                # 实际值行（需从销售/推广数据填充）
+                if '实际' in indicator or '达成' in indicator:
+                    return 'actual'
+                # 其余为目标行
+                return 'target'
+
+            def _get_actual_value(indicator, shop_name, d, model_name=''):
+                """根据指标名称和店铺/单品，从销售或推广数据中获取实际值"""
+                if model_name:
+                    sd = daily_by_model_date.get((shop_name, model_name, d), {})
+                else:
+                    sd = daily_by_shop_date.get((shop_name, d), {})
+                promo_val = promo_by_shop_date.get((shop_name, d), 0.0)
+
+                # 金额类实际值
+                if '成交金额' in indicator or '销额' in indicator or '支付金额' in indicator:
+                    return sd.get('支付金额', 0.0)
+                # 件数类实际值
+                if '件数' in indicator or '支付件数' in indicator or '销量' in indicator:
+                    return sd.get('支付件数', 0.0)
+                # 推广花费
+                if '投入' in indicator or '花费' in indicator:
+                    return promo_val
+                # 默认
+                return 0.0
+
+            def _get_target_row_by_indicator(rows_data, target_indicator):
+                """从目标行列表中查找对应目标值行（按指标名匹配）"""
+                for tr in rows_data:
+                    if tr['指标'] == target_indicator:
+                        return tr
+                return None
+
+            def _fmt_val(v, is_pct=False):
+                """格式化数值：金额用千分位，百分比保留1位"""
+                if is_pct:
+                    return f'{v:.1f}%'
+                if v == 0:
+                    return '--'
+                return f'{v:,.0f}'
+
+            def _fmt_rate_cell(rate_val):
+                """格式化达成率单元格，带颜色"""
+                if rate_val is None:
+                    return '--'
+                color = '#22c55e' if rate_val >= 100 else '#ef4444' if rate_val < 80 else '#f59e0b'
+                return f'<span style="color:{color};font-weight:bold;">{rate_val:.1f}%</span>'
 
             def _build_fullscreen_js(tbl_id, title):
                 """为目标达成表格生成全屏 JS"""
@@ -5847,7 +5909,7 @@ with tabs[6]:
 </script>
 """
 
-            def _render_target_table(rows_data, header_cols, title, table_data):
+            def _render_target_table(header_cols, title, table_data):
                 """渲染带全屏按钮的目标达成表格"""
                 tbl_id = 'tgt_' + _uuid_mod.uuid4().hex[:8]
                 fs_js = _build_fullscreen_js(tbl_id, title)
@@ -5872,7 +5934,111 @@ with tabs[6]:
                 html += '</tbody></table></div>'
                 st.markdown(html, unsafe_allow_html=True)
 
-            # ── 店铺目标达成表 ──
+            def _build_rows_for_entity(rows_data, shop_name, model_name=''):
+                """
+                为一个店铺或单品构建表格数据行。
+                两遍遍历：第一遍收集 target/actual 值，第二遍生成 calc 行。
+                返回 (table_data, actual_summary) 其中 actual_summary 用于全店铺合计。
+                """
+                table_data = []
+                actual_summary = {}  # {indicator: {'合计': val, date: val}}
+
+                # ── 第一遍：处理 target 和 actual 行，构建 actual_summary ──
+                calc_rows = []  # 暂存 calc 行，第二遍处理
+                for sr in rows_data:
+                    indicator = sr['指标']
+                    itype = _indicator_type(indicator)
+
+                    if itype == 'target':
+                        row_vals = [indicator]
+                        total = sr.get('合计', 0) or 0
+                        row_vals.append(f'{total:,.0f}')
+                        for d in date_list:
+                            v = sr.get(d, 0) or 0
+                            row_vals.append(f'{v:,.0f}' if v else '--')
+                        table_data.append(row_vals)
+
+                    elif itype == 'actual':
+                        actual_total = 0.0
+                        for d in date_list:
+                            av = _get_actual_value(indicator, shop_name, d, model_name)
+                            actual_total += av
+                        row_vals = [indicator]
+                        row_vals.append(f'{actual_total:,.0f}' if actual_total else '--')
+                        for d in date_list:
+                            av = _get_actual_value(indicator, shop_name, d, model_name)
+                            row_vals.append(f'{av:,.0f}' if av else '--')
+                        table_data.append(row_vals)
+                        # 记录实际值供计算行和全店铺合计使用
+                        actual_summary[indicator] = {'合计': actual_total}
+                        for d in date_list:
+                            actual_summary[indicator][d] = _get_actual_value(indicator, shop_name, d, model_name)
+
+                    elif itype == 'calc':
+                        calc_rows.append(sr)
+
+                # ── 第二遍：处理 calc 行（此时 actual_summary 已完整）──
+                for sr in calc_rows:
+                    indicator = sr['指标']
+
+                    if '达成率' in indicator:
+                        # 成交金额达成率 = 实际成交金额 / 成交金额目标 × 100
+                        actual_key = '实际成交金额' if model_name else '成交金额达成'
+                        target_key = '成交金额目标'
+                        actual_row = actual_summary.get(actual_key, {})
+                        target_row = _get_target_row_by_indicator(rows_data, target_key)
+                        if target_row is None:
+                            continue
+
+                        row_vals = [indicator]
+                        calc_total_target = 0.0
+                        calc_total_actual = 0.0
+                        for d in date_list:
+                            t = target_row.get(d, 0) or 0
+                            a = actual_row.get(d, 0)
+                            calc_total_target += t
+                            calc_total_actual += a
+                        rate = calc_total_actual / calc_total_target * 100 if calc_total_target > 0 else 0
+                        row_vals.append(_fmt_rate_cell(rate))
+                        for d in date_list:
+                            t = target_row.get(d, 0) or 0
+                            a = actual_row.get(d, 0)
+                            if t > 0:
+                                r = a / t * 100
+                                row_vals.append(_fmt_rate_cell(r))
+                            else:
+                                row_vals.append('--')
+                        table_data.append(row_vals)
+
+                    elif '费率' in indicator and '目标' not in indicator:
+                        # 实际费率 = 推广花费 / 实际成交金额 × 100
+                        actual_key = '实际成交金额' if model_name else '成交金额达成'
+                        actual_row = actual_summary.get(actual_key, {})
+                        row_vals = [indicator]
+                        calc_total_spend = 0.0
+                        calc_total_actual_amt = 0.0
+                        for d in date_list:
+                            spend = _get_actual_value('实际投入金额', shop_name, d, model_name)
+                            actual_amt = actual_row.get(d, 0)
+                            calc_total_spend += spend
+                            calc_total_actual_amt += actual_amt
+                        rate = calc_total_spend / calc_total_actual_amt * 100 if calc_total_actual_amt > 0 else 0
+                        row_vals.append(_fmt_val(rate, is_pct=True))
+                        for d in date_list:
+                            spend = _get_actual_value('实际投入金额', shop_name, d, model_name)
+                            actual_amt = actual_row.get(d, 0)
+                            if actual_amt > 0:
+                                r = spend / actual_amt * 100
+                                row_vals.append(_fmt_val(r, is_pct=True))
+                            else:
+                                row_vals.append('--')
+                        table_data.append(row_vals)
+
+                return table_data, actual_summary
+
+            # ═══════════════════════════════════════════════
+            # 店铺目标达成表
+            # ═══════════════════════════════════════════════
             st.subheader('🏪 店铺目标达成')
             if shop_rows:
                 shops_order = []
@@ -5884,10 +6050,8 @@ with tabs[6]:
                         seen_shops.add(s)
 
                 # 全店铺合计（排除天猫小豚）
-                all_shop_target = {}     # {指标: {date: total, ...}}
-                all_shop_actual = {}     # {指标: {date: total, ...}}
-                all_shop_total_target = {}  # {指标: sum}
-                all_shop_total_actual = {}
+                all_shop_target = {}    # {指标: {date: val}}
+                all_shop_actual = {}    # {指标: {date: val}}
 
                 for shop_name in shops_order:
                     shop_data = [sr for sr in shop_rows if sr['店铺'] == shop_name]
@@ -5895,114 +6059,106 @@ with tabs[6]:
                         continue
 
                     header_cols = ['指标', '合计'] + date_list
-                    table_data = []
-
-                    for sr in shop_data:
-                        indicator = sr['指标']
-                        # 目标行
-                        row_vals = [indicator]
-                        row_vals.append(f'{sr.get("合计", 0):,.0f}')
-                        for d in date_list:
-                            v = sr.get(d, 0) or 0
-                            row_vals.append(f'{v:,.0f}' if v else '--')
-                        table_data.append(row_vals)
-
-                        # 自动计算达成行（从销售数据匹配）
-                        if '目标' not in indicator or '费率' in indicator:
-                            continue
-
-                        is_volume = '销量' in indicator or '件数' in indicator
-                        actual_label = indicator.replace('销量目标', '达成率(%)').replace('件数目标', '达成率(%)').replace('销额目标', '达成率(%)').replace('成交金额目标', '达成率(%)')
-                        if '达成率' not in actual_label:
-                            actual_label = indicator + '达成率(%)'
-
-                        row_vals2 = [actual_label]
-                        shop_total_target = 0.0
-                        shop_total_actual = 0.0
-                        for d in date_list:
-                            target_val = sr.get(d, 0) or 0
-                            if is_volume:
-                                actual_val = daily_by_shop_date.get((shop_name, d), {}).get('支付件数', 0)
-                            else:
-                                actual_val = daily_by_shop_date.get((shop_name, d), {}).get('支付金额', 0)
-                            shop_total_target += target_val
-                            shop_total_actual += actual_val
-                            if target_val > 0:
-                                rate = actual_val / target_val * 100
-                                color = '#22c55e' if rate >= 100 else '#ef4444' if rate < 80 else '#f59e0b'
-                                row_vals2.append(f'<span style="color:{color};font-weight:bold;">{rate:.1f}%</span>')
-                            else:
-                                row_vals2.append('--')
-
-                        shop_rate = shop_total_actual / shop_total_target * 100 if shop_total_target > 0 else 0
-                        tc = '#22c55e' if shop_rate >= 100 else '#ef4444' if shop_rate < 80 else '#f59e0b'
-                        row_vals2.append(f'<span style="color:{tc};font-weight:bold;">{shop_rate:.1f}%</span>')
-                        table_data.append(row_vals2)
-
-                        # 累计全店铺数据（排除天猫小豚）
-                        if shop_name != '天猫小豚':
-                            key_ind = indicator
-                            if key_ind not in all_shop_target:
-                                all_shop_target[key_ind] = {}
-                                all_shop_actual[key_ind] = {}
-                            for d in date_list:
-                                all_shop_target[key_ind][d] = all_shop_target[key_ind].get(d, 0.0) + (sr.get(d, 0) or 0)
-                                if is_volume:
-                                    all_shop_actual[key_ind][d] = all_shop_actual[key_ind].get(d, 0.0) + daily_by_shop_date.get((shop_name, d), {}).get('支付件数', 0)
-                                else:
-                                    all_shop_actual[key_ind][d] = all_shop_actual[key_ind].get(d, 0.0) + daily_by_shop_date.get((shop_name, d), {}).get('支付金额', 0)
-                            all_shop_total_target[key_ind] = all_shop_total_target.get(key_ind, 0.0) + shop_total_target
-                            all_shop_total_actual[key_ind] = all_shop_total_actual.get(key_ind, 0.0) + shop_total_actual
+                    table_data, actual_summary = _build_rows_for_entity(shop_data, shop_name)
 
                     if table_data:
-                        _render_target_table(shop_data, header_cols, shop_name, table_data)
+                        _render_target_table(header_cols, shop_name, table_data)
+
+                    # 累计全店铺数据（排除天猫小豚）
+                    if shop_name != '天猫小豚':
+                        for sr in shop_data:
+                            indicator = sr['指标']
+                            itype = _indicator_type(indicator)
+                            if itype == 'target':
+                                if indicator not in all_shop_target:
+                                    all_shop_target[indicator] = {}
+                                for d in date_list:
+                                    all_shop_target[indicator][d] = all_shop_target[indicator].get(d, 0.0) + (sr.get(d, 0) or 0)
+                            elif itype == 'actual':
+                                if indicator not in all_shop_actual:
+                                    all_shop_actual[indicator] = {}
+                                for d in date_list:
+                                    all_shop_actual[indicator][d] = all_shop_actual[indicator].get(d, 0.0) + actual_summary.get(indicator, {}).get(d, 0)
 
                 # ── 全店铺合计（排除天猫小豚）──
                 if all_shop_target:
                     st.subheader('🏢 全店铺合计达成（不含天猫小豚）')
                     header_cols = ['指标', '合计'] + date_list
                     table_data = []
-                    for indicator in all_shop_target:
-                        # 目标行
-                        row_vals = [indicator]
-                        grand_target_sum = 0.0
-                        for d in date_list:
-                            v = all_shop_target[indicator].get(d, 0)
-                            grand_target_sum += v
-                        row_vals.append(f'{grand_target_sum:,.0f}')
-                        for d in date_list:
-                            v = all_shop_target[indicator].get(d, 0)
-                            row_vals.append(f'{v:,.0f}' if v else '--')
-                        table_data.append(row_vals)
 
-                        # 达成率行
-                        if '目标' not in indicator or '费率' in indicator:
-                            continue
-                        actual_label = indicator.replace('销量目标', '达成率(%)').replace('件数目标', '达成率(%)').replace('销额目标', '达成率(%)').replace('成交金额目标', '达成率(%)')
-                        if '达成率' not in actual_label:
-                            actual_label = indicator + '达成率(%)'
-                        row_vals2 = [actual_label]
-                        grand_total_actual = all_shop_total_actual.get(indicator, 0)
-                        grand_total_target = all_shop_total_target.get(indicator, 0)
-                        grand_rate = grand_total_actual / grand_total_target * 100 if grand_total_target > 0 else 0
-                        gc = '#22c55e' if grand_rate >= 100 else '#ef4444' if grand_rate < 80 else '#f59e0b'
-                        row_vals2.append(f'<span style="color:{gc};font-weight:bold;">{grand_rate:.1f}%</span>')
-                        for d in date_list:
-                            t = all_shop_target[indicator].get(d, 0)
-                            a = all_shop_actual[indicator].get(d, 0)
-                            if t > 0:
-                                r = a / t * 100
-                                c = '#22c55e' if r >= 100 else '#ef4444' if r < 80 else '#f59e0b'
-                                row_vals2.append(f'<span style="color:{c};font-weight:bold;">{r:.1f}%</span>')
-                            else:
-                                row_vals2.append('--')
-                        table_data.append(row_vals2)
+                    # 先收集所有指标类型
+                    all_indicators = sorted(set(list(all_shop_target.keys()) + list(all_shop_actual.keys())))
 
-                    _render_target_table([], header_cols, '全店铺合计（不含天猫小豚）', table_data)
+                    for indicator in all_indicators:
+                        itype = _indicator_type(indicator)
+
+                        if itype == 'target':
+                            row_vals = [indicator]
+                            grand_sum = sum(all_shop_target.get(indicator, {}).values())
+                            row_vals.append(f'{grand_sum:,.0f}')
+                            for d in date_list:
+                                v = all_shop_target.get(indicator, {}).get(d, 0)
+                                row_vals.append(f'{v:,.0f}' if v else '--')
+                            table_data.append(row_vals)
+
+                        elif itype == 'actual':
+                            row_vals = [indicator]
+                            grand_sum = sum(all_shop_actual.get(indicator, {}).values())
+                            row_vals.append(f'{grand_sum:,.0f}' if grand_sum else '--')
+                            for d in date_list:
+                                v = all_shop_actual.get(indicator, {}).get(d, 0)
+                                row_vals.append(f'{v:,.0f}' if v else '--')
+                            table_data.append(row_vals)
+
+                        elif itype == 'calc':
+                            if '达成率' in indicator:
+                                target_key = '成交金额目标'
+                                actual_key = '成交金额达成'
+                                target_data = all_shop_target.get(target_key, {})
+                                actual_data = all_shop_actual.get(actual_key, {})
+                                row_vals = [indicator]
+                                total_t = sum(target_data.values())
+                                total_a = sum(actual_data.values())
+                                rate = total_a / total_t * 100 if total_t > 0 else 0
+                                row_vals.append(_fmt_rate_cell(rate))
+                                for d in date_list:
+                                    t = target_data.get(d, 0)
+                                    a = actual_data.get(d, 0)
+                                    if t > 0:
+                                        r = a / t * 100
+                                        row_vals.append(_fmt_rate_cell(r))
+                                    else:
+                                        row_vals.append('--')
+                                table_data.append(row_vals)
+
+                            elif '费率' in indicator and '目标' not in indicator:
+                                actual_amt_key = '成交金额达成'
+                                spend_key = '实际投入金额'
+                                actual_amt_data = all_shop_actual.get(actual_amt_key, {})
+                                spend_data = all_shop_actual.get(spend_key, {})
+                                row_vals = [indicator]
+                                total_amt = sum(actual_amt_data.values())
+                                total_spend = sum(spend_data.values())
+                                rate = total_spend / total_amt * 100 if total_amt > 0 else 0
+                                row_vals.append(_fmt_val(rate, is_pct=True))
+                                for d in date_list:
+                                    amt = actual_amt_data.get(d, 0)
+                                    spend = spend_data.get(d, 0)
+                                    if amt > 0:
+                                        r = spend / amt * 100
+                                        row_vals.append(_fmt_val(r, is_pct=True))
+                                    else:
+                                        row_vals.append('--')
+                                table_data.append(row_vals)
+
+                    if table_data:
+                        _render_target_table(header_cols, '全店铺合计（不含天猫小豚）', table_data)
             else:
                 st.info('该月份无店铺目标数据')
 
-            # ── 单品目标达成表 ──
+            # ═══════════════════════════════════════════════
+            # 单品目标达成表
+            # ═══════════════════════════════════════════════
             st.subheader('📦 单品目标达成')
             if model_rows:
                 model_groups = {}
@@ -6014,51 +6170,9 @@ with tabs[6]:
 
                 for (shop_name, model_name), mdata in model_groups.items():
                     header_cols = ['指标', '合计'] + date_list
-                    table_data = []
-
-                    for mr in mdata:
-                        indicator = mr['指标']
-                        # 目标行
-                        row_vals = [indicator]
-                        row_vals.append(f'{mr.get("合计", 0):,.0f}')
-                        for d in date_list:
-                            v = mr.get(d, 0) or 0
-                            row_vals.append(f'{v:,.0f}' if v else '--')
-                        table_data.append(row_vals)
-
-                        # 自动计算达成率行
-                        if '目标' not in indicator or '费率' in indicator:
-                            continue
-
-                        is_volume = '销量' in indicator or '件数' in indicator
-                        actual_label = indicator.replace('销量目标', '达成率(%)').replace('件数目标', '达成率(%)').replace('销额目标', '达成率(%)').replace('成交金额目标', '达成率(%)')
-                        if '达成率' not in actual_label:
-                            actual_label = indicator + '达成率(%)'
-
-                        row_vals2 = [actual_label]
-                        mdl_total_target = 0.0
-                        mdl_total_actual = 0.0
-                        for d in date_list:
-                            target_val = mr.get(d, 0) or 0
-                            if is_volume:
-                                actual_val = daily_by_model_date.get((shop_name, model_name, d), {}).get('支付件数', 0)
-                            else:
-                                actual_val = daily_by_model_date.get((shop_name, model_name, d), {}).get('支付金额', 0)
-                            mdl_total_target += target_val
-                            mdl_total_actual += actual_val
-                            if target_val > 0:
-                                rate = actual_val / target_val * 100
-                                color = '#22c55e' if rate >= 100 else '#ef4444' if rate < 80 else '#f59e0b'
-                                row_vals2.append(f'<span style="color:{color};font-weight:bold;">{rate:.1f}%</span>')
-                            else:
-                                row_vals2.append('--')
-
-                        mdl_rate = mdl_total_actual / mdl_total_target * 100 if mdl_total_target > 0 else 0
-                        tc2 = '#22c55e' if mdl_rate >= 100 else '#ef4444' if mdl_rate < 80 else '#f59e0b'
-                        row_vals2.append(f'<span style="color:{tc2};font-weight:bold;">{mdl_rate:.1f}%</span>')
-                        table_data.append(row_vals2)
+                    table_data, _ = _build_rows_for_entity(mdata, shop_name, model_name)
 
                     if table_data:
-                        _render_target_table(mdata, header_cols, f'{shop_name} · {model_name}', table_data)
+                        _render_target_table(header_cols, f'{shop_name} · {model_name}', table_data)
             else:
                 st.info('该月份无单品目标数据')
