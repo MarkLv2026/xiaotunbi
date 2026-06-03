@@ -559,8 +559,11 @@ def load_targets(file_bytes: bytes):
                     for col_idx, date_str in date_cols:
                         v = ws.cell(r, col_idx).value
                         row_data[date_str] = float(v) if isinstance(v, (int, float)) else 0.0
+                    # 单品区合计列可能不在E列，由日期值自动求和
                     e_val = ws.cell(r, 5).value
-                    row_data['合计'] = float(e_val) if isinstance(e_val, (int, float)) else 0.0
+                    excel_total = float(e_val) if isinstance(e_val, (int, float)) else 0.0
+                    calc_total = sum(row_data[d] for d in [d for _, d in date_cols])
+                    row_data['合计'] = calc_total if calc_total else excel_total
                     model_rows.append(row_data)
 
         targets[ym] = {
@@ -5934,6 +5937,10 @@ with tabs[6]:
                 html += '</tbody></table></div>'
                 st.markdown(html, unsafe_allow_html=True)
 
+            def _is_rate_indicator(indicator):
+                """判断是否为费率类指标（需用%格式化）"""
+                return '费率' in indicator
+
             def _build_rows_for_entity(rows_data, shop_name, model_name=''):
                 """
                 为一个店铺或单品构建表格数据行。
@@ -5950,12 +5957,19 @@ with tabs[6]:
                     itype = _indicator_type(indicator)
 
                     if itype == 'target':
+                        is_rate = _is_rate_indicator(indicator)
                         row_vals = [indicator]
                         total = sr.get('合计', 0) or 0
-                        row_vals.append(f'{total:,.0f}')
+                        if is_rate:
+                            row_vals.append(_fmt_val(total * 100, is_pct=True))
+                        else:
+                            row_vals.append(f'{total:,.0f}')
                         for d in date_list:
                             v = sr.get(d, 0) or 0
-                            row_vals.append(f'{v:,.0f}' if v else '--')
+                            if is_rate:
+                                row_vals.append(_fmt_val(v * 100, is_pct=True))
+                            else:
+                                row_vals.append(f'{v:,.0f}' if v else '--')
                         table_data.append(row_vals)
 
                     elif itype == 'actual':
@@ -6052,6 +6066,8 @@ with tabs[6]:
                 # 全店铺合计（排除天猫小豚）
                 all_shop_target = {}    # {指标: {date: val}}
                 all_shop_actual = {}    # {指标: {date: val}}
+                # 加权费率分子: {date: Σ(成交金额目标 × 目标费率)}
+                all_shop_weighted_rate = {}
 
                 for shop_name in shops_order:
                     shop_data = [sr for sr in shop_rows if sr['店铺'] == shop_name]
@@ -6073,7 +6089,15 @@ with tabs[6]:
                                 if indicator not in all_shop_target:
                                     all_shop_target[indicator] = {}
                                 for d in date_list:
-                                    all_shop_target[indicator][d] = all_shop_target[indicator].get(d, 0.0) + (sr.get(d, 0) or 0)
+                                    v = sr.get(d, 0) or 0
+                                    all_shop_target[indicator][d] = all_shop_target[indicator].get(d, 0.0) + v
+                                # 如果是目标费率，累积加权分子: Σ(成交金额目标 × 目标费率)
+                                if '费率' in indicator:
+                                    amt_target_row = _get_target_row_by_indicator(shop_data, '成交金额目标')
+                                    for d in date_list:
+                                        amt_t = (amt_target_row.get(d, 0) or 0) if amt_target_row else 0
+                                        rate_v = sr.get(d, 0) or 0
+                                        all_shop_weighted_rate[d] = all_shop_weighted_rate.get(d, 0.0) + amt_t * rate_v
                             elif itype == 'actual':
                                 if indicator not in all_shop_actual:
                                     all_shop_actual[indicator] = {}
@@ -6086,19 +6110,44 @@ with tabs[6]:
                     header_cols = ['指标', '合计'] + date_list
                     table_data = []
 
-                    # 先收集所有指标类型
+                    # 先收集所有指标类型（包括 calc 行需要显式添加）
                     all_indicators = sorted(set(list(all_shop_target.keys()) + list(all_shop_actual.keys())))
+                    # 确保 calc 类指标也出现（达成率、实际费率等）
+                    all_indicators_calc = ['成交金额达成率', '实际费率']
+                    for ci in all_indicators_calc:
+                        if ci not in all_indicators:
+                            all_indicators.append(ci)
+                    all_indicators = sorted(all_indicators)
 
                     for indicator in all_indicators:
                         itype = _indicator_type(indicator)
 
                         if itype == 'target':
+                            is_rate = _is_rate_indicator(indicator)
                             row_vals = [indicator]
-                            grand_sum = sum(all_shop_target.get(indicator, {}).values())
-                            row_vals.append(f'{grand_sum:,.0f}')
-                            for d in date_list:
-                                v = all_shop_target.get(indicator, {}).get(d, 0)
-                                row_vals.append(f'{v:,.0f}' if v else '--')
+                            if is_rate and '目标费率' in indicator:
+                                # 全店铺目标费率 = Σ(成交金额目标 × 各店铺目标费率) / Σ(成交金额目标)
+                                # 按每日计算加权平均
+                                grand_sum_weighted = sum(all_shop_weighted_rate.values())
+                                grand_sum_amt = sum(all_shop_target.get('成交金额目标', {}).values())
+                                if grand_sum_amt > 0:
+                                    row_vals.append(_fmt_val(grand_sum_weighted / grand_sum_amt * 100, is_pct=True))
+                                else:
+                                    row_vals.append('--')
+                                for d in date_list:
+                                    amt_target = all_shop_target.get('成交金额目标', {}).get(d, 0)
+                                    weighted_v = all_shop_weighted_rate.get(d, 0)
+                                    if amt_target > 0:
+                                        r = weighted_v / amt_target * 100
+                                        row_vals.append(_fmt_val(r, is_pct=True))
+                                    else:
+                                        row_vals.append('--')
+                            else:
+                                grand_sum = sum(all_shop_target.get(indicator, {}).values())
+                                row_vals.append(f'{grand_sum:,.0f}')
+                                for d in date_list:
+                                    v = all_shop_target.get(indicator, {}).get(d, 0)
+                                    row_vals.append(f'{v:,.0f}' if v else '--')
                             table_data.append(row_vals)
 
                         elif itype == 'actual':
