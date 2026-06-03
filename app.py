@@ -21,11 +21,13 @@ _CACHE_DIR.mkdir(exist_ok=True)
 _CACHE_FILE = _CACHE_DIR / 'last_upload.xlsx'
 _CACHE_SALES = _CACHE_DIR / 'last_sales.xlsx'
 _CACHE_PROMO = _CACHE_DIR / 'last_promo.xlsx'
+_CACHE_TARGETS = _CACHE_DIR / 'last_targets.xlsx'
 
 # 仓库内置数据路径（GitHub 持久化，容器重启后仍有效）
 _REPO_DATA_DIR = pathlib.Path(__file__).parent / 'data'
 _REPO_SALES = _REPO_DATA_DIR / 'sales.xlsx'
 _REPO_PROMO = _REPO_DATA_DIR / 'promo.xlsx'
+_REPO_TARGETS = _REPO_DATA_DIR / 'targets.xlsx'
 
 
 def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> tuple[bool, str]:
@@ -244,7 +246,7 @@ with st.sidebar:
     
     if st.session_state.role == 'admin':
         st.header('数据源更新')
-        data_type = st.radio('数据类型', ['销售数据', '推广数据', '流量渠道（预留）', '销售目标（预留）'], horizontal=True)
+        data_type = st.radio('数据类型', ['销售数据', '推广数据', '销售目标', '流量渠道（预留）'], horizontal=True)
         if data_type == '销售数据':
             uploaded_sales = st.file_uploader('上传销售 Excel 数据源', type=['xlsx'], key='sales_up')
             if uploaded_sales is not None:
@@ -307,9 +309,40 @@ with st.sidebar:
                         st.error(f'同步失败：{_msg}')
             else:
                 st.caption('💡 上传数据后可同步到云端，使所有账号持久可见')
+        elif data_type == '销售目标':
+            uploaded_targets = st.file_uploader('上传目标拆解 Excel（含各月Sheet）', type=['xlsx'], key='targets_up')
+            if uploaded_targets is not None:
+                _CACHE_TARGETS.write_bytes(uploaded_targets.getvalue())
+                st.caption('✅ 目标数据已保存（本次会话）')
+            elif _CACHE_TARGETS.exists():
+                mtime = datetime.datetime.fromtimestamp(_CACHE_TARGETS.stat().st_mtime)
+                st.caption(f'📂 目标数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
+            elif _REPO_TARGETS.exists():
+                mtime = datetime.datetime.fromtimestamp(_REPO_TARGETS.stat().st_mtime)
+                st.caption(f'☁️ 目标数据（云端）：{mtime.strftime("%Y-%m-%d %H:%M")}')
+            else:
+                st.caption('请上传目标拆解 Excel（如：小豚电商重点工作跟进表）')
+            st.markdown('**建议工作表**')
+            st.caption('26年5月目标拆解及登记 / 26年6月目标拆解及登记 ...')
+            # 同步按钮
+            _targets_ready = _CACHE_TARGETS.exists()
+            if _targets_ready:
+                if st.button('📤 同步目标数据到云端', use_container_width=True, key='sync_targets'):
+                    with st.spinner('正在同步目标数据到 GitHub...'):
+                        _ok, _msg = _push_xlsx_to_github(
+                            _CACHE_TARGETS.read_bytes(),
+                            'data/targets.xlsx',
+                            f'数据更新：销售目标 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}'
+                        )
+                    if _ok:
+                        st.success(_msg + '\n\n所有账号刷新后即可看到最新数据（约1分钟部署）')
+                    else:
+                        st.error(f'同步失败：{_msg}')
+            else:
+                st.caption('💡 上传数据后可同步到云端，使所有账号持久可见')
         else:
             st.info('🚧 入口已预留，后续开放')
-        if data_type in ('销售数据', '推广数据'):
+        if data_type in ('销售数据', '推广数据', '销售目标'):
             st.divider()
             st.markdown('**核心口径**')
             st.caption('转化率=支付买家数/商品访客数；客单价=支付金额/支付买家数；ROI=总订单金额/花费')
@@ -421,6 +454,113 @@ def load_promo_data(file_bytes: bytes):
             rows.append(r)
     return rows
 
+@st.cache_data(show_spinner=False)
+def load_targets(file_bytes: bytes):
+    """解析目标 Excel，返回 {月份: {'shop': [...], 'model': [...]}}"""
+    import io, re
+    import openpyxl as _xl
+    from datetime import datetime as _dt, timedelta as _td
+
+    wb = _xl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    targets = {}
+    _excel_epoch = _dt(1899, 12, 30)
+
+    for ws_name in wb.sheetnames:
+        m = re.search(r'(\d+)年(\d+)月', ws_name)
+        if not m:
+            continue
+        year = int('20' + m.group(1))
+        month = int(m.group(2))
+        ym = f'{year}-{month:02d}'
+        ws = wb[ws_name]
+        max_row = ws.max_row
+        max_col = min(ws.max_column, 60)
+
+        # ── 1. 找日期行 ──
+        # 策略：找 C="店铺" D="指标" 的行，上一行就是日期行
+        date_row_idx = 0
+        date_cols = []  # [(col_idx, 'YYYY-MM-DD'), ...]
+        for r in range(1, min(20, max_row + 1)):
+            c3 = ws.cell(r, 3).value
+            c4 = ws.cell(r, 4).value
+            if c3 == '店铺' and c4 == '指标':
+                date_row_idx = r - 1  # 上一行
+                break
+        if date_row_idx < 1:
+            continue
+
+        for c in range(7, max_col + 1):
+            v = ws.cell(date_row_idx, c).value
+            if isinstance(v, (int, float)) and 40000 < v < 50000:
+                dt = _excel_epoch + _td(days=int(v))
+                date_cols.append((c, dt.strftime('%Y-%m-%d')))
+
+        if not date_cols:
+            continue
+
+        shop_rows = []
+        model_rows = []
+        in_model_section = False
+        current_shop = ''
+        current_model = ''
+
+        for r in range(date_row_idx + 2, max_row + 1):
+            c3 = ws.cell(r, 3).value
+            c4 = ws.cell(r, 4).value
+            c5 = ws.cell(r, 5).value
+
+            # 检测单品区开始
+            if c3 == '销售目标拆解':
+                in_model_section = True
+                continue
+            # 单品区的标题行
+            if in_model_section and c3 == '店铺' and c4 == '型号':
+                continue
+            # 跳过空行
+            if not c3 and not c4 and not c5:
+                continue
+
+            if not in_model_section:
+                # ── 店铺目标区 ──
+                if c3 and c3 != '合计':
+                    current_shop = str(c3).strip()
+                if c4 and current_shop and c4 != '合计':
+                    indicator = str(c4).strip()
+                    # 只取核心目标指标（跳过费率等派生指标）
+                    row_data = {'店铺': current_shop, '指标': indicator}
+                    for col_idx, date_str in date_cols:
+                        v = ws.cell(r, col_idx).value
+                        row_data[date_str] = float(v) if isinstance(v, (int, float)) else 0.0
+                    # 合计列(E)
+                    e_val = ws.cell(r, 5).value
+                    row_data['合计'] = float(e_val) if isinstance(e_val, (int, float)) else 0.0
+                    shop_rows.append(row_data)
+                if c3 == '合计':
+                    break  # 店铺区结束
+            else:
+                # ── 单品目标区 ──
+                if c3:
+                    current_shop = str(c3).strip()
+                if c4:
+                    current_model = str(c4).strip()
+                if c5:
+                    indicator = str(c5).strip()
+                    row_data = {'店铺': current_shop, '型号': current_model, '指标': indicator}
+                    for col_idx, date_str in date_cols:
+                        v = ws.cell(r, col_idx).value
+                        row_data[date_str] = float(v) if isinstance(v, (int, float)) else 0.0
+                    e_val = ws.cell(r, 5).value
+                    row_data['合计'] = float(e_val) if isinstance(e_val, (int, float)) else 0.0
+                    model_rows.append(row_data)
+
+        targets[ym] = {
+            'shop': shop_rows,
+            'model': model_rows,
+            'dates': [d for _, d in date_cols],
+        }
+
+    return targets
+
 # Load sales data
 # 优先用本次会话上传的缓存，其次用仓库内置持久化文件（data/sales.xlsx）
 _sales_bytes = None
@@ -459,6 +599,25 @@ if _promo_bytes:
         st.success(f'推广数据已加载：{len(promo_rows):,} 行')
     except Exception as e:
         st.warning(f'推广数据解析失败：{e}')
+
+# 目标数据加载
+targets = {}
+_targets_bytes = None
+if _CACHE_TARGETS.exists():
+    _targets_bytes = _CACHE_TARGETS.read_bytes()
+elif _REPO_TARGETS.exists():
+    _targets_bytes = _REPO_TARGETS.read_bytes()
+    _CACHE_TARGETS.write_bytes(_targets_bytes)
+
+if _targets_bytes:
+    try:
+        with st.spinner('正在解析目标数据...'):
+            targets = load_targets(_targets_bytes)
+        _total_months = len(targets)
+        if _total_months > 0:
+            st.success(f'目标数据已加载：{_total_months} 个月份')
+    except Exception as e:
+        st.warning(f'目标数据解析失败：{e}')
 
 meta = data['meta']
 st.success(f"销售数据已更新：{meta['dateRange'][0]} 至 {meta['dateRange'][1]}，共 {meta['rows']:,} 行；解析工作表：{'、'.join(meta.get('usedSheets', []))}")
@@ -1414,7 +1573,7 @@ def _generate_mckinsey_ppt(**kwargs):
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
 # ─────────────────────────────────────────────────────────────
-tabs = st.tabs(['经营总览', '📢 推广分析', '时间段对比', '趋势分析', '🔍 智能诊断', '📊 透视表分析'])
+tabs = st.tabs(['经营总览', '📢 推广分析', '时间段对比', '趋势分析', '🔍 智能诊断', '📊 透视表分析', '🎯 目标达成'])
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 1: 经营总览
@@ -5587,3 +5746,232 @@ with tabs[5]:
             _render_download_panel(_p2_dl, list(_p2_dl[0].keys()), 'pivot_promo.csv')
     else:
         st.info('请选择至少一个行维度和一个值指标')
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 6: 目标达成
+# ═══════════════════════════════════════════════════════════════
+with tabs[6]:
+    st.markdown("""<div class="hero" style="padding:20px 28px 10px;"><div><span class="badge">🎯</span><span class="badge">目标达成追踪</span></div>
+        <div class="hero-sub">店铺/单品日度目标 vs 实际达成，自动从销售数据填充</div></div>""", unsafe_allow_html=True)
+
+    if not targets:
+        st.info('📭 尚未上传目标数据。请在左侧「数据源更新」中选择「销售目标」上传 Excel，然后点击同步到云端。')
+    else:
+        _target_months = sorted(targets.keys(), reverse=True)
+        _sel_ym = st.selectbox('选择目标月份', _target_months,
+                               index=0, key='target_ym')
+
+        if _sel_ym and _sel_ym in targets:
+            tgt = targets[_sel_ym]
+            shop_rows = tgt.get('shop', [])
+            model_rows = tgt.get('model', [])
+            date_list = tgt.get('dates', [])
+
+            if not daily:
+                st.warning('请先上传销售数据，才能自动计算达成率')
+                st.stop()
+
+            # 预计算每日销售汇总
+            daily_by_shop_date = {}
+            daily_by_model_date = {}
+            for r in daily:
+                shop = r.get('店铺', '')
+                model_name = r.get('型号', '')
+                d = r.get('日期', '')
+                pay_amt = float(r.get('支付金额', 0) or 0)
+                pay_qty = float(r.get('支付件数', 0) or 0)
+
+                key_sd = (shop, d)
+                if key_sd not in daily_by_shop_date:
+                    daily_by_shop_date[key_sd] = {'支付金额': 0.0, '支付件数': 0.0}
+                daily_by_shop_date[key_sd]['支付金额'] += pay_amt
+                daily_by_shop_date[key_sd]['支付件数'] += pay_qty
+
+                key_md = (shop, model_name, d)
+                if key_md not in daily_by_model_date:
+                    daily_by_model_date[key_md] = {'支付金额': 0.0, '支付件数': 0.0}
+                daily_by_model_date[key_md]['支付金额'] += pay_amt
+                daily_by_model_date[key_md]['支付件数'] += pay_qty
+
+            # ── 店铺目标达成表 ──
+            st.subheader('🏪 店铺目标达成')
+            if shop_rows:
+                shops_order = []
+                seen_shops = set()
+                for sr in shop_rows:
+                    s = sr['店铺']
+                    if s not in seen_shops:
+                        shops_order.append(s)
+                        seen_shops.add(s)
+
+                all_shop_total_target = 0.0
+                all_shop_total_actual = 0.0
+
+                for shop_name in shops_order:
+                    shop_data = [sr for sr in shop_rows if sr['店铺'] == shop_name]
+                    if not shop_data:
+                        continue
+
+                    st.markdown(f"**{shop_name}**")
+
+                    header_cols = ['指标'] + date_list + ['合计']
+                    table_data = []
+
+                    # 第一遍：列出原始指标行（目标/达成）
+                    for sr in shop_data:
+                        indicator = sr['指标']
+                        row_vals = [indicator]
+                        for d in date_list:
+                            v = sr.get(d, 0) or 0
+                            row_vals.append(f'{v:,.0f}' if v else '--')
+                        row_vals.append(f'{sr.get("合计", 0):,.0f}')
+                        table_data.append(row_vals)
+
+                    # 第二遍：自动计算达成行（从销售数据匹配）
+                    for sr in shop_data:
+                        indicator = sr['指标']
+                        if '目标' not in indicator or '达成' in indicator or '费率' in indicator:
+                            continue
+
+                        is_volume = '销量' in indicator or '件数' in indicator
+                        if is_volume:
+                            actual_label = '📊 自动' + indicator.replace('销量目标', '实际销量').replace('件数目标', '实际件数')
+                        else:
+                            actual_label = '📊 自动' + indicator.replace('销额目标', '销额达成').replace('成交金额目标', '成交金额达成')
+
+                        row_vals = [actual_label]
+                        shop_total_target = 0.0
+                        shop_total_actual = 0.0
+                        for d in date_list:
+                            target_val = sr.get(d, 0) or 0
+                            if is_volume:
+                                actual_val = daily_by_shop_date.get((shop_name, d), {}).get('支付件数', 0)
+                            else:
+                                actual_val = daily_by_shop_date.get((shop_name, d), {}).get('支付金额', 0)
+                            shop_total_target += target_val
+                            shop_total_actual += actual_val
+                            if target_val > 0:
+                                rate = actual_val / target_val * 100
+                                color = '#22c55e' if rate >= 100 else '#ef4444' if rate < 80 else '#f59e0b'
+                                row_vals.append(f'<span style="color:{color};font-weight:bold;">{_wan(actual_val)} ({rate:.0f}%)</span>')
+                            else:
+                                row_vals.append(f'{_wan(actual_val)}')
+
+                        shop_rate = shop_total_actual / shop_total_target * 100 if shop_total_target > 0 else 0
+                        tc = '#22c55e' if shop_rate >= 100 else '#ef4444' if shop_rate < 80 else '#f59e0b'
+                        row_vals.append(f'<span style="color:{tc};font-weight:bold;">{_wan(shop_total_actual)} ({shop_rate:.0f}%)</span>')
+                        table_data.append(row_vals)
+
+                        all_shop_total_target += shop_total_target
+                        all_shop_total_actual += shop_total_actual
+
+                    if table_data:
+                        html = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">'
+                        html += '<thead><tr style="background:#1e293b;color:#e2e8f0;">'
+                        for h in header_cols:
+                            html += f'<th style="padding:6px 8px;text-align:right;border:1px solid #334155;">{h}</th>'
+                        html += '</tr></thead><tbody>'
+                        for i, row in enumerate(table_data):
+                            bg = '#0f172a' if i % 2 == 0 else '#1e293b'
+                            html += f'<tr style="background:{bg}">'
+                            for j, cell in enumerate(row):
+                                align = 'left' if j == 0 else 'right'
+                                html += f'<td style="padding:4px 8px;text-align:{align};border:1px solid #1e293b;color:#cbd5e1;">{cell}</td>'
+                            html += '</tr>'
+                        html += '</tbody></table>'
+                        st.markdown(html, unsafe_allow_html=True)
+
+                # 全店铺合计卡
+                all_rate = all_shop_total_actual / all_shop_total_target * 100 if all_shop_total_target > 0 else 0
+                arc = '#22c55e' if all_rate >= 100 else '#ef4444' if all_rate < 80 else '#f59e0b'
+                st.markdown(
+                    f'<div style="background:#1e293b;padding:12px 16px;border-radius:8px;margin-bottom:20px;">'
+                    f'<span style="color:#94a3b8;">全店铺目标合计：</span>'
+                    f'<span style="color:#e2e8f0;font-size:18px;font-weight:bold;">{_wan(all_shop_total_target)}</span>'
+                    f'<span style="color:#94a3b8;margin-left:24px;">实际合计：</span>'
+                    f'<span style="color:{arc};font-size:18px;font-weight:bold;">{_wan(all_shop_total_actual)}</span>'
+                    f'<span style="color:#94a3b8;margin-left:24px;">达成率：</span>'
+                    f'<span style="color:{arc};font-size:18px;font-weight:bold;">{all_rate:.1f}%</span>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                st.info('该月份无店铺目标数据')
+
+            # ── 单品目标达成表 ──
+            st.subheader('📦 单品目标达成')
+            if model_rows:
+                model_groups = {}
+                for mr in model_rows:
+                    key = (mr['店铺'], mr['型号'])
+                    if key not in model_groups:
+                        model_groups[key] = []
+                    model_groups[key].append(mr)
+
+                for (shop_name, model_name), mdata in model_groups.items():
+                    st.markdown(f"**{shop_name} · {model_name}**")
+
+                    header_cols = ['指标'] + date_list + ['合计']
+                    table_data = []
+
+                    for mr in mdata:
+                        indicator = mr['指标']
+                        row_vals = [indicator]
+                        for d in date_list:
+                            v = mr.get(d, 0) or 0
+                            row_vals.append(f'{v:,.0f}' if v else '--')
+                        row_vals.append(f'{mr.get("合计", 0):,.0f}')
+                        table_data.append(row_vals)
+
+                    # 自动计算达成行
+                    for mr in mdata:
+                        indicator = mr['指标']
+                        if '目标' not in indicator or '达成' in indicator or '费率' in indicator:
+                            continue
+
+                        is_volume = '销量' in indicator or '件数' in indicator
+                        if is_volume:
+                            actual_label = '📊 自动' + indicator.replace('销量目标', '实际销量').replace('件数目标', '实际件数')
+                        else:
+                            actual_label = '📊 自动' + indicator.replace('销额目标', '销额达成').replace('成交金额目标', '成交金额达成')
+
+                        row_vals = [actual_label]
+                        mdl_total_target = 0.0
+                        mdl_total_actual = 0.0
+                        for d in date_list:
+                            target_val = mr.get(d, 0) or 0
+                            if is_volume:
+                                actual_val = daily_by_model_date.get((shop_name, model_name, d), {}).get('支付件数', 0)
+                            else:
+                                actual_val = daily_by_model_date.get((shop_name, model_name, d), {}).get('支付金额', 0)
+                            mdl_total_target += target_val
+                            mdl_total_actual += actual_val
+                            if target_val > 0:
+                                rate = actual_val / target_val * 100
+                                color = '#22c55e' if rate >= 100 else '#ef4444' if rate < 80 else '#f59e0b'
+                                row_vals.append(f'<span style="color:{color};font-weight:bold;">{_wan(actual_val)} ({rate:.0f}%)</span>')
+                            else:
+                                row_vals.append(f'{_wan(actual_val)}')
+
+                        mdl_rate = mdl_total_actual / mdl_total_target * 100 if mdl_total_target > 0 else 0
+                        tc2 = '#22c55e' if mdl_rate >= 100 else '#ef4444' if mdl_rate < 80 else '#f59e0b'
+                        row_vals.append(f'<span style="color:{tc2};font-weight:bold;">{_wan(mdl_total_actual)} ({mdl_rate:.0f}%)</span>')
+                        table_data.append(row_vals)
+
+                    if table_data:
+                        html = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">'
+                        html += '<thead><tr style="background:#1e293b;color:#e2e8f0;">'
+                        for h in header_cols:
+                            html += f'<th style="padding:6px 8px;text-align:right;border:1px solid #334155;">{h}</th>'
+                        html += '</tr></thead><tbody>'
+                        for i, row in enumerate(table_data):
+                            bg = '#0f172a' if i % 2 == 0 else '#1e293b'
+                            html += f'<tr style="background:{bg}">'
+                            for j, cell in enumerate(row):
+                                align = 'left' if j == 0 else 'right'
+                                html += f'<td style="padding:4px 8px;text-align:{align};border:1px solid #1e293b;color:#cbd5e1;">{cell}</td>'
+                            html += '</tr>'
+                        html += '</tbody></table>'
+                        st.markdown(html, unsafe_allow_html=True)
+            else:
+                st.info('该月份无单品目标数据')
