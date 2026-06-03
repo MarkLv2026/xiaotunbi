@@ -554,6 +554,9 @@ def load_targets(file_bytes: bytes):
                     current_model = str(c4).strip()
                 if c5 and str(c5).strip():
                     indicator = str(c5).strip()
+                    # 跳过小计/合计等汇总行
+                    if indicator in ('小计', '合计', '总计'):
+                        continue
                     # 保留所有指标行（目标/实际/费率），渲染时分类处理
                     row_data = {'店铺': current_shop, '型号': current_model, '指标': indicator}
                     for col_idx, date_str in date_cols:
@@ -5793,14 +5796,18 @@ with tabs[6]:
             model_rows = tgt.get('model', [])
             date_list = tgt.get('dates', [])
 
-            if not daily:
+            # 目标达成模块使用原始全量数据，不受全局筛选影响
+            _raw_daily_target = data.get('daily', [])
+            _raw_promo_target = load_promo_data(_promo_bytes) if _promo_bytes else []
+
+            if not _raw_daily_target:
                 st.warning('请先上传销售数据，才能自动计算达成率')
                 st.stop()
 
             # ── 预计算销售日汇总（店铺+单品）──
             daily_by_shop_date = {}
             daily_by_model_date = {}
-            for r in daily:
+            for r in _raw_daily_target:
                 shop = (r.get('店铺', '') or '').strip()
                 model_name = (r.get('型号', '') or '').strip()
                 d = r.get('日期', '')
@@ -5821,8 +5828,8 @@ with tabs[6]:
 
             # ── 预计算推广花费日汇总（按店铺+日期）──
             promo_by_shop_date = {}
-            if promo_rows:
-                for r in promo_rows:
+            if _raw_promo_target:
+                for r in _raw_promo_target:
                     p_shop = (r.get('_店铺', '') or '').strip()
                     p_date = r.get('_date', '')
                     p_spend = r.get('_花费', 0.0)
@@ -5833,8 +5840,8 @@ with tabs[6]:
 
             # ── 预计算推广花费日汇总（按店铺+型号+日期）──
             promo_by_model_date = {}
-            if promo_rows:
-                for r in promo_rows:
+            if _raw_promo_target:
+                for r in _raw_promo_target:
                     p_shop = (r.get('_店铺', '') or '').strip()
                     p_model = (r.get('_型号', '') or '').strip()
                     p_date = r.get('_date', '')
@@ -6013,12 +6020,32 @@ with tabs[6]:
                         for d in date_list:
                             actual_summary[indicator][d] = _get_actual_value(indicator, shop_name, d, model_name)
 
-                    # ── 单品额外增加"实际投入金额"行（推广花费，型号级）──
-                    if model_name and itype == 'actual' and indicator == '实际成交金额':
+                    elif itype == 'calc':
+                        calc_rows.append(sr)
+
+                # ── 第一遍后：自动追加缺失的 actual 行 ──
+                # 1. 店铺模式：追加"实际支付件数"（如果Excel中没有）
+                if not model_name and '实际支付件数' not in actual_summary:
+                    qty_total = 0.0
+                    qty_row = ['实际支付件数']
+                    for d in date_list:
+                        qv = _get_actual_value('实际支付件数', shop_name, d)
+                        qty_total += qv
+                    qty_row.append(f'{qty_total:,.0f}' if qty_total else '--')
+                    for d in date_list:
+                        qv = _get_actual_value('实际支付件数', shop_name, d)
+                        qty_row.append(f'{qv:,.0f}' if qv else '--')
+                    table_data.append(qty_row)
+                    actual_summary['实际支付件数'] = {'合计': qty_total}
+                    for d in date_list:
+                        actual_summary['实际支付件数'][d] = _get_actual_value('实际支付件数', shop_name, d)
+
+                # 2. 单品模式：追加"实际投入金额"和"实际支付件数"（如果Excel中没有）
+                if model_name:
+                    if '实际投入金额' not in actual_summary:
                         spend_total = 0.0
                         spend_row = ['实际投入金额']
                         for d in date_list:
-                            # 优先按型号匹配，匹配不到则回退到店铺级
                             sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
                             if sv == 0:
                                 sv = promo_by_shop_date.get((shop_name, d), 0.0)
@@ -6036,9 +6063,20 @@ with tabs[6]:
                             if sv == 0:
                                 sv = promo_by_shop_date.get((shop_name, d), 0.0)
                             actual_summary['实际投入金额'][d] = sv
-
-                    elif itype == 'calc':
-                        calc_rows.append(sr)
+                    if '实际支付件数' not in actual_summary:
+                        qty_total = 0.0
+                        qty_row = ['实际支付件数']
+                        for d in date_list:
+                            qv = _get_actual_value('实际支付件数', shop_name, d, model_name)
+                            qty_total += qv
+                        qty_row.append(f'{qty_total:,.0f}' if qty_total else '--')
+                        for d in date_list:
+                            qv = _get_actual_value('实际支付件数', shop_name, d, model_name)
+                            qty_row.append(f'{qv:,.0f}' if qv else '--')
+                        table_data.append(qty_row)
+                        actual_summary['实际支付件数'] = {'合计': qty_total}
+                        for d in date_list:
+                            actual_summary['实际支付件数'][d] = _get_actual_value('实际支付件数', shop_name, d, model_name)
 
                 # ── 第二遍：处理 calc 行（此时 actual_summary 已完整）──
                 for sr in calc_rows:
@@ -6265,6 +6303,94 @@ with tabs[6]:
 
                     if table_data:
                         _render_target_table(header_cols, '全店铺合计（不含天猫小豚）', table_data)
+
+                # ── 店铺销售结构 & 费用结构分析 ──
+                if shops_order:
+                    st.subheader('📊 店铺销售结构 & 费用结构')
+                    struct_rows = []
+                    total_amt_target = 0.0
+                    total_amt_actual = 0.0
+                    total_spend_budget = 0.0
+                    total_spend_actual = 0.0
+
+                    # 第一遍：计算各店铺的值
+                    shop_struct = {}
+                    for shop_name in shops_order:
+                        if shop_name == '天猫小豚':
+                            continue
+                        shop_data = [sr for sr in shop_rows if sr['店铺'] == shop_name]
+                        amt_target_row = _get_target_row_by_indicator(shop_data, '成交金额目标')
+                        rate_target_row = _get_target_row_by_indicator(shop_data, '目标费率')
+                        amt_target = sum(amt_target_row.get(d, 0) or 0 for d in date_list) if amt_target_row else 0
+                        # 推广费用预算 = 成交金额目标 × 目标费率
+                        spend_budget = 0.0
+                        if amt_target_row and rate_target_row:
+                            for d in date_list:
+                                t = amt_target_row.get(d, 0) or 0
+                                r = rate_target_row.get(d, 0) or 0
+                                spend_budget += t * r
+                        # 实际成交金额
+                        amt_actual = sum(all_shop_actual.get('成交金额达成', {}).get(d, 0) for d in date_list
+                                         if d in all_shop_actual.get('成交金额达成', {}))
+                        # 实际推广花费
+                        spend_actual = sum(all_shop_actual.get('实际投入金额', {}).get(d, 0) for d in date_list
+                                           if d in all_shop_actual.get('实际投入金额', {}))
+                        shop_struct[shop_name] = {
+                            'amt_target': amt_target,
+                            'spend_budget': spend_budget,
+                            'amt_actual': amt_actual,
+                            'spend_actual': spend_actual,
+                        }
+                        total_amt_target += amt_target
+                        total_amt_actual += amt_actual
+                        total_spend_budget += spend_budget
+                        total_spend_actual += spend_actual
+
+                    # 第二遍：计算占比
+                    for shop_name in shops_order:
+                        if shop_name == '天猫小豚':
+                            continue
+                        s = shop_struct[shop_name]
+                        sales_pct_target = s['amt_target'] / total_amt_target * 100 if total_amt_target > 0 else 0
+                        sales_pct_actual = s['amt_actual'] / total_amt_actual * 100 if total_amt_actual > 0 else 0
+                        spend_pct_budget = s['spend_budget'] / total_spend_budget * 100 if total_spend_budget > 0 else 0
+                        spend_pct_actual = s['spend_actual'] / total_spend_actual * 100 if total_spend_actual > 0 else 0
+                        struct_rows.append([
+                            shop_name,
+                            f'{s["amt_target"]:,.0f}', f'{sales_pct_target:.1f}%',
+                            f'{s["amt_actual"]:,.0f}', f'{sales_pct_actual:.1f}%',
+                            f'{sales_pct_actual - sales_pct_target:+.1f}%',
+                            f'{s["spend_budget"]:,.0f}', f'{spend_pct_budget:.1f}%',
+                            f'{s["spend_actual"]:,.0f}', f'{spend_pct_actual:.1f}%',
+                            f'{spend_pct_actual - spend_pct_budget:+.1f}%',
+                        ])
+
+                    if struct_rows:
+                        struct_header = ['店铺',
+                                         '目标销额', '销额占比', '实际销额', '实际占比', '占比变动',
+                                         '预算花费', '预算占比', '实际花费', '实际占比', '占比变动']
+                        html = '<div class="styled-table-wrap"><table class="styled-table"><thead><tr>'
+                        for h in struct_header:
+                            html += f'<th style="text-align:center;white-space:nowrap;">{h}</th>'
+                        html += '</tr></thead><tbody>'
+                        for row in struct_rows:
+                            html += '<tr>'
+                            for j, cell in enumerate(row):
+                                align = 'left' if j == 0 else 'right'
+                                # 占比变动着色
+                                style = ''
+                                if j in (5, 10):
+                                    try:
+                                        v = float(str(cell).rstrip('%'))
+                                        color = '#22c55e' if v > 0 else '#ef4444' if v < 0 else '#888'
+                                        style = f' style="color:{color};font-weight:bold;"'
+                                    except:
+                                        pass
+                                html += f'<td style="text-align:{align};white-space:nowrap;"{style}>{cell}</td>'
+                            html += '</tr>'
+                        html += '</tbody></table></div>'
+                        st.markdown(html, unsafe_allow_html=True)
+                        st.caption('💡 销额占比变动 = 实际销额占比 − 目标销额占比；正值表示该店铺实际销售贡献高于目标预期')
             else:
                 st.info('该月份无店铺目标数据')
 
@@ -6280,11 +6406,72 @@ with tabs[6]:
                         model_groups[key] = []
                     model_groups[key].append(mr)
 
+                # 收集单品结构数据
+                model_struct = {}  # {shop: [(model, amt_target, amt_actual, spend_actual)]}
                 for (shop_name, model_name), mdata in model_groups.items():
                     header_cols = ['指标', '合计'] + date_list
-                    table_data, _ = _build_rows_for_entity(mdata, shop_name, model_name)
+                    table_data, actual_summary = _build_rows_for_entity(mdata, shop_name, model_name)
 
                     if table_data:
                         _render_target_table(header_cols, f'{shop_name} · {model_name}', table_data)
+
+                    # 收集结构数据
+                    amt_target_row = _get_target_row_by_indicator(mdata, '成交金额目标')
+                    amt_target = sum(amt_target_row.get(d, 0) or 0 for d in date_list) if amt_target_row else 0
+                    amt_actual = actual_summary.get('实际成交金额', {}).get('合计', 0)
+                    spend_actual = actual_summary.get('实际投入金额', {}).get('合计', 0)
+                    if shop_name not in model_struct:
+                        model_struct[shop_name] = []
+                    model_struct[shop_name].append((model_name, amt_target, amt_actual, spend_actual))
+
+                # ── 单品销售结构 & 费用结构分析 ──
+                if model_struct:
+                    st.subheader('📊 单品销售结构 & 费用结构（按店铺分组）')
+                    for shop_name in model_struct:
+                        models = model_struct[shop_name]
+                        shop_total_target = sum(m[1] for m in models)
+                        shop_total_actual = sum(m[2] for m in models)
+                        shop_total_spend = sum(m[3] for m in models)
+
+                        mrows = []
+                        for model_name, amt_target, amt_actual, spend_actual in models:
+                            sales_pct_target = amt_target / shop_total_target * 100 if shop_total_target > 0 else 0
+                            sales_pct_actual = amt_actual / shop_total_actual * 100 if shop_total_actual > 0 else 0
+                            spend_pct = spend_actual / shop_total_spend * 100 if shop_total_spend > 0 else 0
+                            fee_rate = spend_actual / amt_actual * 100 if amt_actual > 0 else 0
+                            mrows.append([
+                                model_name,
+                                f'{amt_target:,.0f}', f'{sales_pct_target:.1f}%',
+                                f'{amt_actual:,.0f}', f'{sales_pct_actual:.1f}%',
+                                f'{sales_pct_actual - sales_pct_target:+.1f}%',
+                                f'{spend_actual:,.0f}', f'{spend_pct:.1f}%',
+                                f'{fee_rate:.1f}%',
+                            ])
+
+                        if mrows:
+                            st.markdown(f'**{shop_name}**')
+                            mheader = ['型号', '目标销额', '销额占比', '实际销额', '实际占比', '占比变动',
+                                       '实际花费', '花费占比', '实际费率']
+                            html = '<div class="styled-table-wrap"><table class="styled-table"><thead><tr>'
+                            for h in mheader:
+                                html += f'<th style="text-align:center;white-space:nowrap;">{h}</th>'
+                            html += '</tr></thead><tbody>'
+                            for row in mrows:
+                                html += '<tr>'
+                                for j, cell in enumerate(row):
+                                    align = 'left' if j == 0 else 'right'
+                                    style = ''
+                                    if j == 5:
+                                        try:
+                                            v = float(str(cell).rstrip('%'))
+                                            color = '#22c55e' if v > 0 else '#ef4444' if v < 0 else '#888'
+                                            style = f' style="color:{color};font-weight:bold;"'
+                                        except:
+                                            pass
+                                    html += f'<td style="text-align:{align};white-space:nowrap;"{style}>{cell}</td>'
+                                html += '</tr>'
+                            html += '</tbody></table></div>'
+                            st.markdown(html, unsafe_allow_html=True)
+                        st.caption('💡 销额占比变动 = 实际销额占比 − 目标销额占比；花费占比 = 该单品花费 / 该店铺总花费')
             else:
                 st.info('该月份无单品目标数据')
