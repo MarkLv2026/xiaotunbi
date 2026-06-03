@@ -5801,8 +5801,8 @@ with tabs[6]:
             daily_by_shop_date = {}
             daily_by_model_date = {}
             for r in daily:
-                shop = r.get('店铺', '')
-                model_name = r.get('型号', '')
+                shop = (r.get('店铺', '') or '').strip()
+                model_name = (r.get('型号', '') or '').strip()
                 d = r.get('日期', '')
                 pay_amt = float(r.get('支付金额', 0) or 0)
                 pay_qty = float(r.get('支付件数', 0) or 0)
@@ -5823,7 +5823,7 @@ with tabs[6]:
             promo_by_shop_date = {}
             if promo_rows:
                 for r in promo_rows:
-                    p_shop = r.get('_店铺', '')
+                    p_shop = (r.get('_店铺', '') or '').strip()
                     p_date = r.get('_date', '')
                     p_spend = r.get('_花费', 0.0)
                     key_ps = (p_shop, p_date)
@@ -5848,6 +5848,8 @@ with tabs[6]:
 
             def _get_actual_value(indicator, shop_name, d, model_name=''):
                 """根据指标名称和店铺/单品，从销售或推广数据中获取实际值"""
+                shop_name = (shop_name or '').strip()
+                model_name = (model_name or '').strip()
                 if model_name:
                     sd = daily_by_model_date.get((shop_name, model_name, d), {})
                 else:
@@ -5947,6 +5949,8 @@ with tabs[6]:
                 两遍遍历：第一遍收集 target/actual 值，第二遍生成 calc 行。
                 返回 (table_data, actual_summary) 其中 actual_summary 用于全店铺合计。
                 """
+                shop_name = (shop_name or '').strip()
+                model_name = (model_name or '').strip()
                 table_data = []
                 actual_summary = {}  # {indicator: {'合计': val, date: val}}
 
