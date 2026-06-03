@@ -5831,6 +5831,21 @@ with tabs[6]:
                         promo_by_shop_date[key_ps] = 0.0
                     promo_by_shop_date[key_ps] += p_spend
 
+            # ── 预计算推广花费日汇总（按店铺+型号+日期）──
+            promo_by_model_date = {}
+            if promo_rows:
+                for r in promo_rows:
+                    p_shop = (r.get('_店铺', '') or '').strip()
+                    p_model = (r.get('_型号', '') or '').strip()
+                    p_date = r.get('_date', '')
+                    p_spend = r.get('_花费', 0.0)
+                    if not p_model:
+                        continue
+                    key_pm = (p_shop, p_model, p_date)
+                    if key_pm not in promo_by_model_date:
+                        promo_by_model_date[key_pm] = 0.0
+                    promo_by_model_date[key_pm] += p_spend
+
             import uuid as _uuid_mod
 
             def _indicator_type(indicator):
@@ -5958,6 +5973,12 @@ with tabs[6]:
                 calc_rows = []  # 暂存 calc 行，第二遍处理
                 for sr in rows_data:
                     indicator = sr['指标']
+                    # 跳过纯数字的垃圾指标名（如 "0.4"）
+                    try:
+                        float(indicator)
+                        continue
+                    except ValueError:
+                        pass
                     itype = _indicator_type(indicator)
 
                     if itype == 'target':
@@ -5992,21 +6013,29 @@ with tabs[6]:
                         for d in date_list:
                             actual_summary[indicator][d] = _get_actual_value(indicator, shop_name, d, model_name)
 
-                    # ── 单品额外增加"实际投入金额"行（推广花费，店铺级）──
+                    # ── 单品额外增加"实际投入金额"行（推广花费，型号级）──
                     if model_name and itype == 'actual' and indicator == '实际成交金额':
                         spend_total = 0.0
                         spend_row = ['实际投入金额']
                         for d in date_list:
-                            sv = promo_by_shop_date.get((shop_name, d), 0.0)
+                            # 优先按型号匹配，匹配不到则回退到店铺级
+                            sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
+                            if sv == 0:
+                                sv = promo_by_shop_date.get((shop_name, d), 0.0)
                             spend_total += sv
                         spend_row.append(f'{spend_total:,.0f}' if spend_total else '--')
                         for d in date_list:
-                            sv = promo_by_shop_date.get((shop_name, d), 0.0)
+                            sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
+                            if sv == 0:
+                                sv = promo_by_shop_date.get((shop_name, d), 0.0)
                             spend_row.append(f'{sv:,.0f}' if sv else '--')
                         table_data.append(spend_row)
                         actual_summary['实际投入金额'] = {'合计': spend_total}
                         for d in date_list:
-                            actual_summary['实际投入金额'][d] = promo_by_shop_date.get((shop_name, d), 0.0)
+                            sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
+                            if sv == 0:
+                                sv = promo_by_shop_date.get((shop_name, d), 0.0)
+                            actual_summary['实际投入金额'][d] = sv
 
                     elif itype == 'calc':
                         calc_rows.append(sr)
