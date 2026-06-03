@@ -510,21 +510,32 @@ def load_targets(file_bytes: bytes):
             c5 = ws.cell(r, 5).value
 
             # 检测单品区开始
-            if c3 == '销售目标拆解':
+            if c3 and str(c3).strip() == '销售目标拆解':
                 in_model_section = True
                 continue
             # 单品区的标题行
-            if in_model_section and c3 == '店铺' and c4 == '型号':
+            if in_model_section and c3 and str(c3).strip() == '店铺' and c4 and str(c4).strip() == '型号':
                 continue
-            # 跳过空行
-            if not c3 and not c4 and not c5:
-                continue
+            # 跳过空行（单品区：至少 c4（型号）或 c5（指标）有值才不算空行）
+            if not in_model_section:
+                if not c3 and not c4:
+                    continue
+            else:
+                if not c4 and not c5:
+                    # c3 有值但 c4/c5 都没值，可能是空行或分隔行
+                    if c3 and str(c3).strip():
+                        current_shop = str(c3).strip()
+                    continue
 
             if not in_model_section:
                 # ── 店铺目标区 ──
-                if c3 and c3 != '合计':
+                if c3 and str(c3).strip() == '合计':
+                    # 店铺区结束，继续往下找单品区（不 break）
+                    current_shop = ''
+                    continue
+                if c3:
                     current_shop = str(c3).strip()
-                if c4 and current_shop and c4 != '合计':
+                if c4 and current_shop:
                     indicator = str(c4).strip()
                     # 只取核心目标指标（跳过费率等派生指标）
                     row_data = {'店铺': current_shop, '指标': indicator}
@@ -535,15 +546,13 @@ def load_targets(file_bytes: bytes):
                     e_val = ws.cell(r, 5).value
                     row_data['合计'] = float(e_val) if isinstance(e_val, (int, float)) else 0.0
                     shop_rows.append(row_data)
-                if c3 == '合计':
-                    break  # 店铺区结束
             else:
                 # ── 单品目标区 ──
-                if c3:
+                if c3 and str(c3).strip():
                     current_shop = str(c3).strip()
-                if c4:
+                if c4 and str(c4).strip():
                     current_model = str(c4).strip()
-                if c5:
+                if c5 and str(c5).strip():
                     indicator = str(c5).strip()
                     row_data = {'店铺': current_shop, '型号': current_model, '指标': indicator}
                     for col_idx, date_str in date_cols:
@@ -580,16 +589,25 @@ elif _REPO_PROMO.exists():
     _promo_bytes = _REPO_PROMO.read_bytes()
     _CACHE_PROMO.write_bytes(_promo_bytes)
 
-if not _sales_bytes:
-    st.info('请在左侧上传销售数据。上传后，页面会生成可筛选、可导出的 BI 看板。')
-    st.stop()
-
+_sales_loaded = False
+data = {}
+_sales_empty = {
+    'meta': {'dateRange': ['2000-01-01', '2000-01-01'], 'rows': 0, 'usedSheets': []},
+    'filters': {'channels': [], 'stores': [], 'categories': [], 'models': []},
+    'totals': {}, 'daily': [], 'monthly': [], 'all_months': [],
+    'channels': [], 'stores': [], 'categories': [], 'models': [], 'styles': [], 'products': [],
+}
 try:
     with st.spinner('正在解析销售数据...'):
         data = load_data(_sales_bytes)
+    _sales_loaded = True
 except Exception as e:
     st.error(f'销售数据解析失败：{e}')
-    st.stop()
+    st.info('💡 如果已上传目标 Excel，仍可前往「🎯 目标达成」Tab 查看目标数据。')
+    data = _sales_empty
+
+if not _sales_loaded:
+    st.warning('⚠️ 销售数据未加载，经营概览/推广分析/趋势分析等 Tab 将显示为空。请在左侧选择【销售数据】并上传销售 Excel。')
 
 promo_rows = []
 if _promo_bytes:
@@ -620,37 +638,41 @@ if _targets_bytes:
         st.warning(f'目标数据解析失败：{e}')
 
 meta = data['meta']
-st.success(f"销售数据已更新：{meta['dateRange'][0]} 至 {meta['dateRange'][1]}，共 {meta['rows']:,} 行；解析工作表：{'、'.join(meta.get('usedSheets', []))}")
+if _sales_loaded:
+    st.success(f"销售数据已更新：{meta['dateRange'][0]} 至 {meta['dateRange'][1]}，共 {meta['rows']:,} 行；解析工作表：{'、'.join(meta.get('usedSheets', []))}")
 
 # 全局筛选
 fc = st.container(border=True)
 with fc:
     c1, c2, c3, c4, c5, c6 = st.columns(6)
+    _dr = meta['dateRange']
+    _default_start = datetime.date.fromisoformat(_dr[0]) if _sales_loaded else datetime.date.today().replace(day=1)
+    _default_end = datetime.date.fromisoformat(_dr[1]) if _sales_loaded else datetime.date.today()
     with c1:
-        start = st.date_input('开始日期', value=datetime.date.fromisoformat(meta['dateRange'][0]))
+        start = st.date_input('开始日期', value=_default_start)
     with c2:
-        end = st.date_input('结束日期', value=datetime.date.fromisoformat(meta['dateRange'][1]))
+        end = st.date_input('结束日期', value=_default_end)
 
     # 联动筛选：渠道 → 店铺 → 品类 → 型号
     all_rows = data['daily']
     with c3:
         ch_opts = sorted({r.get('渠道', '') for r in all_rows if r.get('渠道')})
-        channel = _slicer('渠道', ch_opts, 'ch')
-    filtered_ch = [r for r in all_rows if r.get('渠道', '') in channel]
+        channel = _slicer('渠道', ch_opts, 'ch') if ch_opts else []
+    filtered_ch = [r for r in all_rows if r.get('渠道', '') in channel] if ch_opts else []
 
     with c4:
-        st_opts = sorted({r.get('店铺', '') for r in filtered_ch if r.get('店铺')})
-        store = _slicer('店铺', st_opts, 'st')
-    filtered_st = [r for r in filtered_ch if r.get('店铺', '') in store]
+        st_opts = sorted({r.get('店铺', '') for r in filtered_ch if r.get('店铺')}) if ch_opts else []
+        store = _slicer('店铺', st_opts, 'st') if st_opts else []
+    filtered_st = [r for r in filtered_ch if r.get('店铺', '') in store] if st_opts else []
 
     with c5:
-        cat_opts = sorted({r.get('品类', '') for r in filtered_st if r.get('品类')})
-        category = _slicer('品类', cat_opts, 'cat')
-    filtered_cat = [r for r in filtered_st if r.get('品类', '') in category]
+        cat_opts = sorted({r.get('品类', '') for r in filtered_st if r.get('品类')}) if st_opts else []
+        category = _slicer('品类', cat_opts, 'cat') if cat_opts else []
+    filtered_cat = [r for r in filtered_st if r.get('品类', '') in category] if cat_opts else []
 
     with c6:
-        mdl_opts = sorted({r.get('型号', '') for r in filtered_cat if r.get('型号')})
-        model = _slicer('型号', mdl_opts, 'mdl')
+        mdl_opts = sorted({r.get('型号', '') for r in filtered_cat if r.get('型号')}) if cat_opts else []
+        model = _slicer('型号', mdl_opts, 'mdl') if mdl_opts else []
 
 s = str(start)
 e = str(end)
@@ -659,7 +681,7 @@ today_e = e
 
 # 全局对比期（环比和同比固定计算，供 tabs[1] 推广分析和 tabs[4] 智能诊断使用）
 # tabs[2] 有自己的对比模式控件，独立控制其对比期
-_cur_days = (end - start).days + 1
+_cur_days = max((end - start).days + 1, 1)
 _b_end = start - datetime.timedelta(days=1)
 _b_start = _b_end - datetime.timedelta(days=_cur_days - 1)
 prev_s = str(_b_start)
@@ -5866,19 +5888,18 @@ with tabs[6]:
                         all_shop_total_actual += shop_total_actual
 
                     if table_data:
-                        html = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">'
-                        html += '<thead><tr style="background:#1e293b;color:#e2e8f0;">'
+                        html = '<div class="styled-table-wrap"><table class="styled-table">'
+                        html += '<thead><tr>'
                         for h in header_cols:
-                            html += f'<th style="padding:6px 8px;text-align:right;border:1px solid #334155;">{h}</th>'
+                            html += f'<th style="text-align:center;white-space:nowrap;">{h}</th>'
                         html += '</tr></thead><tbody>'
                         for i, row in enumerate(table_data):
-                            bg = '#0f172a' if i % 2 == 0 else '#1e293b'
-                            html += f'<tr style="background:{bg}">'
+                            html += '<tr>'
                             for j, cell in enumerate(row):
                                 align = 'left' if j == 0 else 'right'
-                                html += f'<td style="padding:4px 8px;text-align:{align};border:1px solid #1e293b;color:#cbd5e1;">{cell}</td>'
+                                html += f'<td style="text-align:{align};white-space:nowrap;">{cell}</td>'
                             html += '</tr>'
-                        html += '</tbody></table>'
+                        html += '</tbody></table></div>'
                         st.markdown(html, unsafe_allow_html=True)
 
                 # 全店铺合计卡
@@ -5959,19 +5980,18 @@ with tabs[6]:
                         table_data.append(row_vals)
 
                     if table_data:
-                        html = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">'
-                        html += '<thead><tr style="background:#1e293b;color:#e2e8f0;">'
+                        html = '<div class="styled-table-wrap"><table class="styled-table">'
+                        html += '<thead><tr>'
                         for h in header_cols:
-                            html += f'<th style="padding:6px 8px;text-align:right;border:1px solid #334155;">{h}</th>'
+                            html += f'<th style="text-align:center;white-space:nowrap;">{h}</th>'
                         html += '</tr></thead><tbody>'
                         for i, row in enumerate(table_data):
-                            bg = '#0f172a' if i % 2 == 0 else '#1e293b'
-                            html += f'<tr style="background:{bg}">'
+                            html += '<tr>'
                             for j, cell in enumerate(row):
                                 align = 'left' if j == 0 else 'right'
-                                html += f'<td style="padding:4px 8px;text-align:{align};border:1px solid #1e293b;color:#cbd5e1;">{cell}</td>'
+                                html += f'<td style="text-align:{align};white-space:nowrap;">{cell}</td>'
                             html += '</tr>'
-                        html += '</tbody></table>'
+                        html += '</tbody></table></div>'
                         st.markdown(html, unsafe_allow_html=True)
             else:
                 st.info('该月份无单品目标数据')

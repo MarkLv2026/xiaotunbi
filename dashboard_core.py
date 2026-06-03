@@ -177,7 +177,7 @@ def parse_sales_workbook(src) -> Dict[str,Any]:
                 _add(by_day,(ds,channel,store,cat,model),vals); _add(by_month,(ds[:7],channel,store,cat,model),vals)
                 _add(by_channel,channel,vals); _add(by_store,store,vals); _add(by_cat,cat,vals); _add(by_model,(model,channel,cat,store),vals); _add(by_style,(style,channel,cat,model),vals); _add(by_product,(product[:80],pid,channel,cat,model),vals)
     if rows_count == 0:
-        raise ValueError('没有解析到有效数据行。请检查表头是否包含「统计日期」以及销售指标字段。')
+        raise ValueError('没有解析到有效数据行。请检查表头是否包含「统计日期」以及销售指标字段。\n如果您上传的是目标拆解 Excel（含"X年X月目标拆解及登记"工作表），请切换到左侧【销售目标】数据类型，不要使用【销售数据】上传。')
     tot={m:round(total[m],2) for m in METRICS}; enrich(tot)
     monthly=_final(by_month,['月份','渠道','店铺','品类','型号'],'月份')
     by_month_all=defaultdict(_empty)
