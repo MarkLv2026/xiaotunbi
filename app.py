@@ -5992,6 +5992,22 @@ with tabs[6]:
                         for d in date_list:
                             actual_summary[indicator][d] = _get_actual_value(indicator, shop_name, d, model_name)
 
+                    # ── 单品额外增加"实际投入金额"行（推广花费，店铺级）──
+                    if model_name and itype == 'actual' and indicator == '实际成交金额':
+                        spend_total = 0.0
+                        spend_row = ['实际投入金额']
+                        for d in date_list:
+                            sv = promo_by_shop_date.get((shop_name, d), 0.0)
+                            spend_total += sv
+                        spend_row.append(f'{spend_total:,.0f}' if spend_total else '--')
+                        for d in date_list:
+                            sv = promo_by_shop_date.get((shop_name, d), 0.0)
+                            spend_row.append(f'{sv:,.0f}' if sv else '--')
+                        table_data.append(spend_row)
+                        actual_summary['实际投入金额'] = {'合计': spend_total}
+                        for d in date_list:
+                            actual_summary['实际投入金额'][d] = promo_by_shop_date.get((shop_name, d), 0.0)
+
                     elif itype == 'calc':
                         calc_rows.append(sr)
 
@@ -6031,22 +6047,23 @@ with tabs[6]:
 
                     elif '费率' in indicator and '目标' not in indicator:
                         # 实际费率 = 推广花费 / 实际成交金额 × 100
-                        # 合计列：只统计有实际销售数据的天数
+                        # 单品：推广花费 = 店铺级实际投入金额
                         actual_key = '实际成交金额' if model_name else '成交金额达成'
                         actual_row = actual_summary.get(actual_key, {})
+                        spend_row_data = actual_summary.get('实际投入金额', {})
                         row_vals = [indicator]
                         calc_total_spend = 0.0
                         calc_total_actual_amt = 0.0
                         for d in date_list:
                             actual_amt = actual_row.get(d, 0)
                             if actual_amt > 0:
-                                spend = _get_actual_value('实际投入金额', shop_name, d, model_name)
+                                spend = spend_row_data.get(d, 0)
                                 calc_total_spend += spend
                                 calc_total_actual_amt += actual_amt
                         rate = calc_total_spend / calc_total_actual_amt * 100 if calc_total_actual_amt > 0 else 0
                         row_vals.append(_fmt_val(rate, is_pct=True))
                         for d in date_list:
-                            spend = _get_actual_value('实际投入金额', shop_name, d, model_name)
+                            spend = spend_row_data.get(d, 0)
                             actual_amt = actual_row.get(d, 0)
                             if actual_amt > 0:
                                 r = spend / actual_amt * 100
