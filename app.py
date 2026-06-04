@@ -659,17 +659,56 @@ if _targets_bytes:
 meta = data['meta']
 if _sales_loaded:
     st.success(f"销售数据已更新：{meta['dateRange'][0]} 至 {meta['dateRange'][1]}，共 {meta['rows']:,} 行；解析工作表：{'、'.join(meta.get('usedSheets', []))}")
-    # ── 检测各店铺销售/推广数据缺失 ──
-    _all_shops_in_sales = set(r.get('店铺', '') for r in data['daily'] if r.get('店铺'))
-    _all_shops_in_promo = set(r.get('_店铺', '') for r in promo_rows if r.get('_店铺'))
+    # ── 检测各店铺数据更新完整度 ──
     _known_shops = ['华为京东自营', '京东小豚', '天猫华为官旗', '天猫智选', '抖音小豚']
-    _missing_sales = [s for s in _known_shops if s not in _all_shops_in_sales]
-    _missing_promo = [s for s in _known_shops if s not in _all_shops_in_promo]
-    if _missing_sales:
-        st.warning(f"⚠️ 以下店铺**销售数据**缺失：{'、'.join(_missing_sales)}")
-    if _missing_promo:
+    # 整体最新日期（全量数据的最大日期）
+    _all_sales_dates = [r.get('日期', '') for r in data['daily'] if r.get('日期')]
+    _all_promo_dates  = [r.get('_date', '') for r in promo_rows if r.get('_date')]
+    _sales_max_date = max(_all_sales_dates) if _all_sales_dates else ''
+    _promo_max_date  = max(_all_promo_dates) if _all_promo_dates else ''
+
+    # 按店铺统计最新日期
+    _shop_sales_max = {}
+    for r in data['daily']:
+        sh = r.get('店铺', '')
+        d  = r.get('日期', '')
+        if sh and d:
+            if sh not in _shop_sales_max or d > _shop_sales_max[sh]:
+                _shop_sales_max[sh] = d
+    _shop_promo_max = {}
+    for r in promo_rows:
+        sh = r.get('_店铺', '')
+        d  = r.get('_date', '')
+        if sh and d:
+            if sh not in _shop_promo_max or d > _shop_promo_max[sh]:
+                _shop_promo_max[sh] = d
+
+    # 生成报告（分三类）
+    _lag_lines = []   # 滞后（有数据但比最新日期早）
+    _miss_lines = []  # 完全缺失
+    for sh in _known_shops:
+        s_date = _shop_sales_max.get(sh, '')
+        p_date = _shop_promo_max.get(sh, '')
+        if not s_date:
+            _miss_lines.append(f'<b>{sh}</b> 销售数据：<span style="color:#ef4444">完全缺失</span>')
+        elif _sales_max_date and s_date < _sales_max_date:
+            _lag_lines.append(f'<b>{sh}</b> 销售数据更新至 <span style="color:#f59e0b">{s_date}</span>（整体最新 {_sales_max_date}）')
         if promo_rows:
-            st.warning(f"⚠️ 以下店铺**推广数据**缺失：{'、'.join(_missing_promo)}")
+            if not p_date:
+                if sh != '抖音小豚':  # 抖音无推广数据属正常，不报告
+                    _miss_lines.append(f'<b>{sh}</b> 推广数据：<span style="color:#ef4444">完全缺失</span>')
+            elif _promo_max_date and p_date < _promo_max_date:
+                _lag_lines.append(f'<b>{sh}</b> 推广数据更新至 <span style="color:#f59e0b">{p_date}</span>（整体最新 {_promo_max_date}）')
+
+    if _lag_lines or _miss_lines:
+        _report_html = '<div style="background:#1e293b;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin:4px 0;">'
+        _report_html += '<div style="color:#fbbf24;font-weight:bold;margin-bottom:6px;">⚠️ 数据更新完整度检测</div>'
+        for line in _lag_lines:
+            _report_html += f'<div style="color:#e2e8f0;font-size:13px;margin:2px 0;">· {line}</div>'
+        for line in _miss_lines:
+            _report_html += f'<div style="color:#fca5a5;font-size:13px;margin:2px 0;">· {line}</div>'
+        _report_html += '</div>'
+        st.markdown(_report_html, unsafe_allow_html=True)
 
 # 全局筛选
 fc = st.container(border=True)
