@@ -986,41 +986,55 @@ def period_delta_text(metric_key):
     return f'{a} / {b}'
 
 
+# ── 全局全屏 JS（只注入一次，避免每个表格都嵌入完整 JS 导致 400 错误）──
+_FS_GLOBAL_JS = """<script>
+(function(){
+if(window._fsInited)return;window._fsInited=1;
+window._fsOpen=function(el){
+var id=el.getAttribute('data-fs-id');
+var title=el.getAttribute('data-fs-title')||'';
+var wrap=document.getElementById(id);
+if(!wrap)return;
+var ov=document.getElementById(id+'_fs');
+if(ov){ov.style.display='flex';return;}
+ov=document.createElement('div');
+ov.id=id+'_fs';
+ov.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">'+title+'</span><button onclick="this.parentElement.parentElement.style.display=\\'none\\'" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">'+wrap.innerHTML+'</div>';
+ov.style.cssText='display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
+document.body.appendChild(ov);
+};
+window._fsClose=function(id){
+var ov=document.getElementById(id+'_fs');
+if(ov)ov.style.display='none';
+};
+})();
+</script>"""
+
+_FS_INJECTED = False
+
+
+def _inject_fs_js():
+    """注入全局全屏 JS（仅首次调用生效）"""
+    global _FS_INJECTED
+    if not _FS_INJECTED:
+        _FS_INJECTED = True
+        st.markdown(_FS_GLOBAL_JS, unsafe_allow_html=True)
+
+
 def _wrap_fullscreen(inner_html, title='', fullscreen=True):
     """将任意 HTML 内容包装成全屏弹窗。返回 (完整html, tbl_id)。"""
     import uuid as _uuid_mod
     if not fullscreen or not inner_html:
         return inner_html, None
+    _inject_fs_js()
     tbl_id = 'tbl_' + _uuid_mod.uuid4().hex[:8]
-    overlay_id = tbl_id + '_fs'
-    fs_js = f"""
-<script>
-(function() {{
-    var overlay = null;
-    window['_fsOpen_{tbl_id}'] = function() {{
-        if (overlay) return;
-        var tblWrap = document.getElementById('{tbl_id}');
-        var content = tblWrap.innerHTML;
-        overlay = document.createElement('div');
-        overlay.id = '{overlay_id}';
-        overlay.innerHTML = '<style>.styled-table{{width:100%;border-collapse:collapse;font-size:13px;}}.styled-table th{{background:#1e293b;color:#e2e8f0;border-bottom:2px solid #334155;padding:10px 8px;position:sticky;top:0;z-index:1;}}.styled-table td{{padding:7px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#1e293b;}}.styled-table tbody tr:nth-child(even){{background:#f8fafc;}}.styled-table tbody tr:hover{{background:#e2e8f0;}}</style>' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">{title}</span><button onclick="window._fsClose_{tbl_id}()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">' + content + '</div>';
-        overlay.style.cssText = 'display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
-        document.body.appendChild(overlay);
-    }};
-    window['_fsClose_{tbl_id}'] = function() {{
-        if (overlay) {{ overlay.remove(); overlay = null; }}
-    }};
-}})();
-</script>
-"""
     fs_btn = (
-        f'<button onclick="window._fsOpen_{tbl_id}()" '
+        f'<button onclick="window._fsOpen(this)" data-fs-id="{tbl_id}" data-fs-title="{title}" '
         f'style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
         f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
     )
     title_html = f'<div style="font-weight:700;font-size:14px;margin-bottom:4px;">{title}</div>' if title else ''
-    full_html = f'{fs_js}{title_html}{fs_btn}<div id="{tbl_id}">{inner_html}</div>'
+    full_html = f'{title_html}{fs_btn}<div id="{tbl_id}">{inner_html}</div>'
     return full_html, tbl_id
 
 
