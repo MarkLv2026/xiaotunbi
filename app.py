@@ -6024,6 +6024,46 @@ with tabs[6]:
                             _promo_model_ly[key_pm] = 0.0
                         _promo_model_ly[key_pm] += p_spend
 
+            # ── 去年全月数据（用于目标同比）──
+            _daily_shop_ly_full = {}
+            _daily_model_ly_full = {}
+            if _yoy_date_list_full:
+                for r in _raw_daily_target:
+                    d = r.get('日期', '')
+                    if d not in _yoy_date_list_full:
+                        continue
+                    shop = (r.get('店铺', '') or '').strip()
+                    model_name = (r.get('型号', '') or '').strip()
+                    pay_amt = float(r.get('支付金额', 0) or 0)
+                    key_sd = (shop, d)
+                    if key_sd not in _daily_shop_ly_full:
+                        _daily_shop_ly_full[key_sd] = 0.0
+                    _daily_shop_ly_full[key_sd] += pay_amt
+                    key_md = (shop, model_name, d)
+                    if key_md not in _daily_model_ly_full:
+                        _daily_model_ly_full[key_md] = 0.0
+                    _daily_model_ly_full[key_md] += pay_amt
+
+            _promo_shop_ly_full = {}
+            _promo_model_ly_full = {}
+            if _yoy_date_list_full and _raw_promo_target:
+                for r in _raw_promo_target:
+                    d = r.get('_date', '')
+                    if d not in _yoy_date_list_full:
+                        continue
+                    p_shop = (r.get('_店铺', '') or '').strip()
+                    p_model = (r.get('_型号', '') or '').strip()
+                    p_spend = r.get('_花费', 0.0)
+                    key_ps = (p_shop, d)
+                    if key_ps not in _promo_shop_ly_full:
+                        _promo_shop_ly_full[key_ps] = 0.0
+                    _promo_shop_ly_full[key_ps] += p_spend
+                    if p_model:
+                        key_pm = (p_shop, p_model, d)
+                        if key_pm not in _promo_model_ly_full:
+                            _promo_model_ly_full[key_pm] = 0.0
+                        _promo_model_ly_full[key_pm] += p_spend
+
             def _yoy_pct_val(cur, ly):
                 """同比变化率，返回数值（如 0.15 表示 +15%）"""
                 if ly and ly != 0:
@@ -6373,14 +6413,14 @@ with tabs[6]:
                         spend_actual += promo_by_shop_date.get((shop_name, d), 0.0)
 
                     # ── 去年同期数据 ──
-                    # 目标同比基准 = 去年同期实际值（同期天数对齐）
+                    # 目标同比基准 = 去年同期全月实际值
                     amt_target_ly = 0.0
                     spend_budget_ly = 0.0
-                    if _yoy_date_list:
-                        for d in _yoy_date_list:
-                            amt_target_ly += _daily_shop_ly.get((shop_name, d), 0.0)
-                        for d in _yoy_date_list:
-                            spend_budget_ly += _promo_shop_ly.get((shop_name, d), 0.0)
+                    if _yoy_date_list_full:
+                        for d in _yoy_date_list_full:
+                            amt_target_ly += _daily_shop_ly_full.get((shop_name, d), 0.0)
+                        for d in _yoy_date_list_full:
+                            spend_budget_ly += _promo_shop_ly_full.get((shop_name, d), 0.0)
                     # 实际同比：用去年同期同期天数
                     amt_actual_ly = 0.0
                     spend_actual_ly = 0.0
@@ -6575,16 +6615,16 @@ with tabs[6]:
                         sv = promo_by_shop_date.get((shop_name, d), 0.0)
                     spend_actual += sv
                 # ── 去年同期数据 ──
-                # 目标同比基准 = 去年同期实际值（同期天数对齐）
+                # 目标同比基准 = 去年同期全月实际值
                 amt_target_ly = 0.0
                 spend_budget_ly = 0.0
-                if _yoy_date_list:
-                    for d in _yoy_date_list:
-                        amt_target_ly += _daily_model_ly.get((shop_name, model_name, d), 0.0)
-                    for d in _yoy_date_list:
-                        sv = _promo_model_ly.get((shop_name, model_name, d), 0.0)
+                if _yoy_date_list_full:
+                    for d in _yoy_date_list_full:
+                        amt_target_ly += _daily_model_ly_full.get((shop_name, model_name, d), 0.0)
+                    for d in _yoy_date_list_full:
+                        sv = _promo_model_ly_full.get((shop_name, model_name, d), 0.0)
                         if sv == 0:
-                            sv = _promo_shop_ly.get((shop_name, d), 0.0)
+                            sv = _promo_shop_ly_full.get((shop_name, d), 0.0)
                         spend_budget_ly += sv
                 # 实际同比：用去年同期同期天数
                 amt_actual_ly = 0.0
