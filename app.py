@@ -988,6 +988,7 @@ def period_delta_text(metric_key):
 
 def _wrap_fullscreen(inner_html, title='', fullscreen=True):
     """将任意 HTML 内容包装成全屏弹窗。返回 (完整html, tbl_id)。"""
+    import uuid as _uuid_mod
     if not fullscreen or not inner_html:
         return inner_html, None
     tbl_id = 'tbl_' + _uuid_mod.uuid4().hex[:8]
