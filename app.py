@@ -6860,7 +6860,8 @@ with tabs[6]:
                     # 收集所有存在的指标类型
                     existing_indicators = set(list(all_shop_target.keys()) + list(all_shop_actual.keys()))
                     fixed_order = ['成交金额目标', '成交金额达成', '实际投入金额', '目标费率', '实际支付件数', '成交金额达成率', '实际费率']
-                    all_indicators = [ind for ind in fixed_order if ind in existing_indicators or ind in ('成交金额达成率', '实际费率')]
+                    always_show = {'成交金额达成率', '实际费率', '实际支付件数'}
+                    all_indicators = [ind for ind in fixed_order if ind in existing_indicators or ind in always_show]
 
                     for indicator in all_indicators:
                         itype = _indicator_type(indicator)
