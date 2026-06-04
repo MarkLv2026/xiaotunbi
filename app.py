@@ -6849,12 +6849,17 @@ with tabs[6]:
                                     all_shop_actual[indicator] = {}
                                 for d in date_list:
                                     all_shop_actual[indicator][d] = all_shop_actual[indicator].get(d, 0.0) + actual_summary.get(indicator, {}).get(d, 0)
-                        # 追加代码自动生成的 actual 指标（如实际支付件数，Excel中可能没有）
+                        # 追加代码自动生成的 actual 指标（Excel中没有的才补，避免重复累加）
+                        excel_actual_indicators = set()
+                        for sr in shop_data:
+                            if _indicator_type(sr['指标']) == 'actual':
+                                excel_actual_indicators.add(sr['指标'])
                         for indicator, vals in actual_summary.items():
-                            if indicator not in all_shop_actual:
-                                all_shop_actual[indicator] = {}
-                            for d in date_list:
-                                all_shop_actual[indicator][d] = all_shop_actual[indicator].get(d, 0.0) + vals.get(d, 0)
+                            if indicator not in excel_actual_indicators:
+                                if indicator not in all_shop_actual:
+                                    all_shop_actual[indicator] = {}
+                                for d in date_list:
+                                    all_shop_actual[indicator][d] = all_shop_actual[indicator].get(d, 0.0) + vals.get(d, 0)
 
                 # ── 全店铺合计（排除天猫小豚）──
                 if all_shop_target:
