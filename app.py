@@ -6358,6 +6358,20 @@ with tabs[6]:
                     actual_summary['实际支付件数'] = {'合计': qty_total}
                     for d in date_list:
                         actual_summary['实际支付件数'][d] = _get_actual_value('实际支付件数', shop_name, d, model_name)
+                    # 追加"实际成交金额"行到表格
+                    amt_row = ['实际成交金额']
+                    amt_row.append(f'{amt_total:,.0f}' if amt_total else '--')
+                    for d in date_list:
+                        av = _get_actual_value('成交金额', shop_name, d, model_name)
+                        amt_row.append(f'{av:,.0f}' if av else '--')
+                    table_data.append(amt_row)
+                    # 追加"实际支付件数"行到表格
+                    qty_row = ['实际支付件数']
+                    qty_row.append(f'{qty_total:,.0f}' if qty_total else '--')
+                    for d in date_list:
+                        qv = _get_actual_value('实际支付件数', shop_name, d, model_name)
+                        qty_row.append(f'{qv:,.0f}' if qv else '--')
+                    table_data.append(qty_row)
 
                 # ── 第二遍：处理 calc 行（此时 actual_summary 已完整）──
                 for sr in calc_rows:
@@ -6842,14 +6856,11 @@ with tabs[6]:
                     header_cols = ['指标', '合计'] + date_list
                     table_data = []
 
-                    # 先收集所有指标类型（包括 calc 行需要显式添加）
-                    all_indicators = sorted(set(list(all_shop_target.keys()) + list(all_shop_actual.keys())))
-                    # 确保 calc 类指标也出现（达成率、实际费率等）
-                    all_indicators_calc = ['成交金额达成率', '实际费率']
-                    for ci in all_indicators_calc:
-                        if ci not in all_indicators:
-                            all_indicators.append(ci)
-                    all_indicators = sorted(all_indicators)
+                    # 固定指标顺序（与单店铺表格一致）
+                    # 收集所有存在的指标类型
+                    existing_indicators = set(list(all_shop_target.keys()) + list(all_shop_actual.keys()))
+                    fixed_order = ['成交金额目标', '成交金额达成', '实际投入金额', '目标费率', '实际支付件数', '成交金额达成率', '实际费率']
+                    all_indicators = [ind for ind in fixed_order if ind in existing_indicators or ind in ('成交金额达成率', '实际费率')]
 
                     for indicator in all_indicators:
                         itype = _indicator_type(indicator)
