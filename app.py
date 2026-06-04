@@ -5917,7 +5917,7 @@ with tabs[6]:
 
             # ── 预计算去年同期数据（用于结构表同比）──
             _yoy_ym = None
-            _yoy_date_list = []      # 同期天数（用于实际同比）
+            _yoy_date_list = []      # 同期天数（用于实际同比，基于今年实际有数据的日期）
             _yoy_date_list_full = [] # 全月（用于目标同比）
             _yoy_targets = None
             try:
@@ -5927,14 +5927,22 @@ with tabs[6]:
                 # 去年同期目标数据（可选，未上传时目标同比为空）
                 if _yoy_ym in targets:
                     _yoy_targets = targets[_yoy_ym]
-                # 同期天数：将本期日期年份替换为去年（用于实际同比，不依赖目标数据）
-                for d in date_list:
+                # 实际同比日期：从今年销售数据中提取当月实际有数据的日期，映射到去年
+                _cur_ym_prefix = _sel_ym  # e.g. '2026-06'
+                _actual_dates_set = set()
+                for r in _raw_daily_target:
+                    d = r.get('日期', '')
+                    if d and d.startswith(_cur_ym_prefix):
+                        _actual_dates_set.add(d)
+                # 按日期排序
+                _actual_dates = sorted(_actual_dates_set)
+                for d in _actual_dates:
                     try:
                         _dt = datetime.datetime.strptime(d, '%Y-%m-%d')
                         _ly_dt = _dt.replace(year=_dt.year - 1)
                         _yoy_date_list.append(_ly_dt.strftime('%Y-%m-%d'))
                     except ValueError:
-                        _yoy_date_list.append(d)
+                        pass
                 # 全月：去年同期整月所有日期（用于目标同比）
                 import calendar
                 _last_day = calendar.monthrange(_yoy_year, int(_cur_ym_parts[1]))[1]
