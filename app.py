@@ -986,6 +986,43 @@ def period_delta_text(metric_key):
     return f'{a} / {b}'
 
 
+def _wrap_fullscreen(inner_html, title='', fullscreen=True):
+    """将任意 HTML 内容包装成全屏弹窗。返回 (完整html, tbl_id)。"""
+    if not fullscreen or not inner_html:
+        return inner_html, None
+    tbl_id = 'tbl_' + _uuid_mod.uuid4().hex[:8]
+    overlay_id = tbl_id + '_fs'
+    fs_js = f"""
+<script>
+(function() {{
+    var overlay = null;
+    window['_fsOpen_{tbl_id}'] = function() {{
+        if (overlay) return;
+        var tblWrap = document.getElementById('{tbl_id}');
+        var content = tblWrap.innerHTML;
+        overlay = document.createElement('div');
+        overlay.id = '{overlay_id}';
+        overlay.innerHTML = '<style>.styled-table{{width:100%;border-collapse:collapse;font-size:13px;}}.styled-table th{{background:#1e293b;color:#e2e8f0;border-bottom:2px solid #334155;padding:10px 8px;position:sticky;top:0;z-index:1;}}.styled-table td{{padding:7px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#1e293b;}}.styled-table tbody tr:nth-child(even){{background:#f8fafc;}}.styled-table tbody tr:hover{{background:#e2e8f0;}}</style>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">{title}</span><button onclick="window._fsClose_{tbl_id}()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">' + content + '</div>';
+        overlay.style.cssText = 'display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
+        document.body.appendChild(overlay);
+    }};
+    window['_fsClose_{tbl_id}'] = function() {{
+        if (overlay) {{ overlay.remove(); overlay = null; }}
+    }};
+}})();
+</script>
+"""
+    fs_btn = (
+        f'<button onclick="window._fsOpen_{tbl_id}()" '
+        f'style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
+        f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
+    )
+    title_html = f'<div style="font-weight:700;font-size:14px;margin-bottom:4px;">{title}</div>' if title else ''
+    full_html = f'{fs_js}{title_html}{fs_btn}<div id="{tbl_id}">{inner_html}</div>'
+    return full_html, tbl_id
+
+
 def _html_table(rows, col_widths=None, height=None):
     """Render dict list as styled HTML table, supports HTML tags inside cells"""
     if not rows:
@@ -2134,7 +2171,8 @@ with tabs[1]:
                 st.plotly_chart(fig, use_container_width=True)
                 _render_download_panel(_sm_r, list(_sm_r[0].keys()), 'promo_store_roi.csv', '📥 店铺ROI')
             _cols = list(_sm_r[0].keys())
-            st.markdown(_html_table(_sm_r, col_widths={c: '100px' for c in _cols}, height=max(280, len(_sm_r)*34+40)), unsafe_allow_html=True)
+            _sm_html = _html_table(_sm_r, col_widths={c: '100px' for c in _cols}, height=max(280, len(_sm_r)*34+40))
+            st.markdown(_wrap_fullscreen(_sm_html, title='🏪 店铺推广矩阵')[0], unsafe_allow_html=True)
             _render_download_panel(_sm_r, list(_sm_r[0].keys()), 'promo_store_matrix.csv', '📥 店铺推广矩阵')
 
         # ── 渠道推广矩阵 ──
@@ -2206,7 +2244,8 @@ with tabs[1]:
                 st.plotly_chart(fig, use_container_width=True)
                 _render_download_panel(_cm_r, list(_cm_r[0].keys()), 'promo_chan_roi.csv', '📥 渠道ROI对比')
             _cols = list(_cm_r[0].keys())
-            st.markdown(_html_table(_cm_r, col_widths={c: '100px' for c in _cols}, height=max(280, len(_cm_r)*34+40)), unsafe_allow_html=True)
+            _cm_html = _html_table(_cm_r, col_widths={c: '100px' for c in _cols}, height=max(280, len(_cm_r)*34+40))
+            st.markdown(_wrap_fullscreen(_cm_html, title='📡 渠道推广矩阵')[0], unsafe_allow_html=True)
             _render_download_panel(_cm_r, list(_cm_r[0].keys()), 'promo_chan_matrix.csv', '📥 渠道推广矩阵')
 
         # ── TOP10 推广计划（按花费）──
@@ -2268,8 +2307,9 @@ with tabs[1]:
                 '总加购数': f"{int(v['总加购数']):,}"
             })
         if _pt:
-            st.dataframe(pd.DataFrame(_pt), use_container_width=True, hide_index=True, height=400)
-            _render_download_panel(_pt, list(_pt[0].keys()), 'promo_daily.csv', '📥 推广日明细')
+            _pt_headers = list(_pt[0].keys())
+            _render_html_table(_pt, _pt_headers, _pt_headers, title='📢 推广日明细')
+            _render_download_panel(_pt, _pt_headers, 'promo_daily.csv', '📥 推广日明细')
 
         # ── 单品推广分析表 ──
         st.markdown('<div class="section-title">📦 单品推广分析</div>', unsafe_allow_html=True)
@@ -2350,7 +2390,8 @@ with tabs[1]:
                                    yaxis=dict(categoryorder='total ascending'))
                 st.plotly_chart(fig, use_container_width=True)
             _cols = list(_sku_r[0].keys())
-            st.markdown(_html_table(_sku_r, col_widths={c: '100px' for c in _cols}, height=max(300, len(_sku_r)*34+40)), unsafe_allow_html=True)
+            _sku_html = _html_table(_sku_r, col_widths={c: '100px' for c in _cols}, height=max(300, len(_sku_r)*34+40))
+            st.markdown(_wrap_fullscreen(_sku_html, title='📦 单品推广分析')[0], unsafe_allow_html=True)
             _render_download_panel(_sku_r, list(_sku_r[0].keys()), 'promo_sku_analysis.csv', '📥 单品推广分析')
         else:
             st.info('当前筛选条件下无单品推广数据')
@@ -2403,7 +2444,8 @@ with tabs[1]:
                     'CPC同比': f"<span style='color:{_cpc_c or '#94a3b8'}'>{_cpc_yoy}</span>",
                     '转化率同比': f"<span style='color:{_cv_c or '#94a3b8'}'>{_cv_yoy}</span>",
                 })
-            st.markdown(_html_table(_cat_r, col_widths={c: '105px' for c in _cat_r[0].keys()}, height=max(300, len(_cat_r)*34+40)), unsafe_allow_html=True)
+            _cat_html = _html_table(_cat_r, col_widths={c: '105px' for c in _cat_r[0].keys()}, height=max(300, len(_cat_r)*34+40))
+            st.markdown(_wrap_fullscreen(_cat_html, title='📂 产品线推广矩阵')[0], unsafe_allow_html=True)
             _render_download_panel(_cat_r, list(_cat_r[0].keys()), 'promo_product_line.csv', '📥 产品线推广矩阵')
         else:
             st.info('当前筛选条件下无产品线推广数据')
@@ -2455,7 +2497,8 @@ with tabs[1]:
                     'CPC同比': f"<span style='color:{_cpc_c or '#94a3b8'}'>{_cpc_yoy}</span>",
                     '转化率同比': f"<span style='color:{_cv_c or '#94a3b8'}'>{_cv_yoy}</span>",
                 })
-            st.markdown(_html_table(_scene_r, col_widths={c: '105px' for c in _scene_r[0].keys()}, height=max(300, len(_scene_r)*34+40)), unsafe_allow_html=True)
+            _scene_html = _html_table(_scene_r, col_widths={c: '105px' for c in _scene_r[0].keys()}, height=max(300, len(_scene_r)*34+40))
+            st.markdown(_wrap_fullscreen(_scene_html, title='🎯 营销场景推广矩阵')[0], unsafe_allow_html=True)
             _render_download_panel(_scene_r, list(_scene_r[0].keys()), 'promo_scene.csv', '📥 营销场景推广矩阵')
         else:
             st.info('当前筛选条件下无营销场景推广数据')
@@ -2591,7 +2634,8 @@ with tabs[2]:
             '指标': k_name, '本期数值': cur_str, '对比期数值': prev_str,
             '变化量': diff_str, '变化率(%)': f'{chg*100:+.1f}%' if chg is not None else '--'
         })
-    st.dataframe(df(compare_rows), use_container_width=True, hide_index=True)
+    _comp_headers = ['指标', '本期数值', '对比期数值', '变化量', '变化率(%)']
+    _render_html_table(compare_rows, _comp_headers, _comp_headers, title='📊 销售指标变化详情')
 
     # ═══════════════════════════════════════════════════════════════
     # 推广对比分析
@@ -2728,7 +2772,8 @@ with tabs[2]:
                 '指标': k_name, '本期数值': cur_str, '对比期数值': prev_str,
                 '变化量': diff_str, '变化率(%)': f'{chg*100:+.1f}%' if chg is not None else '--'
             })
-        st.dataframe(df(promo_compare_rows), use_container_width=True, hide_index=True)
+        _pcomp_headers = ['指标', '本期数值', '对比期数值', '变化量', '变化率(%)']
+        _render_html_table(promo_compare_rows, _pcomp_headers, _pcomp_headers, title='📢 推广指标变化详情')
 
     st.markdown('---')
     p1, p2 = st.columns(2)
@@ -2896,7 +2941,7 @@ with tabs[2]:
                 _html += f'<td style="{align}">{val}</td>'
             _html += '</tr>'
         _html += '</tbody></table></div>'
-        st.markdown(_html, unsafe_allow_html=True)
+        st.markdown(_wrap_fullscreen(_html, title='📊 销售数据对比分析')[0], unsafe_allow_html=True)
 
     _render_download_panel(dim_compare if dim_compare else [], _dim_cols, f'dimension_compare_{_dim_label}.csv', '📥 销售维度对比')
     _render_download_panel(compare_rows, ['指标', '本期数值', '对比期数值', '变化量', '变化率(%)'], 'period_comparison.csv', '📥 时间段对比')
@@ -3147,7 +3192,7 @@ with tabs[2]:
                     _p_html += f'<td style="{align}">{val}</td>'
                 _p_html += '</tr>'
             _p_html += '</tbody></table></div>'
-            st.markdown(_p_html, unsafe_allow_html=True)
+            st.markdown(_wrap_fullscreen(_p_html, title='📢 推广数据对比分析')[0], unsafe_allow_html=True)
             _render_download_panel(_p_cmp_tbl, _p_cmp_cols, f'promo_compare_{_p_cmp_dim_label}.csv', '📥 推广维度对比')
 
     # ─────────────────────────────────────────────────────────────
@@ -4674,7 +4719,8 @@ with tabs[4]:
             })
         _ch_flow.sort(key=lambda x: float(x['访客占比'].rstrip('%')), reverse=True)
         if _ch_flow:
-            st.markdown(_html_table(_ch_flow, height=min(340, len(_ch_flow)*36+50)), unsafe_allow_html=True)
+            _chf_html = _html_table(_ch_flow, height=min(340, len(_ch_flow)*36+50))
+            st.markdown(_wrap_fullscreen(_chf_html, title='👥 渠道流量结构')[0], unsafe_allow_html=True)
 
         # 加购漏斗（人侧视角）
         st.markdown('#### 🔽 全域加购漏斗（人侧）')
@@ -4725,7 +4771,8 @@ with tabs[4]:
                 _rs_rows.append({'渠道': r['渠道'], '品类': r['品类'], '型号': r['型号'],
                     '上期GMV': f"¥{r['上期GMV']:,.0f}" if r['上期GMV'] > 0 else '新上榜',
                     '本期GMV': f"¥{r['本期GMV']:,.0f}", '增速': sp, '访客增幅': r['访客增幅']})
-            st.markdown(_html_table(_rs_rows, height=min(320, len(_rs_rows)*34+40)), unsafe_allow_html=True)
+            _rs_html = _html_table(_rs_rows, height=min(320, len(_rs_rows)*34+40))
+            st.markdown(_wrap_fullscreen(_rs_html, title='⭐ 黑马/明星单品')[0], unsafe_allow_html=True)
         else:
             st.info('ℹ️ 未发现增速>30%的型号（阈值：增速>30% 或 新上榜且GMV>¥500）。')
 
@@ -4771,7 +4818,8 @@ with tabs[4]:
             })
         _cat_rows.sort(key=lambda x: float(x['成交占比'].rstrip('%')), reverse=True)
         if _cat_rows:
-            st.markdown(_html_table(_cat_rows, height=min(380, len(_cat_rows)*36+50)), unsafe_allow_html=True)
+            _cat_html = _html_table(_cat_rows, height=min(380, len(_cat_rows)*36+50))
+            st.markdown(_wrap_fullscreen(_cat_html, title='📦 品类结构诊断')[0], unsafe_allow_html=True)
             _render_download_panel(_cat_rows, list(_cat_rows[0].keys()), 'diag_category.csv', '📥 品类结构')
 
         # 爆款健康度（上期TOP20 → 本期变化）
@@ -5891,9 +5939,13 @@ with tabs[6]:
             model_rows = tgt.get('model', [])
             date_list = tgt.get('dates', [])
 
-            # 目标达成模块使用筛选后数据（与趋势分析保持一致）
-            _raw_daily_target = daily_all_filtered
-            _raw_promo_target = load_promo_data(_promo_bytes) if _promo_bytes else []
+            # 目标达成模块不受全局筛选影响，只受目标月份选择影响
+            # 从原始销售数据中筛选目标月份的日期
+            _cur_ym_prefix = _sel_ym + '-'
+            _raw_daily_target = [r for r in data['daily'] if r.get('日期', '').startswith(_cur_ym_prefix)]
+            # 推广数据同样不受全局筛选影响
+            _all_promo_raw = load_promo_data(_promo_bytes) if _promo_bytes else []
+            _raw_promo_target = [r for r in _all_promo_raw if r.get('_date', '').startswith(_cur_ym_prefix)]
 
             if not _raw_daily_target:
                 st.warning('请先上传销售数据，才能自动计算达成率')
@@ -6283,14 +6335,10 @@ with tabs[6]:
                     spend_total = 0.0
                     for d in date_list:
                         sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
-                        if sv == 0:
-                            sv = promo_by_shop_date.get((shop_name, d), 0.0)
                         spend_total += sv
                     actual_summary['实际投入金额'] = {'合计': spend_total}
                     for d in date_list:
                         sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
-                        if sv == 0:
-                            sv = promo_by_shop_date.get((shop_name, d), 0.0)
                         actual_summary['实际投入金额'][d] = sv
                     # 实际支付件数
                     qty_total = 0.0
@@ -6607,8 +6655,6 @@ with tabs[6]:
                 spend_actual = 0.0
                 for d in date_list:
                     sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
-                    if sv == 0:
-                        sv = promo_by_shop_date.get((shop_name, d), 0.0)
                     spend_actual += sv
                 # ── 去年同期数据 ──
                 # 目标同比基准 = 去年同期全月实际值
@@ -6619,8 +6665,6 @@ with tabs[6]:
                         amt_target_ly += _daily_model_ly_full.get((shop_name, model_name, d), 0.0)
                     for d in _yoy_date_list_full:
                         sv = _promo_model_ly_full.get((shop_name, model_name, d), 0.0)
-                        if sv == 0:
-                            sv = _promo_shop_ly_full.get((shop_name, d), 0.0)
                         spend_budget_ly += sv
                 # 实际同比：用去年同期同期天数
                 amt_actual_ly = 0.0
@@ -6630,8 +6674,6 @@ with tabs[6]:
                         amt_actual_ly += _daily_model_ly.get((shop_name, model_name, d), 0.0)
                     for d in _yoy_date_list:
                         sv = _promo_model_ly.get((shop_name, model_name, d), 0.0)
-                        if sv == 0:
-                            sv = _promo_shop_ly.get((shop_name, d), 0.0)
                         spend_actual_ly += sv
                 if shop_name not in model_struct_pre:
                     model_struct_pre[shop_name] = []
