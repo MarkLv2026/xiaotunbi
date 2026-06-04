@@ -659,6 +659,17 @@ if _targets_bytes:
 meta = data['meta']
 if _sales_loaded:
     st.success(f"销售数据已更新：{meta['dateRange'][0]} 至 {meta['dateRange'][1]}，共 {meta['rows']:,} 行；解析工作表：{'、'.join(meta.get('usedSheets', []))}")
+    # ── 检测各店铺销售/推广数据缺失 ──
+    _all_shops_in_sales = set(r.get('店铺', '') for r in data['daily'] if r.get('店铺'))
+    _all_shops_in_promo = set(r.get('_店铺', '') for r in promo_rows if r.get('_店铺'))
+    _known_shops = ['华为京东自营', '京东小豚', '天猫华为官旗', '天猫智选', '抖音小豚']
+    _missing_sales = [s for s in _known_shops if s not in _all_shops_in_sales]
+    _missing_promo = [s for s in _known_shops if s not in _all_shops_in_promo]
+    if _missing_sales:
+        st.warning(f"⚠️ 以下店铺**销售数据**缺失：{'、'.join(_missing_sales)}")
+    if _missing_promo:
+        if promo_rows:
+            st.warning(f"⚠️ 以下店铺**推广数据**缺失：{'、'.join(_missing_promo)}")
 
 # 全局筛选
 fc = st.container(border=True)
@@ -6210,44 +6221,62 @@ with tabs[6]:
                     spend_pct_actual = s['spend_actual'] / total_spend_actual * 100 if total_spend_actual > 0 else 0
                     budget_rate = s['spend_budget'] / s['amt_target'] * 100 if s['amt_target'] > 0 else 0
                     actual_rate = s['spend_actual'] / s['amt_actual'] * 100 if s['amt_actual'] > 0 else 0
-                    struct_rows.append([
-                        shop_name,
-                        f'{s["amt_target"]:,.0f}', f'{sales_pct_target:.1f}%',
-                        f'{s["amt_actual"]:,.0f}', f'{sales_pct_actual:.1f}%',
-                        f'{sales_pct_actual - sales_pct_target:+.1f}%',
-                        f'{s["spend_budget"]:,.0f}', f'{spend_pct_budget:.1f}%',
-                        f'{s["spend_actual"]:,.0f}', f'{spend_pct_actual:.1f}%',
-                        f'{spend_pct_actual - spend_pct_budget:+.1f}%',
-                        f'{budget_rate:.1f}%', f'{actual_rate:.1f}%',
-                        f'{actual_rate - budget_rate:+.1f}%',
-                    ])
+                    # 销额进度条: 实际/目标
+                    sales_prog = min(s['amt_actual'] / s['amt_target'] * 100, 100) if s['amt_target'] > 0 else 0
+                    sales_prog_color = '#22c55e' if sales_prog >= 100 else '#f59e0b' if sales_prog >= 70 else '#ef4444'
+                    sales_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:80px;display:inline-block;vertical-align:middle;"><div style="width:{sales_prog:.0f}%;background:{sales_prog_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{sales_prog_color};">{sales_prog:.0f}%</span>'
+                    # 花费进度条: 实际/预算
+                    spend_prog = min(s['spend_actual'] / s['spend_budget'] * 100, 100) if s['spend_budget'] > 0 else 0
+                    spend_prog_color = '#22c55e' if spend_prog <= 105 else '#f59e0b' if spend_prog <= 120 else '#ef4444'
+                    spend_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:80px;display:inline-block;vertical-align:middle;"><div style="width:{spend_prog:.0f}%;background:{spend_prog_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{spend_prog_color};">{spend_prog:.0f}%</span>'
+                    struct_rows.append({
+                        '_sort_key': s['amt_target'],
+                        'data': [
+                            shop_name,
+                            f'{s["amt_target"]:,.0f}', f'{sales_pct_target:.1f}%',
+                            f'{s["amt_actual"]:,.0f}', f'{sales_pct_actual:.1f}%',
+                            f'{sales_pct_actual - sales_pct_target:+.1f}%',
+                            sales_prog_html,
+                            f'{s["spend_budget"]:,.0f}', f'{spend_pct_budget:.1f}%',
+                            f'{s["spend_actual"]:,.0f}', f'{spend_pct_actual:.1f}%',
+                            f'{spend_pct_actual - spend_pct_budget:+.1f}%',
+                            spend_prog_html,
+                            f'{budget_rate:.1f}%', f'{actual_rate:.1f}%',
+                            f'{actual_rate - budget_rate:+.1f}%',
+                        ]
+                    })
+
+                # 按目标销额从高到低排序
+                struct_rows.sort(key=lambda x: x['_sort_key'], reverse=True)
 
                 if struct_rows:
                     struct_header = ['店铺',
-                                     '目标销额', '销额占比', '实际销额', '实际占比', '占比差异',
-                                     '预算花费', '预算占比', '实际花费', '实际占比', '占比差异',
+                                     '目标销额', '销额占比', '实际销额', '实际占比', '占比差异', '销额进度',
+                                     '预算花费', '预算占比', '实际花费', '实际占比', '占比差异', '花费进度',
                                      '预算费率', '实际费率', '费率差异']
+                    # 差异列索引（在新表头中）: 占比差异=5, 占比差异=11, 费率差异=15
+                    diff_cols = {5, 11, 15}
                     html = '<div class="styled-table-wrap"><table class="styled-table"><thead><tr>'
                     for h in struct_header:
                         html += f'<th style="text-align:center;white-space:nowrap;">{h}</th>'
                     html += '</tr></thead><tbody>'
-                    for row in struct_rows:
+                    for item in struct_rows:
+                        row = item['data']
                         html += '<tr>'
                         for j, cell in enumerate(row):
-                            align = 'left' if j == 0 else 'right'
-                            style = ''
-                            if j in (5, 10, 14):
+                            style = 'text-align:center;white-space:nowrap;'
+                            if j in diff_cols:
                                 try:
                                     v = float(str(cell).rstrip('%'))
                                     color = '#22c55e' if v > 0 else '#ef4444' if v < 0 else '#888'
-                                    style = f' style="color:{color};font-weight:bold;"'
+                                    style += f'color:{color};font-weight:bold;'
                                 except:
                                     pass
-                            html += f'<td style="text-align:{align};white-space:nowrap;"{style}>{cell}</td>'
+                            html += f'<td style="{style}">{cell}</td>'
                         html += '</tr>'
                     html += '</tbody></table></div>'
                     st.markdown(html, unsafe_allow_html=True)
-                    st.caption('💡 占比差异 = 实际占比 − 目标占比；费率差异 = 实际费率 − 预算费率；正值表示占比/费率高于预期')
+                    st.caption('💡 占比差异 = 实际占比 − 目标占比；费率差异 = 实际费率 − 预算费率；销额进度/花费进度 = 实际/目标（预算）比')
 
             # ── 单品销售结构 & 费用结构分析（前置）──
             # 先收集所有 (shop, model) 的唯一组合，并为每个组合找到成交金额目标行
@@ -6311,44 +6340,61 @@ with tabs[6]:
                         spend_pct = spend_actual / shop_total_spend * 100 if shop_total_spend > 0 else 0
                         budget_rate = spend_budget / amt_target * 100 if amt_target > 0 else 0
                         actual_rate = spend_actual / amt_actual * 100 if amt_actual > 0 else 0
-                        mrows.append([
-                            model_name,
-                            f'{amt_target:,.0f}', f'{sales_pct_target:.1f}%',
-                            f'{amt_actual:,.0f}', f'{sales_pct_actual:.1f}%',
-                            f'{sales_pct_actual - sales_pct_target:+.1f}%',
-                            f'{spend_budget:,.0f}', f'{budget_pct:.1f}%',
-                            f'{spend_actual:,.0f}', f'{spend_pct:.1f}%',
-                            f'{spend_pct - budget_pct:+.1f}%',
-                            f'{budget_rate:.1f}%', f'{actual_rate:.1f}%',
-                            f'{actual_rate - budget_rate:+.1f}%',
-                        ])
+                        # 销额进度条
+                        sales_prog = min(amt_actual / amt_target * 100, 100) if amt_target > 0 else 0
+                        sp_color = '#22c55e' if sales_prog >= 100 else '#f59e0b' if sales_prog >= 70 else '#ef4444'
+                        sales_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:70px;display:inline-block;vertical-align:middle;"><div style="width:{sales_prog:.0f}%;background:{sp_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{sp_color};">{sales_prog:.0f}%</span>'
+                        # 花费进度条
+                        spend_prog = min(spend_actual / spend_budget * 100, 100) if spend_budget > 0 else 0
+                        ep_color = '#22c55e' if spend_prog <= 105 else '#f59e0b' if spend_prog <= 120 else '#ef4444'
+                        spend_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:70px;display:inline-block;vertical-align:middle;"><div style="width:{spend_prog:.0f}%;background:{ep_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{ep_color};">{spend_prog:.0f}%</span>'
+                        mrows.append({
+                            '_sort_key': amt_target,
+                            'data': [
+                                model_name,
+                                f'{amt_target:,.0f}', f'{sales_pct_target:.1f}%',
+                                f'{amt_actual:,.0f}', f'{sales_pct_actual:.1f}%',
+                                f'{sales_pct_actual - sales_pct_target:+.1f}%',
+                                sales_prog_html,
+                                f'{spend_budget:,.0f}', f'{budget_pct:.1f}%',
+                                f'{spend_actual:,.0f}', f'{spend_pct:.1f}%',
+                                f'{spend_pct - budget_pct:+.1f}%',
+                                spend_prog_html,
+                                f'{budget_rate:.1f}%', f'{actual_rate:.1f}%',
+                                f'{actual_rate - budget_rate:+.1f}%',
+                            ]
+                        })
+
+                    # 按目标销额从高到低排序
+                    mrows.sort(key=lambda x: x['_sort_key'], reverse=True)
 
                     if mrows:
                         st.markdown(f'**{shop_name}**')
-                        mheader = ['型号', '目标销额', '销额占比', '实际销额', '实际占比', '占比差异',
-                                   '预算花费', '预算占比', '实际花费', '实际占比', '占比差异',
+                        mheader = ['型号', '目标销额', '销额占比', '实际销额', '实际占比', '占比差异', '销额进度',
+                                   '预算花费', '预算占比', '实际花费', '实际占比', '占比差异', '花费进度',
                                    '预算费率', '实际费率', '费率差异']
+                        diff_cols_m = {5, 11, 15}
                         html = '<div class="styled-table-wrap"><table class="styled-table"><thead><tr>'
                         for h in mheader:
                             html += f'<th style="text-align:center;white-space:nowrap;">{h}</th>'
                         html += '</tr></thead><tbody>'
-                        for row in mrows:
+                        for item in mrows:
+                            row = item['data']
                             html += '<tr>'
                             for j, cell in enumerate(row):
-                                align = 'left' if j == 0 else 'right'
-                                style = ''
-                                if j in (5, 10, 14):
+                                style = 'text-align:center;white-space:nowrap;'
+                                if j in diff_cols_m:
                                     try:
                                         v = float(str(cell).rstrip('%'))
                                         color = '#22c55e' if v > 0 else '#ef4444' if v < 0 else '#888'
-                                        style = f' style="color:{color};font-weight:bold;"'
+                                        style += f'color:{color};font-weight:bold;'
                                     except:
                                         pass
-                                html += f'<td style="text-align:{align};white-space:nowrap;"{style}>{cell}</td>'
+                                html += f'<td style="{style}">{cell}</td>'
                             html += '</tr>'
                         html += '</tbody></table></div>'
                         st.markdown(html, unsafe_allow_html=True)
-                    st.caption('💡 销额占比差异 = 实际销额占比 − 目标销额占比；花费占比 = 该单品花费 / 该店铺总花费；费率差异 = 实际费率 − 预算费率')
+                    st.caption('💡 销额/花费进度 = 实际/目标（预算）；占比差异 = 实际占比 − 目标占比；费率差异 = 实际费率 − 预算费率')
 
             st.subheader('🏪 店铺目标达成')
             if shop_rows:
