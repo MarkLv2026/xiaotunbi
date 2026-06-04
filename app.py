@@ -6028,10 +6028,11 @@ with tabs[6]:
                 pass
 
             # 去年同期销售日汇总（按店铺+日期）- 用于实际同比（同期天数）
+            # 注意：去年同期数据必须从全量 data['daily'] 提取，不能从 _raw_daily_target（仅当前月份）
             _daily_shop_ly = {}
             _daily_model_ly = {}
             if _yoy_date_list:
-                for r in _raw_daily_target:
+                for r in data['daily']:
                     d = r.get('日期', '')
                     if d not in _yoy_date_list:
                         continue
@@ -6048,10 +6049,11 @@ with tabs[6]:
                     _daily_model_ly[key_md] += pay_amt
 
             # 去年同期推广花费日汇总（按店铺+日期）- 用于实际同比（同期天数）
+            # 注意：去年同期数据必须从全量 _all_promo_raw 提取，不能从 _raw_promo_target（仅当前月份）
             _promo_shop_ly = {}
             _promo_model_ly = {}
-            if _yoy_date_list and _raw_promo_target:
-                for r in _raw_promo_target:
+            if _yoy_date_list and _all_promo_raw:
+                for r in _all_promo_raw:
                     d = r.get('_date', '')
                     if d not in _yoy_date_list:
                         continue
@@ -6069,10 +6071,11 @@ with tabs[6]:
                         _promo_model_ly[key_pm] += p_spend
 
             # ── 去年全月数据（用于目标同比）──
+            # 注意：去年同期数据必须从全量 data['daily'] 提取
             _daily_shop_ly_full = {}
             _daily_model_ly_full = {}
             if _yoy_date_list_full:
-                for r in _raw_daily_target:
+                for r in data['daily']:
                     d = r.get('日期', '')
                     if d not in _yoy_date_list_full:
                         continue
@@ -6088,10 +6091,11 @@ with tabs[6]:
                         _daily_model_ly_full[key_md] = 0.0
                     _daily_model_ly_full[key_md] += pay_amt
 
+            # 注意：去年同期推广全月数据也必须从全量 _all_promo_raw 提取
             _promo_shop_ly_full = {}
             _promo_model_ly_full = {}
-            if _yoy_date_list_full and _raw_promo_target:
-                for r in _raw_promo_target:
+            if _yoy_date_list_full and _all_promo_raw:
+                for r in _all_promo_raw:
                     d = r.get('_date', '')
                     if d not in _yoy_date_list_full:
                         continue
