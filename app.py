@@ -1038,6 +1038,58 @@ def _wrap_fullscreen(inner_html, title='', fullscreen=True):
     return full_html, tbl_id
 
 
+def _yoy_color(v):
+    """同比颜色"""
+    if v is None or v == '--':
+        return '#64748b'
+    return '#22c55e' if v >= 0 else '#ef4444'
+
+
+_YOY_COLS = {'销额同比','访客同比','转化率同比','花费同比','直接ROI同比','总ROI同比','CPC同比',
+             '销额上月同期','访客上月同期','转化率上月同期','客单价上月同期',
+             '花费上月同期','直接ROI上月同期','总ROI上月同期','CPC上月同期','转化率上月同期',
+             '客单价同比',
+             '费率同比','推广成交占比同比','费率上月同期','推广成交占比上月同期'}
+
+
+def _render_html_table(rows, headers, keys, align='center', height=520, title='', fullscreen=True):
+    """渲染带全屏按钮的 HTML 表格。yoy 列自动着色。复用全局全屏 JS。"""
+    import uuid as _uuid_mod
+    _inject_fs_js()
+    tbl_id = 'tbl_' + _uuid_mod.uuid4().hex[:8]
+    title_html = f'<div style="font-weight:700;font-size:14px;margin-bottom:4px;">{title}</div>' if title else ''
+    fullscreen_btn = ''
+    if fullscreen:
+        fullscreen_btn = (
+            f'<button onclick="window._fsOpen(this)" data-fs-id="{tbl_id}" data-fs-title="{title}" '
+            f'style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
+            f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
+        )
+    th = ''.join(f'<th style="text-align:{align};white-space:nowrap">{h}</th>' for h in headers)
+    body = ''
+    for r in rows:
+        is_total = r.get('日期') in ('总计',) or r.get('月份') in ('总计',) or r.get('_period') in ('合计',) or r.get('年月') in ('合计',)
+        row_style = 'background:#f0f4ff;font-weight:700;' if is_total else ''
+        tr = ''
+        for k in keys:
+            v = r.get(k, '')
+            style = f"text-align:{align};padding:7px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;{row_style}"
+            if k in _YOY_COLS:
+                try:
+                    nv = float(str(v).replace('%','').replace('+',''))
+                    color = _yoy_color(nv/100)
+                    style += f"color:{color};font-weight:700;"
+                except Exception:
+                    pass
+            tr += f'<td style="{style}">{v}</td>'
+        body += f'<tr>{tr}</tr>'
+    table_html = f'<table class="styled-table"><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table>'
+    main_html = (f'<div id="{tbl_id}" class="styled-table-wrap" style="max-height:{height}px;overflow:auto;">'
+                 f'{table_html}</div>')
+    html = f'{title_html}{fullscreen_btn}{main_html}'
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def _html_table(rows, col_widths=None, height=None):
     """Render dict list as styled HTML table, supports HTML tags inside cells"""
     if not rows:
@@ -3330,81 +3382,6 @@ with tabs[3]:
             '转化率': v['支付买家数'] / v['商品访客数'] if v['商品访客数'] else 0,
             '加购率': v['商品加购人数'] / v['商品访客数'] if v['商品访客数'] else 0,
         } for (dv, dt_str), v in sorted(_sales_day.items())]
-
-    # ── 数据表格 ──
-    def _yoy_color(v):
-        if v is None or v == '--':
-            return '#64748b'
-        return '#22c55e' if v >= 0 else '#ef4444'
-
-    import uuid as _uuid_mod
-    _YOY_COLS = {'销额同比','访客同比','转化率同比','花费同比','直接ROI同比','总ROI同比','CPC同比',
-                 '销额上月同期','访客上月同期','转化率上月同期','客单价上月同期',
-                 '花费上月同期','直接ROI上月同期','总ROI上月同期','CPC上月同期','转化率上月同期',
-                 '客单价同比',
-                 '费率同比','推广成交占比同比','费率上月同期','推广成交占比上月同期'}
-
-    def _render_html_table(rows, headers, keys, align='center', height=520, title='', fullscreen=True):
-        """渲染带全屏按钮的 HTML 表格。yoy 列自动着色。全屏使用 CSS overlay modal。"""
-        tbl_id = 'tbl_' + _uuid_mod.uuid4().hex[:8]
-        overlay_id = tbl_id + '_fs'
-        fullscreen_btn = ''
-        fullscreen_js = ''
-        if fullscreen:
-            fullscreen_js = f"""
-<script>
-(function() {{
-    var overlay = null;
-    window['_fsOpen_{tbl_id}'] = function() {{
-        if (overlay) return;
-        var tblWrap = document.getElementById('{tbl_id}');
-        var content = tblWrap.innerHTML;
-        overlay = document.createElement('div');
-        overlay.id = '{overlay_id}';
-        overlay.innerHTML = '<style>.styled-table{{width:100%;border-collapse:collapse;font-size:13px;}}.styled-table th{{background:#f8fafc;border-bottom:2px solid #d1d5db;padding:10px 8px;position:sticky;top:0;z-index:1;}}.styled-table td{{padding:7px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;}}</style>' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">{title}</span><button onclick="window._fsClose_{tbl_id}()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">' + content + '</div>';
-        overlay.style.cssText = 'display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
-        document.body.appendChild(overlay);
-    }};
-    window['_fsClose_{tbl_id}'] = function() {{
-        if (overlay) {{ overlay.remove(); overlay = null; }}
-    }};
-}})();
-</script>
-"""
-            fullscreen_btn = (
-                f'<button onclick="window._fsOpen_{tbl_id}()" '
-                f'style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
-                f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
-            )
-        title_html = f'<div style="font-weight:700;font-size:14px;margin-bottom:4px;">{title}</div>' if title else ''
-        th = ''.join(f'<th style="text-align:{align};white-space:nowrap">{h}</th>' for h in headers)
-        def _build_body():
-            body = ''
-            for r in rows:
-                is_total = r.get('日期') in ('总计',) or r.get('月份') in ('总计',) or r.get('_period') in ('合计',) or r.get('年月') in ('合计',)
-                row_style = 'background:#f0f4ff;font-weight:700;' if is_total else ''
-                tr = ''
-                for k in keys:
-                    v = r.get(k, '')
-                    style = f"text-align:{align};padding:7px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;{row_style}"
-                    if k in _YOY_COLS:
-                        try:
-                            nv = float(str(v).replace('%','').replace('+',''))
-                            color = _yoy_color(nv/100)
-                            style += f"color:{color};font-weight:700;"
-                        except Exception:
-                            pass
-                    tr += f'<td style="{style}">{v}</td>'
-                body += f'<tr>{tr}</tr>'
-            return body
-        body = _build_body()
-        table_html = f'<table class="styled-table"><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table>'
-        # 正常视图
-        main_html = (f'<div id="{tbl_id}" class="styled-table-wrap" style="max-height:{height}px;overflow:auto;">'
-                     f'{table_html}</div>')
-        html = f'{fullscreen_js}{title_html}{fullscreen_btn}{main_html}'
-        st.markdown(html, unsafe_allow_html=True)
 
     st.markdown('<div class="section-title">数据明细</div>', unsafe_allow_html=True)
 
