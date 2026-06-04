@@ -6964,6 +6964,17 @@ with tabs[6]:
                     header_cols = ['指标', '合计'] + date_list
                     table_data, actual_summary = _build_rows_for_entity(mdata, shop_name, model_name)
 
+                    # 单品表格去重：按指标名只保留首次出现的行（防止Excel中重复录入）
+                    if model_name and table_data:
+                        seen_indicators = set()
+                        deduped = []
+                        for row in table_data:
+                            indicator = row[0]
+                            if indicator not in seen_indicators:
+                                seen_indicators.add(indicator)
+                                deduped.append(row)
+                        table_data = deduped
+
                     if table_data:
                         # 跳过全空表格：检查是否所有数据行（除第一列指标名外）都是 '--'
                         all_empty = True
