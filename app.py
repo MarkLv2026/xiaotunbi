@@ -6286,6 +6286,9 @@ with tabs[6]:
                         table_data.append(row_vals)
 
                     elif itype == 'actual':
+                        # 单品模式：跳过Excel中的actual行（实际值由代码自动计算），避免与统一指标行重复
+                        if model_name:
+                            continue
                         actual_total = 0.0
                         for d in date_list:
                             av = _get_actual_value(indicator, shop_name, d, model_name)
@@ -6321,7 +6324,7 @@ with tabs[6]:
                     for d in date_list:
                         actual_summary['实际支付件数'][d] = _get_actual_value('实际支付件数', shop_name, d)
 
-                # 2. 单品模式：填充 actual_summary 供 calc 行计算使用（不追加到表格，Excel已有对应指标行）
+                # 2. 单品模式：填充 actual_summary 供 calc 行计算使用，并追加"实际投入金额"行到表格
                 if model_name:
                     # 实际成交金额：用于达成率计算
                     amt_total = 0.0
@@ -6331,7 +6334,7 @@ with tabs[6]:
                     actual_summary['实际成交金额'] = {'合计': amt_total}
                     for d in date_list:
                         actual_summary['实际成交金额'][d] = _get_actual_value('成交金额', shop_name, d, model_name)
-                    # 实际投入金额：用于费率计算
+                    # 实际投入金额：用于费率计算 + 追加到表格展示
                     spend_total = 0.0
                     for d in date_list:
                         sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
@@ -6340,6 +6343,13 @@ with tabs[6]:
                     for d in date_list:
                         sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
                         actual_summary['实际投入金额'][d] = sv
+                    # 追加"实际投入金额"行到表格（显示每日推广花费）
+                    spend_row = ['实际推广花费']
+                    spend_row.append(f'{spend_total:,.0f}' if spend_total else '--')
+                    for d in date_list:
+                        sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
+                        spend_row.append(f'{sv:,.0f}' if sv else '--')
+                    table_data.append(spend_row)
                     # 实际支付件数
                     qty_total = 0.0
                     for d in date_list:
