@@ -5891,8 +5891,8 @@ with tabs[6]:
             model_rows = tgt.get('model', [])
             date_list = tgt.get('dates', [])
 
-            # 目标达成模块使用原始全量数据，不受全局筛选影响
-            _raw_daily_target = data.get('daily', [])
+            # 目标达成模块使用筛选后数据（与趋势分析保持一致）
+            _raw_daily_target = daily_all_filtered
             _raw_promo_target = load_promo_data(_promo_bytes) if _promo_bytes else []
 
             if not _raw_daily_target:
@@ -6485,11 +6485,9 @@ with tabs[6]:
                             shop_name,
                             f'{s["amt_target"]:,.0f}', _fmt_yoy_val(yoy_amt_target), f'{sales_pct_target:.1f}%',
                             f'{s["amt_actual"]:,.0f}', _fmt_yoy_val(yoy_amt_actual), f'{sales_pct_actual:.1f}%',
-                            f'{sales_pct_actual - sales_pct_target:+.1f}%',
                             sales_prog_html,
                             f'{s["spend_budget"]:,.0f}', _fmt_yoy_val(yoy_spend_budget), f'{spend_pct_budget:.1f}%',
                             f'{s["spend_actual"]:,.0f}', _fmt_yoy_val(yoy_spend_actual), f'{spend_pct_actual:.1f}%',
-                            f'{spend_pct_actual - spend_pct_budget:+.1f}%',
                             spend_prog_html,
                             f'{budget_rate:.1f}%', _fmt_yoy_val(yoy_budget_rate),
                             f'{actual_rate:.1f}%', _fmt_yoy_val(yoy_actual_rate),
@@ -6526,11 +6524,9 @@ with tabs[6]:
                         '<b>合计</b>',
                         f'<b>{total_amt_target:,.0f}</b>', _fmt_yoy_val(_tt_yoy_amt_target), '<b>100.0%</b>',
                         f'<b>{total_amt_actual:,.0f}</b>', _fmt_yoy_val(_tt_yoy_amt_actual), '<b>100.0%</b>',
-                        '<b>--</b>',
                         _tt_sales_prog_html,
                         f'<b>{total_spend_budget:,.0f}</b>', _fmt_yoy_val(_tt_yoy_spend_budget), '<b>100.0%</b>',
                         f'<b>{total_spend_actual:,.0f}</b>', _fmt_yoy_val(_tt_yoy_spend_actual), '<b>100.0%</b>',
-                        '<b>--</b>',
                         _tt_spend_prog_html,
                         f'<b>{_tt_budget_rate:.1f}%</b>', _fmt_yoy_val(_tt_yoy_budget_rate),
                         f'<b>{_tt_actual_rate:.1f}%</b>', _fmt_yoy_val(_tt_yoy_actual_rate),
@@ -6541,14 +6537,14 @@ with tabs[6]:
                 if struct_rows:
                     struct_header = ['店铺',
                                      '目标销额', '同比', '销额占比',
-                                     '实际销额', '同比', '实际占比', '占比差异', '销额进度',
+                                     '实际销额', '同比', '实际占比', '销额进度',
                                      '预算花费', '同比', '预算占比',
-                                     '实际花费', '同比', '实际占比', '占比差异', '花费进度',
+                                     '实际花费', '同比', '实际占比', '花费进度',
                                      '预算费率', '同比', '实际费率', '同比', '费率差异']
-                    # 差异列索引: 占比差异=7, 占比差异(花费)=15, 费率差异=20
-                    diff_cols = {7, 15, 20}
-                    # 同比列索引: 2,5,10,13,18,19
-                    yoy_cols = {2, 5, 10, 13, 18, 19}
+                    # 差异列索引: 费率差异=18
+                    diff_cols = {18}
+                    # 同比列索引: 2,5,9,12,16,17
+                    yoy_cols = {2, 5, 9, 12, 16, 17}
                     html = '<div class="styled-table-wrap"><table class="styled-table"><thead><tr>'
                     for h in struct_header:
                         html += f'<th style="text-align:center;white-space:nowrap;">{h}</th>'
@@ -6578,7 +6574,7 @@ with tabs[6]:
                         html += '</tr>'
                     html += '</tbody></table></div>'
                     st.markdown(html, unsafe_allow_html=True)
-                    st.caption('💡 占比差异 = 实际占比 − 目标占比；费率差异 = 实际费率 − 预算费率；目标同比=去年同期全月，实际同比=去年同期同期天数')
+                    st.caption('💡 费率差异 = 实际费率 − 预算费率；目标同比=去年同期全月，实际同比=去年同期同期天数')
 
             # ── 单品销售结构 & 费用结构分析（前置）──
             # 先收集所有 (shop, model) 的唯一组合，并为每个组合找到成交金额目标行
@@ -6688,11 +6684,9 @@ with tabs[6]:
                                 model_name,
                                 f'{amt_target:,.0f}', _fmt_yoy_val(yoy_amt_target), f'{sales_pct_target:.1f}%',
                                 f'{amt_actual:,.0f}', _fmt_yoy_val(yoy_amt_actual), f'{sales_pct_actual:.1f}%',
-                                f'{sales_pct_actual - sales_pct_target:+.1f}%',
                                 sales_prog_html,
                                 f'{spend_budget:,.0f}', _fmt_yoy_val(yoy_spend_budget), f'{budget_pct:.1f}%',
                                 f'{spend_actual:,.0f}', _fmt_yoy_val(yoy_spend_actual), f'{spend_pct:.1f}%',
-                                f'{spend_pct - budget_pct:+.1f}%',
                                 spend_prog_html,
                                 f'{budget_rate:.1f}%', _fmt_yoy_val(yoy_budget_rate),
                                 f'{actual_rate:.1f}%', _fmt_yoy_val(yoy_actual_rate),
@@ -6706,12 +6700,12 @@ with tabs[6]:
                     if mrows:
                         st.markdown(f'**{shop_name}**')
                         mheader = ['型号', '目标销额', '同比', '销额占比',
-                                   '实际销额', '同比', '实际占比', '占比差异', '销额进度',
+                                   '实际销额', '同比', '实际占比', '销额进度',
                                    '预算花费', '同比', '预算占比',
-                                   '实际花费', '同比', '实际占比', '占比差异', '花费进度',
+                                   '实际花费', '同比', '实际占比', '花费进度',
                                    '预算费率', '同比', '实际费率', '同比', '费率差异']
-                        diff_cols_m = {7, 15, 20}
-                        yoy_cols_m = {2, 5, 10, 13, 18, 19}
+                        diff_cols_m = {18}
+                        yoy_cols_m = {2, 5, 9, 12, 16, 17}
                         html = '<div class="styled-table-wrap"><table class="styled-table"><thead><tr>'
                         for h in mheader:
                             html += f'<th style="text-align:center;white-space:nowrap;">{h}</th>'
@@ -6740,7 +6734,7 @@ with tabs[6]:
                             html += '</tr>'
                         html += '</tbody></table></div>'
                         st.markdown(html, unsafe_allow_html=True)
-                    st.caption('💡 销额/花费进度 = 实际/目标（预算）；占比差异 = 实际占比 − 目标占比；费率差异 = 实际费率 − 预算费率；目标同比=去年同期全月，实际同比=去年同期同期天数')
+                    st.caption('💡 销额/花费进度 = 实际/目标（预算）；费率差异 = 实际费率 − 预算费率；目标同比=去年同期全月，实际同比=去年同期同期天数')
 
             st.subheader('🏪 店铺目标达成')
             if shop_rows:
