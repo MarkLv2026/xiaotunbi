@@ -6263,11 +6263,11 @@ with tabs[6]:
                     # 销额进度条: 实际/目标
                     sales_prog = min(s['amt_actual'] / s['amt_target'] * 100, 100) if s['amt_target'] > 0 else 0
                     sales_prog_color = '#22c55e' if sales_prog >= 100 else '#f59e0b' if sales_prog >= 70 else '#ef4444'
-                    sales_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:80px;display:inline-block;vertical-align:middle;"><div style="width:{sales_prog:.0f}%;background:{sales_prog_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{sales_prog_color};">{sales_prog:.0f}%</span>'
+                    sales_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:80px;display:inline-block;vertical-align:middle;"><div style="width:{sales_prog:.0f}%;background:{sales_prog_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{sales_prog_color};">{sales_prog:.1f}%</span>'
                     # 花费进度条: 实际/预算
                     spend_prog = min(s['spend_actual'] / s['spend_budget'] * 100, 100) if s['spend_budget'] > 0 else 0
                     spend_prog_color = '#22c55e' if spend_prog <= 105 else '#f59e0b' if spend_prog <= 120 else '#ef4444'
-                    spend_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:80px;display:inline-block;vertical-align:middle;"><div style="width:{spend_prog:.0f}%;background:{spend_prog_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{spend_prog_color};">{spend_prog:.0f}%</span>'
+                    spend_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:80px;display:inline-block;vertical-align:middle;"><div style="width:{spend_prog:.0f}%;background:{spend_prog_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{spend_prog_color};">{spend_prog:.1f}%</span>'
                     struct_rows.append({
                         '_sort_key': s['amt_target'],
                         'data': [
@@ -6382,11 +6382,11 @@ with tabs[6]:
                         # 销额进度条
                         sales_prog = min(amt_actual / amt_target * 100, 100) if amt_target > 0 else 0
                         sp_color = '#22c55e' if sales_prog >= 100 else '#f59e0b' if sales_prog >= 70 else '#ef4444'
-                        sales_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:70px;display:inline-block;vertical-align:middle;"><div style="width:{sales_prog:.0f}%;background:{sp_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{sp_color};">{sales_prog:.0f}%</span>'
+                        sales_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:70px;display:inline-block;vertical-align:middle;"><div style="width:{sales_prog:.0f}%;background:{sp_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{sp_color};">{sales_prog:.1f}%</span>'
                         # 花费进度条
                         spend_prog = min(spend_actual / spend_budget * 100, 100) if spend_budget > 0 else 0
                         ep_color = '#22c55e' if spend_prog <= 105 else '#f59e0b' if spend_prog <= 120 else '#ef4444'
-                        spend_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:70px;display:inline-block;vertical-align:middle;"><div style="width:{spend_prog:.0f}%;background:{ep_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{ep_color};">{spend_prog:.0f}%</span>'
+                        spend_prog_html = f'<div style="background:#e5e7eb;border-radius:4px;height:10px;width:70px;display:inline-block;vertical-align:middle;"><div style="width:{spend_prog:.0f}%;background:{ep_color};height:10px;border-radius:4px;"></div></div> <span style="font-size:11px;color:{ep_color};">{spend_prog:.1f}%</span>'
                         mrows.append({
                             '_sort_key': amt_target,
                             'data': [
