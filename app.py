@@ -5924,20 +5924,21 @@ with tabs[6]:
                 _cur_ym_parts = _sel_ym.split('-')
                 _yoy_year = int(_cur_ym_parts[0]) - 1
                 _yoy_ym = f'{_yoy_year}-{_cur_ym_parts[1]}'
+                # 去年同期目标数据（可选，未上传时目标同比为空）
                 if _yoy_ym in targets:
                     _yoy_targets = targets[_yoy_ym]
-                    # 同期天数：将本期日期年份替换为去年
-                    for d in date_list:
-                        try:
-                            _dt = datetime.datetime.strptime(d, '%Y-%m-%d')
-                            _ly_dt = _dt.replace(year=_dt.year - 1)
-                            _yoy_date_list.append(_ly_dt.strftime('%Y-%m-%d'))
-                        except ValueError:
-                            _yoy_date_list.append(d)
-                    # 全月：去年同期整月所有日期
-                    import calendar
-                    _last_day = calendar.monthrange(_yoy_year, int(_cur_ym_parts[1]))[1]
-                    _yoy_date_list_full = [f'{_yoy_year}-{int(_cur_ym_parts[1]):02d}-{day:02d}' for day in range(1, _last_day + 1)]
+                # 同期天数：将本期日期年份替换为去年（用于实际同比，不依赖目标数据）
+                for d in date_list:
+                    try:
+                        _dt = datetime.datetime.strptime(d, '%Y-%m-%d')
+                        _ly_dt = _dt.replace(year=_dt.year - 1)
+                        _yoy_date_list.append(_ly_dt.strftime('%Y-%m-%d'))
+                    except ValueError:
+                        _yoy_date_list.append(d)
+                # 全月：去年同期整月所有日期（用于目标同比）
+                import calendar
+                _last_day = calendar.monthrange(_yoy_year, int(_cur_ym_parts[1]))[1]
+                _yoy_date_list_full = [f'{_yoy_year}-{int(_cur_ym_parts[1]):02d}-{day:02d}' for day in range(1, _last_day + 1)]
             except (ValueError, IndexError):
                 pass
 
