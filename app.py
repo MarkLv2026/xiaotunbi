@@ -6153,7 +6153,11 @@ with tabs[6]:
                     sd = daily_by_model_date.get((shop_name, model_name, d), {})
                 else:
                     sd = daily_by_shop_date.get((shop_name, d), {})
-                promo_val = promo_by_shop_date.get((shop_name, d), 0.0)
+                # 推广花费：单品模式用型号级，店铺模式用店铺级
+                if model_name:
+                    promo_val = promo_by_model_date.get((shop_name, model_name, d), 0.0)
+                else:
+                    promo_val = promo_by_shop_date.get((shop_name, d), 0.0)
 
                 # 金额类实际值
                 if '成交金额' in indicator or '销额' in indicator or '支付金额' in indicator:
