@@ -6385,19 +6385,13 @@ with tabs[6]:
 
                     elif '费率' in indicator and '目标' not in indicator:
                         # 实际费率 = 推广花费 / 实际成交金额 × 100
-                        # 单品：推广花费 = 店铺级实际投入金额
                         actual_key = '实际成交金额' if model_name else '成交金额达成'
                         actual_row = actual_summary.get(actual_key, {})
                         spend_row_data = actual_summary.get('实际投入金额', {})
                         row_vals = [indicator]
-                        calc_total_spend = 0.0
-                        calc_total_actual_amt = 0.0
-                        for d in date_list:
-                            actual_amt = actual_row.get(d, 0)
-                            if actual_amt > 0:
-                                spend = spend_row_data.get(d, 0)
-                                calc_total_spend += spend
-                                calc_total_actual_amt += actual_amt
+                        # 直接汇总后相除，与结构表保持一致（不逐日过滤无销额的天）
+                        calc_total_spend = spend_row_data.get('合计', 0.0)
+                        calc_total_actual_amt = actual_row.get('合计', 0.0)
                         rate = calc_total_spend / calc_total_actual_amt * 100 if calc_total_actual_amt > 0 else 0
                         row_vals.append(_fmt_val(rate, is_pct=True))
                         for d in date_list:
