@@ -5952,18 +5952,24 @@ with tabs[6]:
                 d = r.get('日期', '')
                 pay_amt = float(r.get('支付金额', 0) or 0)
                 pay_qty = float(r.get('支付件数', 0) or 0)
+                pay_buyers = float(r.get('支付买家数', 0) or 0)
+                visitors = float(r.get('商品访客数', 0) or 0)
 
                 key_sd = (shop, d)
                 if key_sd not in daily_by_shop_date:
-                    daily_by_shop_date[key_sd] = {'支付金额': 0.0, '支付件数': 0.0}
+                    daily_by_shop_date[key_sd] = {'支付金额': 0.0, '支付件数': 0.0, '支付买家数': 0.0, '商品访客数': 0.0}
                 daily_by_shop_date[key_sd]['支付金额'] += pay_amt
                 daily_by_shop_date[key_sd]['支付件数'] += pay_qty
+                daily_by_shop_date[key_sd]['支付买家数'] += pay_buyers
+                daily_by_shop_date[key_sd]['商品访客数'] += visitors
 
                 key_md = (shop, model_name, d)
                 if key_md not in daily_by_model_date:
-                    daily_by_model_date[key_md] = {'支付金额': 0.0, '支付件数': 0.0}
+                    daily_by_model_date[key_md] = {'支付金额': 0.0, '支付件数': 0.0, '支付买家数': 0.0, '商品访客数': 0.0}
                 daily_by_model_date[key_md]['支付金额'] += pay_amt
                 daily_by_model_date[key_md]['支付件数'] += pay_qty
+                daily_by_model_date[key_md]['支付买家数'] += pay_buyers
+                daily_by_model_date[key_md]['商品访客数'] += visitors
 
             # ── 预计算推广花费日汇总（按店铺+日期）──
             promo_by_shop_date = {}
@@ -6427,6 +6433,42 @@ with tabs[6]:
                             else:
                                 row_vals.append('--')
                         table_data.append(row_vals)
+
+                # ── 追加「实际转化率」行 = 买家数 / 访客数 ──
+                cr_row = ['实际转化率']
+                total_buyers = 0.0
+                total_visitors = 0.0
+                for d in date_list:
+                    if model_name:
+                        sd = daily_by_model_date.get((shop_name, model_name, d), {})
+                    else:
+                        sd = daily_by_shop_date.get((shop_name, d), {})
+                    total_buyers += sd.get('支付买家数', 0.0)
+                    total_visitors += sd.get('商品访客数', 0.0)
+                cr_total = total_buyers / total_visitors * 100 if total_visitors > 0 else 0
+                cr_row.append(_fmt_val(cr_total, is_pct=True) if total_visitors > 0 else '--')
+                for d in date_list:
+                    if model_name:
+                        sd = daily_by_model_date.get((shop_name, model_name, d), {})
+                    else:
+                        sd = daily_by_shop_date.get((shop_name, d), {})
+                    buyers = sd.get('支付买家数', 0.0)
+                    visitors = sd.get('商品访客数', 0.0)
+                    if visitors > 0:
+                        cr_row.append(_fmt_val(buyers / visitors * 100, is_pct=True))
+                    else:
+                        cr_row.append('--')
+                table_data.append(cr_row)
+                # 存入 actual_summary 供全店铺合计汇总使用
+                actual_summary['_buyers'] = {'合计': total_buyers}
+                actual_summary['_visitors'] = {'合计': total_visitors}
+                for d in date_list:
+                    if model_name:
+                        sd = daily_by_model_date.get((shop_name, model_name, d), {})
+                    else:
+                        sd = daily_by_shop_date.get((shop_name, d), {})
+                    actual_summary['_buyers'][d] = sd.get('支付买家数', 0.0)
+                    actual_summary['_visitors'][d] = sd.get('商品访客数', 0.0)
 
                 return table_data, actual_summary
 
@@ -6964,6 +7006,22 @@ with tabs[6]:
                                     else:
                                         row_vals.append('--')
                                 table_data.append(row_vals)
+
+                    # ── 全店铺合计「实际转化率」行 ──
+                    all_buyers_data = all_shop_actual.get('_buyers', {})
+                    all_visitors_data = all_shop_actual.get('_visitors', {})
+                    cr_row = ['实际转化率']
+                    total_buyers_all = sum(v for k, v in all_buyers_data.items() if k != '合计')
+                    total_visitors_all = sum(v for k, v in all_visitors_data.items() if k != '合计')
+                    cr_row.append(_fmt_val(total_buyers_all / total_visitors_all * 100, is_pct=True) if total_visitors_all > 0 else '--')
+                    for d in date_list:
+                        buyers = all_buyers_data.get(d, 0)
+                        visitors = all_visitors_data.get(d, 0)
+                        if visitors > 0:
+                            cr_row.append(_fmt_val(buyers / visitors * 100, is_pct=True))
+                        else:
+                            cr_row.append('--')
+                    table_data.append(cr_row)
 
                     if table_data:
                         _render_target_table(header_cols, '全店铺合计（不含天猫小豚）', table_data)
