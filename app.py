@@ -1184,7 +1184,7 @@ def _render_download_panel(data_rows, columns, file_name, panel_label='📥 下�
                 excel_bytes,
                 file_name=f"{short}.xlsx",
                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                width="stretch",
+                use_container_width=True,
                 key=f"dl_xlsx_{_uid}"
             )
             st.caption('带深色表头、交替行色的格式化 Excel')
@@ -1195,7 +1195,7 @@ def _render_download_panel(data_rows, columns, file_name, panel_label='📥 下�
                 csv_str,
                 file_name=f"{short}_raw.csv",
                 mime='text/csv',
-                width="stretch",
+                use_container_width=True,
                 key=f"dl_csv_{_uid}"
             )
             st.caption('纯原始数据，便于二次处理')
