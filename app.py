@@ -6002,6 +6002,33 @@ with tabs[6]:
                         promo_by_model_date[key_pm] = 0.0
                     promo_by_model_date[key_pm] += p_spend
 
+            # ── 预计算推广直接订单金额日汇总（按店铺+日期）──
+            promo_direct_by_shop_date = {}
+            if _raw_promo_target:
+                for r in _raw_promo_target:
+                    p_shop = (r.get('_店铺', '') or '').strip()
+                    p_date = r.get('_date', '')
+                    p_direct = r.get('_直接订单金额', 0.0)
+                    key_ps = (p_shop, p_date)
+                    if key_ps not in promo_direct_by_shop_date:
+                        promo_direct_by_shop_date[key_ps] = 0.0
+                    promo_direct_by_shop_date[key_ps] += p_direct
+
+            # ── 预计算推广直接订单金额日汇总（按店铺+型号+日期）──
+            promo_direct_by_model_date = {}
+            if _raw_promo_target:
+                for r in _raw_promo_target:
+                    p_shop = (r.get('_店铺', '') or '').strip()
+                    p_model = (r.get('_型号', '') or '').strip()
+                    p_date = r.get('_date', '')
+                    p_direct = r.get('_直接订单金额', 0.0)
+                    if not p_model:
+                        continue
+                    key_pm = (p_shop, p_model, p_date)
+                    if key_pm not in promo_direct_by_model_date:
+                        promo_direct_by_model_date[key_pm] = 0.0
+                    promo_direct_by_model_date[key_pm] += p_direct
+
             # ── 预计算去年同期数据（用于结构表同比）──
             _yoy_ym = None
             _yoy_date_list = []      # 同期天数（用于实际同比，基于今年实际有数据的日期）
@@ -6481,6 +6508,40 @@ with tabs[6]:
                 for d in date_list:
                     actual_summary['_buyers'][d] = daily_buyers[d]
                     actual_summary['_visitors'][d] = daily_visitors[d]
+
+                # ── 追加「直接ROI」行 = 推广直接订单金额 / 推广花费 ──
+                total_direct = 0.0
+                total_spend = 0.0
+                daily_direct = {}
+                daily_spend_roi = {}
+                for d in date_list:
+                    if model_name:
+                        dv = promo_direct_by_model_date.get((shop_name, model_name, d), 0.0)
+                        sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
+                    else:
+                        dv = promo_direct_by_shop_date.get((shop_name, d), 0.0)
+                        sv = promo_by_shop_date.get((shop_name, d), 0.0)
+                    total_direct += dv
+                    total_spend += sv
+                    daily_direct[d] = dv
+                    daily_spend_roi[d] = sv
+                roi_row = ['直接ROI']
+                roi_total = total_direct / total_spend if total_spend > 0 else 0
+                roi_row.append(f'{roi_total:.2f}' if total_spend > 0 else '--')
+                for d in date_list:
+                    dv = daily_direct[d]
+                    sv = daily_spend_roi[d]
+                    if sv > 0:
+                        roi_row.append(f'{dv / sv:.2f}')
+                    else:
+                        roi_row.append('--')
+                table_data.append(roi_row)
+                # 存入 actual_summary 供全店铺合计汇总使用
+                actual_summary['_direct_amt'] = {'合计': total_direct}
+                actual_summary['_spend_for_roi'] = {'合计': total_spend}
+                for d in date_list:
+                    actual_summary['_direct_amt'][d] = daily_direct[d]
+                    actual_summary['_spend_for_roi'][d] = daily_spend_roi[d]
 
                 return table_data, actual_summary
 
@@ -7042,6 +7103,22 @@ with tabs[6]:
                         else:
                             cr_row.append('--')
                     table_data.append(cr_row)
+
+                    # ── 全店铺合计「直接ROI」行 ──
+                    all_direct_data = all_shop_actual.get('_direct_amt', {})
+                    all_spend_roi_data = all_shop_actual.get('_spend_for_roi', {})
+                    total_direct_all = sum(v for k, v in all_direct_data.items() if k != '合计')
+                    total_spend_roi_all = sum(v for k, v in all_spend_roi_data.items() if k != '合计')
+                    roi_row_all = ['直接ROI']
+                    roi_row_all.append(f'{total_direct_all / total_spend_roi_all:.2f}' if total_spend_roi_all > 0 else '--')
+                    for d in date_list:
+                        dv = all_direct_data.get(d, 0)
+                        sv = all_spend_roi_data.get(d, 0)
+                        if sv > 0:
+                            roi_row_all.append(f'{dv / sv:.2f}')
+                        else:
+                            roi_row_all.append('--')
+                    table_data.append(roi_row_all)
 
                     if table_data:
                         _render_target_table(header_cols, '全店铺合计（不含天猫小豚）', table_data)
