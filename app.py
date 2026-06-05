@@ -210,7 +210,7 @@ if not st.session_state.authenticated:
         with st.form('login_form'):
             _lu = st.text_input('用户名')
             _lp = st.text_input('密码', type='password')
-            _submitted = st.form_submit_button('登录', use_container_width=True)
+            _submitted = st.form_submit_button('登录', width="stretch")
             if _submitted:
                 try:
                     with open(_USERS_FILE, 'r', encoding='utf-8') as _f:
@@ -266,7 +266,7 @@ with st.sidebar:
             # 同步按钮
             _sales_ready = _CACHE_SALES.exists()
             if _sales_ready:
-                if st.button('📤 同步销售数据到云端', use_container_width=True, key='sync_sales'):
+                if st.button('📤 同步销售数据到云端', width="stretch", key='sync_sales'):
                     with st.spinner('正在同步销售数据到 GitHub...'):
                         _ok, _msg = _push_xlsx_to_github(
                             _CACHE_SALES.read_bytes(),
@@ -297,7 +297,7 @@ with st.sidebar:
             # 同步按钮
             _promo_ready = _CACHE_PROMO.exists()
             if _promo_ready:
-                if st.button('📤 同步推广数据到云端', use_container_width=True, key='sync_promo'):
+                if st.button('📤 同步推广数据到云端', width="stretch", key='sync_promo'):
                     with st.spinner('正在同步推广数据到 GitHub...'):
                         _ok, _msg = _push_xlsx_to_github(
                             _CACHE_PROMO.read_bytes(),
@@ -328,7 +328,7 @@ with st.sidebar:
             # 同步按钮
             _targets_ready = _CACHE_TARGETS.exists()
             if _targets_ready:
-                if st.button('📤 同步目标数据到云端', use_container_width=True, key='sync_targets'):
+                if st.button('📤 同步目标数据到云端', width="stretch", key='sync_targets'):
                     with st.spinner('正在同步目标数据到 GitHub...'):
                         _ok, _msg = _push_xlsx_to_github(
                             _CACHE_TARGETS.read_bytes(),
@@ -357,7 +357,7 @@ with st.sidebar:
             st.caption(f'📂 推广数据更新：{mtime.strftime("%Y-%m-%d %H:%M")}')
     
     st.divider()
-    if st.button('🚪 退出登录', use_container_width=True):
+    if st.button('🚪 退出登录', width="stretch"):
         for _k in ['authenticated', 'username', 'role']:
             st.session_state[_k] = ''
         st.rerun()
@@ -1184,7 +1184,7 @@ def _render_download_panel(data_rows, columns, file_name, panel_label='📥 下�
                 excel_bytes,
                 file_name=f"{short}.xlsx",
                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                use_container_width=True,
+                width="stretch",
                 key=f"dl_xlsx_{_uid}"
             )
             st.caption('带深色表头、交替行色的格式化 Excel')
@@ -1195,7 +1195,7 @@ def _render_download_panel(data_rows, columns, file_name, panel_label='📥 下�
                 csv_str,
                 file_name=f"{short}_raw.csv",
                 mime='text/csv',
-                use_container_width=True,
+                width="stretch",
                 key=f"dl_csv_{_uid}"
             )
             st.caption('纯原始数据，便于二次处理')
@@ -1878,7 +1878,7 @@ with tabs[0]:
             title='支付金额趋势', height=340, template='plotly_white',
             margin=dict(l=20, r=20, t=45, b=20),
             yaxis_title=f'支付金额({amt_unit})', showlegend=False)
-        st.plotly_chart(fig_a, use_container_width=True)
+        st.plotly_chart(fig_a, width="stretch")
 
         # 2) 访客数趋势
         vis_texts = []
@@ -1898,7 +1898,7 @@ with tabs[0]:
             title='访客数趋势', height=340, template='plotly_white',
             margin=dict(l=20, r=20, t=45, b=20),
             yaxis_title='访客数', showlegend=False)
-        st.plotly_chart(fig_b, use_container_width=True)
+        st.plotly_chart(fig_b, width="stretch")
 
         # 3) 转化率趋势
         cvr_texts = []
@@ -1919,7 +1919,7 @@ with tabs[0]:
             title='支付转化率趋势', height=340, template='plotly_white',
             margin=dict(l=20, r=20, t=45, b=20),
             yaxis_title='转化率(%)', showlegend=False)
-        st.plotly_chart(fig_c, use_container_width=True)
+        st.plotly_chart(fig_c, width="stretch")
         # 图表数据下载
         _render_download_panel(daily_trend, ['日期', '支付金额', '商品访客数', '支付转化率', '支付件数', '客单价'], 'overview_daily_trend.csv')
     else:
@@ -1942,7 +1942,7 @@ with tabs[0]:
         fig.update_layout(height=390, template='plotly_white', margin=dict(l=20, r=20, t=35, b=20),
                           legend=dict(orientation='h'), yaxis_title='支付金额(万)',
                           yaxis2=dict(title='流量/销量', overlaying='y', side='right'))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         _render_download_panel(trend, ['月份', '支付金额', '访客数', '支付件数', '转化率'], 'overview_monthly_trend.csv', '📥 月度趋势')
     with b_col:
         if ch_rows:
@@ -1952,7 +1952,7 @@ with tabs[0]:
             fig.update_traces(text=[f"{r['渠道']}<br>¥{_wan(r['支付金额'])}万" for r in ch_rows[:8]],
                               hovertemplate='%{label}<br>¥%{value:,.0f}<extra></extra>')
             fig.update_layout(height=390, margin=dict(l=10, r=10, t=35, b=10), title='渠道销售占比')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             _render_download_panel(ch_rows[:8], ['渠道', '支付金额'], 'overview_channel_pie.csv', '📥 渠道占比')
         else:
             st.info('暂无渠道数据')
@@ -1972,7 +1972,7 @@ with tabs[0]:
                           title='店铺销售排行', template='plotly_white',
                           yaxis=dict(categoryorder='total ascending'),
                           xaxis=dict(title='支付金额(万)', showgrid=True))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         _render_download_panel(sr, ['店铺', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价'], 'store_ranking.csv', '📥 店铺排行')
     with d_col:
         # 品类销售排行 → 柱状图
@@ -1988,7 +1988,7 @@ with tabs[0]:
                           title='品类销售排行', template='plotly_white',
                           yaxis=dict(categoryorder='total ascending'),
                           xaxis=dict(title='支付金额(万)', showgrid=True))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         _render_download_panel(cr, ['品类', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价'], 'category_ranking.csv', '📥 品类排行')
     with e_col:
         # TOP10单品 → 横向条形图
@@ -2004,7 +2004,7 @@ with tabs[0]:
                           title='销额TOP10单品', template='plotly_white',
                           yaxis=dict(categoryorder='total ascending'),
                           xaxis=dict(title='支付金额(万)', showgrid=True))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         _render_download_panel(model_rows, ['型号', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价'], 'top10_models.csv', '📥 TOP10单品')
 
     st.markdown('<div class="section-title">导出与留档</div>', unsafe_allow_html=True)
@@ -2101,7 +2101,7 @@ with tabs[1]:
                                      name='总订单金额(万)', yaxis='y2', line=dict(color='#10b981', width=2)))
             fig.update_layout(height=360, template='plotly_white', legend=dict(orientation='h'),
                                   yaxis_title='推广费(万)', yaxis2=dict(title='订单金额(万)', overlaying='y', side='right'))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             _render_download_panel([{'日期': x[0], '花费': x[1]['花费'], '总订单金额': x[1]['总订单金额']} for x in _pr_s],
                               ['日期', '花费', '总订单金额'], 'promo_spend_trend.csv')
         _gran_label = '日度' if promo_gran == '按日' else '月度'
@@ -2122,7 +2122,7 @@ with tabs[1]:
             fig = px.line(pd.DataFrame(_roi_v), x=_x_label, y='ROI', markers=True,
                               title=f'{_gran_label}ROI趋势', line_shape='spline')
             fig.update_layout(height=320, template='plotly_white', yaxis_title='ROI')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             _render_download_panel([{'日期': x[0], '花费': x[1]['花费'], '总订单金额': x[1]['总订单金额'],
                                    'ROI': x[1]['总订单金额']/x[1]['花费'] if x[1]['花费'] else 0} for x in _roi_s],
                               ['日期', '花费', '总订单金额', 'ROI'], 'promo_roi_trend.csv')
@@ -2141,7 +2141,7 @@ with tabs[1]:
                                      hover_data=['推广计划', 'ROI'], title='推广计划效率矩阵（花费 vs 成交金额）',
                                      color='ROI', color_continuous_scale='RdYlGn')
             fig.update_layout(height=400, template='plotly_white')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             _render_download_panel(_pl_r, ['推广计划', '花费', '总订单金额', 'ROI'], 'promo_plan_efficiency.csv', '📥 推广计划效率')
 
         # ── 产品线推广占比 ──
@@ -2157,7 +2157,7 @@ with tabs[1]:
             fig.update_traces(text=[f"{k}<br>¥{v/10000:.1f}万" for k, v in _ln.items() if v > 0],
                                  hovertemplate='%{label}<br>花费：¥%{value:,.0f}<extra></extra>')
             fig.update_layout(height=380, margin=dict(l=10, r=10, t=35, b=10), title='产品线推广费占比')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             _render_download_panel(_ln_r, ['产品线', '花费'], 'promo_product_line_share.csv', '📥 产品线推广费占比')
 
         # ── 店铺推广矩阵 ──
@@ -2223,7 +2223,7 @@ with tabs[1]:
                 fig.update_layout(height=max(280, len(_sm_r)*45), margin=dict(l=10, r=80, t=35, b=10),
                                    title='各店铺推广花费', template='plotly_white',
                                    yaxis=dict(categoryorder='total ascending'))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
                 _render_download_panel(_sm_r, list(_sm_r[0].keys()), 'promo_store_spend.csv', '📥 店铺推广费')
             with ma2:
                 _roi_vals = [float(x['ROI']) if x['ROI'] != '--' else 0 for x in _sm_r]
@@ -2238,7 +2238,7 @@ with tabs[1]:
                 fig.update_layout(height=max(280, len(_sm_r)*45), margin=dict(l=10, r=80, t=35, b=10),
                                    title='各店铺ROI（绿≥3 橙≥1 红<1）', template='plotly_white',
                                    yaxis=dict(categoryorder='total ascending'))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
                 _render_download_panel(_sm_r, list(_sm_r[0].keys()), 'promo_store_roi.csv', '📥 店铺ROI')
             _cols = list(_sm_r[0].keys())
             _sm_html = _html_table(_sm_r, col_widths={c: '100px' for c in _cols}, height=max(280, len(_sm_r)*34+40))
@@ -2302,7 +2302,7 @@ with tabs[1]:
                                   title='渠道推广费占比')
                     fig.update_traces(texttemplate='%{label}<br>%{percent:.1%}')
                     fig.update_layout(height=340, margin=dict(l=10, r=10, t=40, b=10))
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                     _render_download_panel(_fc_pie, ['渠道', '花费(万)'], 'promo_chan_spend_share.csv', '📥 渠道推广费占比')
             with cb2:
                 _roi_cur = [float(x['ROI']) if x['ROI'] != '--' else 0 for x in _cm_r]
@@ -2311,7 +2311,7 @@ with tabs[1]:
                 fig.add_trace(go.Bar(name='ROI', x=[x['渠道'] for x in _cm_r], y=_roi_cur, marker_color='#1d4ed8'))
                 fig.add_trace(go.Bar(name='直接ROI', x=[x['渠道'] for x in _cm_r], y=_droi_cur, marker_color='#06b6d4'))
                 fig.update_layout(height=340, barmode='group', template='plotly_white', title='渠道ROI对比')
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
                 _render_download_panel(_cm_r, list(_cm_r[0].keys()), 'promo_chan_roi.csv', '📥 渠道ROI对比')
             _cols = list(_cm_r[0].keys())
             _cm_html = _html_table(_cm_r, col_widths={c: '100px' for c in _cols}, height=max(280, len(_cm_r)*34+40))
@@ -2333,7 +2333,7 @@ with tabs[1]:
                                title='TOP10 推广计划（按花费）', template='plotly_white',
                                yaxis=dict(categoryorder='total ascending'),
                                xaxis=dict(title='花费(万)', showgrid=True))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             _render_download_panel(_tp, ['推广计划', '花费', '总订单金额', 'ROI'], 'promo_top10_plans.csv', '📥 TOP10推广计划')
 
         # ── 推广明细表 ──
@@ -2443,7 +2443,7 @@ with tabs[1]:
                 fig.update_layout(height=max(300, len(_top10)*40), margin=dict(l=10, r=80, t=35, b=10),
                                    title='TOP10 单品推广花费', template='plotly_white',
                                    yaxis=dict(categoryorder='total ascending'))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
                 _render_download_panel(_top10, ['单品', '花费', '总订单金额', 'ROI'], 'promo_sku_spend.csv', '📥 TOP10单品推广费')
             with sku2:
                 _roi_vals = [float(x['ROI']) if x['ROI'] != '--' else 0 for x in _sku_r[:10]]
@@ -2458,7 +2458,7 @@ with tabs[1]:
                 fig.update_layout(height=max(300, len(_sku_r[:10])*40), margin=dict(l=10, r=80, t=35, b=10),
                                    title='TOP10 单品ROI（绿≥3 橙≥1 红&lt;1）', template='plotly_white',
                                    yaxis=dict(categoryorder='total ascending'))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             _cols = list(_sku_r[0].keys())
             _sku_html = _html_table(_sku_r, col_widths={c: '100px' for c in _cols}, height=max(300, len(_sku_r)*34+40))
             st.markdown(_wrap_fullscreen(_sku_html, title='📦 单品推广分析')[0], unsafe_allow_html=True)
@@ -2853,7 +2853,7 @@ with tabs[2]:
         fig = px.bar(chart_data, x='指标', y=['本期', '对比期'], barmode='group',
                      color_discrete_sequence=['#1d4ed8', '#f59e0b'])
         fig.update_layout(height=350, template='plotly_white', title='核心指标对比', legend_title='时间段')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         _render_download_panel(chart_data, ['指标', '本期', '对比期'], 'period_core_compare.csv', '📥 核心指标对比')
     with p2:
         ch_data = []
@@ -2866,7 +2866,7 @@ with tabs[2]:
         fig = go.Figure(go.Bar(x=[x['指标'] for x in ch_data], y=[x['变化率'] for x in ch_data],
                                 marker_color=colors))
         fig.update_layout(height=350, template='plotly_white', title='各指标变化率', yaxis_tickformat='.1%')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         _render_download_panel(ch_data, ['指标', '变化率'], 'period_change_rate.csv', '📥 各指标变化率')
 
     st.markdown('---')
@@ -3933,7 +3933,7 @@ with tabs[3]:
                                       name='访客数', yaxis='y2', line=dict(color='#06b6d4', width=2)))
         fig.update_layout(height=350, template='plotly_white', legend=dict(orientation='h'),
                         yaxis_title='支付金额(万)', yaxis2=dict(title='访客数', overlaying='y', side='right'))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         _render_download_panel(tr_data, ['周期','支付金额','访客数','转化率','加购率'], 'trend_amt_vs_vis.csv', '📥 趋势：金额/访客')
     with t2:
         fig = go.Figure()
@@ -3943,7 +3943,7 @@ with tabs[3]:
             fig.add_trace(go.Scatter(x=[r['周期'] for r in tr_data], y=[r['加购率'] * 100 for r in tr_data],
                                       name='加购率(%)', line=dict(color='#f59e0b', width=2)))
         fig.update_layout(height=350, template='plotly_white', legend=dict(orientation='h'), yaxis_title='比率(%)')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         _render_download_panel(tr_data, ['周期','支付金额','访客数','转化率','加购率'], 'trend_rate.csv', '📥 趋势：转化率/加购率')
 
     st.markdown('---')
@@ -3978,7 +3978,7 @@ with tabs[3]:
         fig.add_trace(go.Scatter(x=[r['月份'] for r in _yoy_monthly], y=[_wan(v) for v in ly_data],
                                   name='去年同期金额', line=dict(color='#f59e0b', width=2, dash='dash')))
         fig.update_layout(height=380, template='plotly_white', legend=dict(orientation='h'), yaxis_title='支付金额(万)')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     st.markdown('---')
     st.markdown('<div class="section-title">周内趋势（每日均值）</div>', unsafe_allow_html=True)
@@ -4008,7 +4008,7 @@ with tabs[3]:
                      color_continuous_scale='RdYlGn', title='各星期日均支付金额（颜色=转化率）',
                      text=[f"{r['支付金额']}万" for r in dow_avg])
         fig.update_layout(height=340, template='plotly_white')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     # ═══════════════════════════════════════════════════
     # 📢 推广趋势（独立板块）
@@ -5303,7 +5303,7 @@ with tabs[4]:
             "包含封面、健康总览、人货场分析、执行清单共6页</div>",
             unsafe_allow_html=True)
     with _ppt_col2:
-        _gen_ppt = st.button('🎯 生成复盘PPT', use_container_width=True, key='gen_mck_ppt')
+        _gen_ppt = st.button('🎯 生成复盘PPT', width="stretch", key='gen_mck_ppt')
 
     if _gen_ppt:
         with st.spinner('正在生成麦肯锡风格复盘PPT...'):
