@@ -210,7 +210,7 @@ if not st.session_state.authenticated:
         with st.form('login_form'):
             _lu = st.text_input('用户名')
             _lp = st.text_input('密码', type='password')
-            _submitted = st.form_submit_button('登录', width="stretch")
+            _submitted = st.form_submit_button('登录', use_container_width=True)
             if _submitted:
                 try:
                     with open(_USERS_FILE, 'r', encoding='utf-8') as _f:
@@ -266,7 +266,7 @@ with st.sidebar:
             # 同步按钮
             _sales_ready = _CACHE_SALES.exists()
             if _sales_ready:
-                if st.button('📤 同步销售数据到云端', width="stretch", key='sync_sales'):
+                if st.button('📤 同步销售数据到云端', use_container_width=True, key='sync_sales'):
                     with st.spinner('正在同步销售数据到 GitHub...'):
                         _ok, _msg = _push_xlsx_to_github(
                             _CACHE_SALES.read_bytes(),
@@ -297,7 +297,7 @@ with st.sidebar:
             # 同步按钮
             _promo_ready = _CACHE_PROMO.exists()
             if _promo_ready:
-                if st.button('📤 同步推广数据到云端', width="stretch", key='sync_promo'):
+                if st.button('📤 同步推广数据到云端', use_container_width=True, key='sync_promo'):
                     with st.spinner('正在同步推广数据到 GitHub...'):
                         _ok, _msg = _push_xlsx_to_github(
                             _CACHE_PROMO.read_bytes(),
@@ -328,7 +328,7 @@ with st.sidebar:
             # 同步按钮
             _targets_ready = _CACHE_TARGETS.exists()
             if _targets_ready:
-                if st.button('📤 同步目标数据到云端', width="stretch", key='sync_targets'):
+                if st.button('📤 同步目标数据到云端', use_container_width=True, key='sync_targets'):
                     with st.spinner('正在同步目标数据到 GitHub...'):
                         _ok, _msg = _push_xlsx_to_github(
                             _CACHE_TARGETS.read_bytes(),
@@ -357,7 +357,7 @@ with st.sidebar:
             st.caption(f'📂 推广数据更新：{mtime.strftime("%Y-%m-%d %H:%M")}')
     
     st.divider()
-    if st.button('🚪 退出登录', width="stretch"):
+    if st.button('🚪 退出登录', use_container_width=True):
         for _k in ['authenticated', 'username', 'role']:
             st.session_state[_k] = ''
         st.rerun()
@@ -5303,7 +5303,7 @@ with tabs[4]:
             "包含封面、健康总览、人货场分析、执行清单共6页</div>",
             unsafe_allow_html=True)
     with _ppt_col2:
-        _gen_ppt = st.button('🎯 生成复盘PPT', width="stretch", key='gen_mck_ppt')
+        _gen_ppt = st.button('🎯 生成复盘PPT', use_container_width=True, key='gen_mck_ppt')
 
     if _gen_ppt:
         with st.spinner('正在生成麦肯锡风格复盘PPT...'):
