@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # 2026-05-28: force redeploy — _promo_all_day fix
 from __future__ import annotations
 import datetime
@@ -1945,14 +1945,17 @@ with tabs[0]:
         st.plotly_chart(fig, use_container_width=True)
         _render_download_panel(trend, ['月份', '支付金额', '访客数', '支付件数', '转化率'], 'overview_monthly_trend.csv', '📥 月度趋势')
     with b_col:
-        ch_pie = [{'渠道': r['渠道'], '支付金额': r['支付金额']} for r in ch_rows[:8]]
-        fig = px.pie(df(ch_pie), names='渠道', values='支付金额', hole=.55,
-                     color_discrete_sequence=px.colors.qualitative.Set2)
-        fig.update_traces(text=[f"{r['渠道']}<br>¥{_wan(r['支付金额'])}万" for r in ch_rows[:8]],
-                          hovertemplate='%{label}<br>¥%{value:,.0f}<extra></extra>')
-        fig.update_layout(height=390, margin=dict(l=10, r=10, t=35, b=10), title='渠道销售占比')
-        st.plotly_chart(fig, use_container_width=True)
-        _render_download_panel(ch_rows[:8], ['渠道', '支付金额'], 'overview_channel_pie.csv', '📥 渠道占比')
+        if ch_rows:
+            ch_pie = [{'渠道': r['渠道'], '支付金额': r['支付金额']} for r in ch_rows[:8]]
+            fig = px.pie(df(ch_pie), names='渠道', values='支付金额', hole=.55,
+                         color_discrete_sequence=px.colors.qualitative.Set2)
+            fig.update_traces(text=[f"{r['渠道']}<br>¥{_wan(r['支付金额'])}万" for r in ch_rows[:8]],
+                              hovertemplate='%{label}<br>¥%{value:,.0f}<extra></extra>')
+            fig.update_layout(height=390, margin=dict(l=10, r=10, t=35, b=10), title='渠道销售占比')
+            st.plotly_chart(fig, use_container_width=True)
+            _render_download_panel(ch_rows[:8], ['渠道', '支付金额'], 'overview_channel_pie.csv', '📥 渠道占比')
+        else:
+            st.info('暂无渠道数据')
 
     c_col, d_col, e_col = st.columns(3)
     with c_col:
@@ -3010,7 +3013,8 @@ with tabs[2]:
         _html += '</tbody></table></div>'
         st.markdown(_wrap_fullscreen(_html, title='📊 销售数据对比分析')[0], unsafe_allow_html=True)
 
-    _render_download_panel(dim_compare if dim_compare else [], _dim_cols, f'dimension_compare_{_dim_label}.csv', '📥 销售维度对比')
+    _dim_cols_safe = _dim_cols if dim_compare else ['维度', '占比']
+    _render_download_panel(dim_compare if dim_compare else [], _dim_cols_safe, f'dimension_compare_{_dim_label}.csv', '📥 销售维度对比')
     _render_download_panel(compare_rows, ['指标', '本期数值', '对比期数值', '变化量', '变化率(%)'], 'period_comparison.csv', '📥 时间段对比')
 
     # ── 推广数据对比分析 ──
@@ -6434,26 +6438,38 @@ with tabs[6]:
                                 row_vals.append('--')
                         table_data.append(row_vals)
 
-                # ── 追加「实际转化率」行 = 买家数 / 访客数 ──
-                cr_row = ['实际转化率']
+                # ── 预先收集买家数/访客数（后续两行都需要）──
                 total_buyers = 0.0
                 total_visitors = 0.0
+                daily_visitors = {}
+                daily_buyers = {}
                 for d in date_list:
                     if model_name:
                         sd = daily_by_model_date.get((shop_name, model_name, d), {})
                     else:
                         sd = daily_by_shop_date.get((shop_name, d), {})
-                    total_buyers += sd.get('支付买家数', 0.0)
-                    total_visitors += sd.get('商品访客数', 0.0)
+                    b = sd.get('支付买家数', 0.0)
+                    v = sd.get('商品访客数', 0.0)
+                    total_buyers += b
+                    total_visitors += v
+                    daily_buyers[d] = b
+                    daily_visitors[d] = v
+
+                # ── 追加「实际访客数」行 ──
+                vis_row = ['实际访客数']
+                vis_row.append(f'{total_visitors:,.0f}' if total_visitors else '--')
+                for d in date_list:
+                    v = daily_visitors[d]
+                    vis_row.append(f'{v:,.0f}' if v else '--')
+                table_data.append(vis_row)
+
+                # ── 追加「实际转化率」行 = 买家数 / 访客数 ──
+                cr_row = ['实际转化率']
                 cr_total = total_buyers / total_visitors * 100 if total_visitors > 0 else 0
                 cr_row.append(_fmt_val(cr_total, is_pct=True) if total_visitors > 0 else '--')
                 for d in date_list:
-                    if model_name:
-                        sd = daily_by_model_date.get((shop_name, model_name, d), {})
-                    else:
-                        sd = daily_by_shop_date.get((shop_name, d), {})
-                    buyers = sd.get('支付买家数', 0.0)
-                    visitors = sd.get('商品访客数', 0.0)
+                    buyers = daily_buyers[d]
+                    visitors = daily_visitors[d]
                     if visitors > 0:
                         cr_row.append(_fmt_val(buyers / visitors * 100, is_pct=True))
                     else:
@@ -6463,12 +6479,8 @@ with tabs[6]:
                 actual_summary['_buyers'] = {'合计': total_buyers}
                 actual_summary['_visitors'] = {'合计': total_visitors}
                 for d in date_list:
-                    if model_name:
-                        sd = daily_by_model_date.get((shop_name, model_name, d), {})
-                    else:
-                        sd = daily_by_shop_date.get((shop_name, d), {})
-                    actual_summary['_buyers'][d] = sd.get('支付买家数', 0.0)
-                    actual_summary['_visitors'][d] = sd.get('商品访客数', 0.0)
+                    actual_summary['_buyers'][d] = daily_buyers[d]
+                    actual_summary['_visitors'][d] = daily_visitors[d]
 
                 return table_data, actual_summary
 
@@ -7007,12 +7019,20 @@ with tabs[6]:
                                         row_vals.append('--')
                                 table_data.append(row_vals)
 
-                    # ── 全店铺合计「实际转化率」行 ──
+                    # ── 全店铺合计「实际访客数」+「实际转化率」行 ──
                     all_buyers_data = all_shop_actual.get('_buyers', {})
                     all_visitors_data = all_shop_actual.get('_visitors', {})
-                    cr_row = ['实际转化率']
                     total_buyers_all = sum(v for k, v in all_buyers_data.items() if k != '合计')
                     total_visitors_all = sum(v for k, v in all_visitors_data.items() if k != '合计')
+                    # 实际访客数行
+                    vis_row_all = ['实际访客数']
+                    vis_row_all.append(f'{total_visitors_all:,.0f}' if total_visitors_all else '--')
+                    for d in date_list:
+                        v = all_visitors_data.get(d, 0)
+                        vis_row_all.append(f'{v:,.0f}' if v else '--')
+                    table_data.append(vis_row_all)
+                    # 实际转化率行
+                    cr_row = ['实际转化率']
                     cr_row.append(_fmt_val(total_buyers_all / total_visitors_all * 100, is_pct=True) if total_visitors_all > 0 else '--')
                     for d in date_list:
                         buyers = all_buyers_data.get(d, 0)
