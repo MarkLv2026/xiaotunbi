@@ -4575,6 +4575,7 @@ with tabs[4]:
     # ══════════════════════════════════════
     # A. 核心数据准备（基于当前筛选条件）
     # ══════════════════════════════════════
+    cur_rows_all = [r for r in daily if r.get('渠道', '') != '小豚天猫']
     cur_sum = summarize(cur_rows_all)  # 智能诊断模块排除小豚天猫后重新汇总
 
     def _agg_by_dims(rows, dims):
@@ -4590,7 +4591,6 @@ with tabs[4]:
             v['退款率'] = v['成功退款金额'] / v['支付金额'] if v['支付金额'] else 0
         return out
 
-    cur_rows_all = [r for r in daily if r.get('渠道', '') != '小豚天猫']
     prev_rows_all_raw = []
     for r in data['daily']:
         d = r.get('日期', '')
