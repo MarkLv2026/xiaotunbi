@@ -4575,7 +4575,7 @@ with tabs[4]:
     # ══════════════════════════════════════
     # A. 核心数据准备（基于当前筛选条件）
     # ══════════════════════════════════════
-    cur_sum = summarize(cur_rows_all)  # 基于排除小豚天猫后的数据重新汇总
+    cur_sum = summarize(cur_rows_all)  # 智能诊断模块排除小豚天猫后重新汇总
 
     def _agg_by_dims(rows, dims):
         out = {}
