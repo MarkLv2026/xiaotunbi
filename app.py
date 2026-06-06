@@ -4451,7 +4451,113 @@ with tabs[3]:
 
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 4: 智能诊断 V3（人货场复盘模型）
+# 智能诊断工具函数（华为方法论注入）
+# ═══════════════════════════════════════════════════════════════
+
+def _shapley_decompose_gmv(cur_sum, prev_sum):
+    """
+    Shapley值法分解GMV变化（华为式归因）
+    GMV = 访客数 × 转化率 × 客单价
+    返回各因子对ΔGMV的精确贡献（消除交互效应偏差）
+    """
+    V_cur  = cur_sum.get('商品访客数', 0)
+    C_cur  = cur_sum.get('支付转化率', 0)
+    A_cur  = cur_sum.get('客单价', 0)
+    V_prev = prev_sum.get('商品访客数', 0)
+    C_prev = prev_sum.get('支付转化率', 0)
+    A_prev = prev_sum.get('客单价', 0)
+
+    GMV_cur  = V_cur  * C_cur  * A_cur
+    GMV_prev = V_prev * C_prev * A_prev
+    delta = GMV_cur - GMV_prev
+
+    if abs(delta) < 0.01 or V_prev == 0:
+        return {'流量效应': 0, '转化效应': 0, '客单效应': 0, '交互效应': 0, 'delta': delta}
+
+    # 6种排列求Shapley值（消除顺序偏差）
+    # 排列1: V→C→A
+    s1_v = (V_cur - V_prev) * C_prev * A_prev
+    s1_c = V_cur * (C_cur - C_prev) * A_prev
+    s1_a = V_cur * C_cur * (A_cur - A_prev)
+
+    # 排列2: V→A→C
+    s2_v = (V_cur - V_prev) * C_prev * A_prev
+    s2_a = V_cur * (A_cur - A_prev) * C_prev
+    s2_c = V_cur * A_cur * (C_cur - C_prev)
+
+    # 排列3: C→V→A
+    s3_c = (C_cur - C_prev) * V_prev * A_prev
+    s3_v = C_cur * (V_cur - V_prev) * A_prev
+    s3_a = C_cur * V_cur * (A_cur - A_prev)
+
+    # 排列4: C→A→V
+    s4_c = (C_cur - C_prev) * V_prev * A_prev
+    s4_a = C_cur * (A_cur - A_prev) * V_prev
+    s4_v = C_cur * A_cur * (V_cur - V_prev)
+
+    # 排列5: A→V→C
+    s5_a = (A_cur - A_prev) * V_prev * C_prev
+    s5_v = A_cur * (V_cur - V_prev) * C_prev
+    s5_c = A_cur * V_cur * (C_cur - C_prev)
+
+    # 排列6: A→C→V
+    s6_a = (A_cur - A_prev) * V_prev * C_prev
+    s6_c = A_cur * (C_cur - C_prev) * V_prev
+    s6_v = A_cur * C_cur * (V_cur - V_prev)
+
+    shap_v = (s1_v + s2_v + s3_v + s4_v + s5_v + s6_v) / 6
+    shap_c = (s1_c + s2_c + s3_c + s4_c + s5_c + s6_c) / 6
+    shap_a = (s1_a + s2_a + s3_a + s4_a + s5_a + s6_a) / 6
+
+    return {
+        '流量效应': shap_v, '转化效应': shap_c, '客单效应': shap_a,
+        '交互效应': delta - shap_v - shap_c - shap_a,
+        'delta': delta
+    }
+
+
+def _gen_one_line_summary(gmv_g, shapley, ch_model_issues, vis_g, cvr_g, aov_g):
+    """生成华为式一句话核心发现"""
+    if gmv_g is None:
+        return "⚠️ 数据不足，无法生成诊断总结。"
+    direction = "增长" if gmv_g >= 0 else "下滑"
+    pct_s = f"{gmv_g*100:+.1f}%"
+
+    # 找最大Shapley贡献因子
+    factors = [
+        ('流量', shapley.get('流量效应', 0), vis_g),
+        ('转化率', shapley.get('转化效应', 0), cvr_g),
+        ('客单价', shapley.get('客单效应', 0), aov_g),
+    ]
+    main = max(factors, key=lambda x: abs(x[1]))
+    main_pct = f"{main[2]*100:+.1f}%" if main[2] is not None else "--"
+
+    # 找最大拖累型号
+    worst_loss = 0; worst_name = ''
+    for m in (ch_model_issues or []):
+        loss = m.get('上期GMV', 0) - m.get('本期GMV', 0)
+        if loss > worst_loss:
+            worst_loss = loss
+            worst_name = m.get('型号', '')
+
+    summary = f"GMV环比{pct_s}，主因是<b>{main[0]}</b>变动{main_pct}"
+    if worst_name and worst_loss > 0:
+        summary += f"，其中<b>[{worst_name}]</b>单型号损失约¥{worst_loss:,.0f}"
+    summary += "。"
+
+    # 添加Shapley贡献度
+    total_effect = abs(shapley.get('流量效应',0)) + abs(shapley.get('转化效应',0)) + abs(shapley.get('客单效应',0))
+    if total_effect > 0:
+        vp = abs(shapley['流量效应']) / total_effect * 100
+        cp = abs(shapley['转化效应']) / total_effect * 100
+        ap = abs(shapley['客单效应']) / total_effect * 100
+        summary += f"<br><small style='color:#64748b;'>归因：流量 {vp:.0f}% | 转化 {cp:.0f}% | 客单价 {ap:.0f}%</small>"
+
+    return summary
+
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 4: 智能诊断 V4（华为复盘方法论注入）
 # ═══════════════════════════════════════════════════════════════
 # 构建筛选标签文字
 _filter_parts = []
@@ -4462,42 +4568,14 @@ if model: _filter_parts.append(f'型号={"+".join(model)}')
 _filter_label = ' | '.join(_filter_parts) if _filter_parts else '全域'
 
 with tabs[4]:
-    st.markdown('<div class="section-title">🔍 智能诊断 — 人货场复盘模型</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🔍 智能诊断 V4 — 作战指挥室（华为复盘模型）</div>', unsafe_allow_html=True)
     _cmp_label = f'上期 {_t2_prev_s} ~ {_t2_prev_e}'
     st.caption(f'诊断区间：{s} ~ {e} | 筛选范围：{_filter_label} | 对比区间：{_cmp_label}')
-
-    # ── 时间段对比横幅 ──
-    _period_label_cur = f'本期 {s} ~ {e}'
-    _period_label_prev = _cmp_label
-    st.markdown(
-        f"<div style='background:linear-gradient(135deg, #1e293b 0%, #334155 100%);border-radius:14px;"
-        f"padding:16px 24px;margin:8px 0 16px 0;display:flex;align-items:center;justify-content:center;gap:24px;'>"
-        f"<div style='text-align:center;'>"
-        f"<div style='font-size:11px;color:#94a3b8;margin-bottom:4px;'>📅 本期分析区间</div>"
-        f"<div style='font-size:16px;font-weight:800;color:#f8fafc;'>{_period_label_cur}</div>"
-        f"</div>"
-        f"<div style='font-size:28px;color:#64748b;'>VS</div>"
-        f"<div style='text-align:center;'>"
-        f"<div style='font-size:11px;color:#94a3b8;margin-bottom:4px;'>📊 对比区间</div>"
-        f"<div style='font-size:16px;font-weight:800;color:#facc15;'>{_period_label_prev}</div>"
-        f"</div>"
-        f"<div style='width:1px;height:40px;background:#475569;margin:0 8px;'></div>"
-        f"<div style='text-align:center;'>"
-        f"<div style='font-size:11px;color:#94a3b8;margin-bottom:4px;'>🔍 筛选范围</div>"
-        f"<div style='font-size:13px;font-weight:600;color:#cbd5e1;'>{_filter_label}</div>"
-        f"</div>"
-        f"<div style='width:1px;height:40px;background:#475569;margin:0 8px;'></div>"
-        f"<div style='text-align:center;'>"
-        f"<div style='font-size:11px;color:#94a3b8;margin-bottom:4px;'>📋 对比模式</div>"
-        f"<div style='font-size:13px;font-weight:600;color:#e2e8f0;'>本期 vs 上期(环比)</div>"
-        f"</div>"
-        f"</div>",
-        unsafe_allow_html=True)
 
     # ══════════════════════════════════════
     # A. 核心数据准备（基于当前筛选条件）
     # ══════════════════════════════════════
-    cur_sum = totals  # 复用全局 totals，避免重复 summarize(daily)
+    cur_sum = totals  # 复用全局 totals
 
     def _agg_by_dims(rows, dims):
         out = {}
@@ -4512,24 +4590,18 @@ with tabs[4]:
             v['退款率'] = v['成功退款金额'] / v['支付金额'] if v['支付金额'] else 0
         return out
 
-    # 关键修改: 使用已筛选的 daily 数据, 而非全量 data['daily']
     cur_rows_all = list(daily)
     prev_rows_all_raw = []
     for r in data['daily']:
         d = r.get('日期', '')
         if len(d) == 7: d = d + '-01'
         if _t2_prev_s <= d <= _t2_prev_e: prev_rows_all_raw.append(r)
-    # 对比期数据也应用同样的筛选条件
     prev_rows_all = []
     for r in prev_rows_all_raw:
-        if channel and r.get('渠道') not in channel:
-            continue
-        if store and r.get('店铺') not in store:
-            continue
-        if category and r.get('品类') not in category:
-            continue
-        if model and r.get('型号') not in model:
-            continue
+        if channel and r.get('渠道') not in channel: continue
+        if store and r.get('店铺') not in store: continue
+        if category and r.get('品类') not in category: continue
+        if model and r.get('型号') not in model: continue
         prev_rows_all.append(r)
 
     cur_by_model   = _agg_by_dims(cur_rows_all, ['渠道','品类','型号'])
@@ -4554,34 +4626,62 @@ with tabs[4]:
 
     def _pct(v): return f'{v*100:+.1f}%' if v is not None else '--'
 
-    # ──────────────────────────────────────
-    # A0. 总体健康评分（保留计算，供后续使用）
+    # ── Shapley归因 ──
+    shapley = _shapley_decompose_gmv(cur_sum, prev_sum_all)
 
-    # ──────────────────────────────────────
-    scores = {}
-    for name, val in [('GMV',gmv_g),('流量',vis_g),('转化率',cvr_g),('客单价',aov_g),('退款率',ref_g)]:
-        if val is None: scores[name] = 100
-        elif val > WARN_T: scores[name] = 100
-        elif val > DANGER_T: scores[name] = 60 + int((val - WARN_T) / (0 - WARN_T) * 40)
-        else: scores[name] = max(0, int(val / DANGER_T * 60))
-    if ref_g is not None and ref_g > 0:
-        scores['退款率'] = max(0, 100 - abs(ref_g) * 300)
-    health_score = sum(scores.values()) / len(scores)
+    # ── 同比数据（GAP2）──
+    yoy_sum = None
+    gmv_yoy = vis_yoy = cvr_yoy = aov_yoy = ref_yoy = None
+    try:
+        yoy_rows_all = []
+        for r in data['daily']:
+            d = r.get('日期', '')
+            if len(d) == 7: d = d + '-01'
+            if yoy_s <= d <= yoy_e: yoy_rows_all.append(r)
+        yoy_rows_filtered = []
+        for r in yoy_rows_all:
+            if channel and r.get('渠道') not in channel: continue
+            if store and r.get('店铺') not in store: continue
+            if category and r.get('品类') not in category: continue
+            if model and r.get('型号') not in model: continue
+            yoy_rows_filtered.append(r)
+        if yoy_rows_filtered:
+            yoy_sum = summarize(yoy_rows_filtered)
+            def _yoy_chg(k):
+                c = cur_sum.get(k, 0); p = yoy_sum.get(k, 0)
+                return (c - p) / p if p else None
+            gmv_yoy = _yoy_chg('支付金额')
+            vis_yoy = _yoy_chg('商品访客数')
+            cvr_yoy = _yoy_chg('支付转化率')
+            aov_yoy = _yoy_chg('客单价')
+            ref_yoy = _yoy_chg('退款率')
+    except Exception:
+        pass
 
-    if health_score >= 90: hv = ('🟢 整体健康', '#22c55e', '各项核心指标表现良好，继续保持现有经营策略。')
-    elif health_score >= 70: hv = ('🟡 需要关注', '#f59e0b', f'部分指标出现波动（综合得分{health_score:.0f}/100），建议重点关注下方标红项。')
-    elif health_score >= 50: hv = ('🠤 存在风险', '#ef4444', f'多项指标明显下滑（综合得分{health_score:.0f}/100），建议立即执行P0优先级行动。')
-    else: hv = ('⚠️ 紧急告警', '#dc2626', f'整体经营状况堪忧（综合得分{health_score:.0f}/100），请优先处理所有P0任务！')
+    # ── 目标达成（GAP1）──
+    gmv_target = None; gmv_target_gap = None
+    try:
+        if 'targets' in dir() and targets:
+            from collections import Counter
+            _ym_counter = Counter()
+            for r in cur_rows_all:
+                d = r.get('日期', '')[:7]
+                if d: _ym_counter[d] += 1
+            if _ym_counter:
+                _main_ym = _ym_counter.most_common(1)[0][0]
+                _tdata = targets.get(_main_ym, {})
+                _shop_rows_t = _tdata.get('shop', [])
+                if _shop_rows_t:
+                    for tr in _shop_rows_t:
+                        if '成交金额' in str(tr.get('指标', '')) and '目标' in str(tr.get('指标', '')):
+                            gmv_target = sum(v for k, v in tr.items() if k not in ('店铺', '指标') and isinstance(v, (int, float)))
+                            if gmv_target > 0:
+                                gmv_target_gap = (cur_sum.get('支付金额', 0) - gmv_target) / gmv_target
+                            break
+    except Exception:
+        pass
 
-   # ══════════════════════════════════════════════════════════════
-    # ┌─────────────────────────────────────────────────────────┐
-    # │  经营健康总览 — GMV = 人 × 货 × 场                      │
-    # └─────────────────────────────────────────────────────────┘
-    # ══════════════════════════════════════════════════════════════
-
-    # ---------- GMV总结论 ----------
-    sc1, sc2, sc3 = st.columns([1, 4, 2])
-
+    # ── 健康评分 ──
     scores = {}
     for name, val in [('GMV',gmv_g),('流量',vis_g),('转化率',cvr_g),('客单价',aov_g),('退款率',ref_g)]:
         if val is None: scores[name] = 100
@@ -4597,6 +4697,110 @@ with tabs[4]:
     elif health_score >= 50: hv = ('🔴 存在风险', '#ef4444', f'多项指标明显下滑（综合得分{health_score:.0f}/100），建议立即执行P0优先级行动。')
     else:                    hv = ('⚠️ 紧急告警', '#dc2626', f'整体经营状况堪忧（综合得分{health_score:.0f}/100），请优先处理所有P0任务！')
 
+    # ══════════════════════════════════════════════════════════════
+    # 🏛️ 30-40-30 首页结构：Layer1 一句话总结 → Layer2 三GAP速览 → Layer3 健康+KPI
+    # ══════════════════════════════════════════════════════════════
+
+    # ── Layer 1: 一句话核心发现（30% 定位差距）──
+    _one_line = _gen_one_line_summary(gmv_g, shapley, [], vis_g, cvr_g, aov_g)
+    _summary_bg = '#fef2f2' if (gmv_g is not None and gmv_g < DANGER_T) else ('#fff7ed' if (gmv_g is not None and gmv_g < WARN_T) else '#f0fdf4')
+    _summary_border = '#fca5a5' if (gmv_g is not None and gmv_g < DANGER_T) else ('#fdba74' if (gmv_g is not None and gmv_g < WARN_T) else '#86efac')
+    st.markdown(
+        f"<div style='background:{_summary_bg};border:2px solid {_summary_border};border-radius:16px;"
+        f"padding:18px 24px;margin:8px 0 16px 0;'>"
+        f"<div style='font-size:12px;color:#64748b;margin-bottom:6px;'>📌 一句话核心发现</div>"
+        f"<div style='font-size:17px;font-weight:800;color:#0f172a;line-height:1.6;'>{_one_line}</div>"
+        f"</div>",
+        unsafe_allow_html=True)
+
+    # ── Layer 2: 三GAP速览（30% 差距定位）──
+    st.markdown(
+        "<div style='font-size:13px;color:#475569;font-weight:700;margin:4px 0 8px 0;'>"
+        "📊 三GAP速览 — 目标达成 · 同比变化 · 环比变化</div>", unsafe_allow_html=True)
+
+    gap1, gap2, gap3 = st.columns(3)
+
+    # GAP 1: 目标 vs 实际
+    with gap1:
+        _gap1_color = '#22c55e'
+        _gap1_icon = '✅'
+        if gmv_target_gap is not None:
+            if gmv_target_gap < -0.10: _gap1_color, _gap1_icon = '#dc2626', '🔴'
+            elif gmv_target_gap < -0.05: _gap1_color, _gap1_icon = '#f59e0b', '🟡'
+            elif gmv_target_gap < 0: _gap1_color, _gap1_icon = '#ea580c', '🟠'
+        _gap1_val = f'{gmv_target_gap*100:+.1f}%' if gmv_target_gap is not None else '--'
+        _gap1_target_str = f'¥{gmv_target:,.0f}' if gmv_target else '--'
+        _gap1_actual_str = f'¥{cur_sum.get("支付金额",0):,.0f}'
+        st.markdown(
+            f"<div style='background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;text-align:center;'>"
+            f"<div style='font-size:11px;color:#64748b;font-weight:700;margin-bottom:6px;'>🎯 GAP 1: 目标达成</div>"
+            f"<div style='font-size:24px;font-weight:900;color:{_gap1_color};'>{_gap1_icon} {_gap1_val}</div>"
+            f"<div style='font-size:10px;color:#94a3b8;margin-top:4px;'>实际 {_gap1_actual_str} / 目标 {_gap1_target_str}</div>"
+            f"</div>", unsafe_allow_html=True)
+
+    # GAP 2: 同比变化
+    with gap2:
+        _gap2_color = '#22c55e'; _gap2_icon = '📈'
+        if gmv_yoy is not None:
+            if gmv_yoy < -0.10: _gap2_color, _gap2_icon = '#dc2626', '📉'
+            elif gmv_yoy < -0.05: _gap2_color, _gap2_icon = '#f59e0b', '📊'
+        _gap2_val = f'{gmv_yoy*100:+.1f}%' if gmv_yoy is not None else '--'
+        _yoy_label = f'去年同期 {yoy_s}~{yoy_e}' if yoy_sum else '去年同期'
+        st.markdown(
+            f"<div style='background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;text-align:center;'>"
+            f"<div style='font-size:11px;color:#64748b;font-weight:700;margin-bottom:6px;'>📅 GAP 2: 同比变化</div>"
+            f"<div style='font-size:24px;font-weight:900;color:{_gap2_color};'>{_gap2_icon} {_gap2_val}</div>"
+            f"<div style='font-size:10px;color:#94a3b8;margin-top:4px;'>vs {_yoy_label}</div>"
+            f"</div>", unsafe_allow_html=True)
+
+    # GAP 3: 环比变化
+    with gap3:
+        _gap3_color = '#22c55e'; _gap3_icon = '📈'
+        if gmv_g is not None:
+            if gmv_g < DANGER_T: _gap3_color, _gap3_icon = '#dc2626', '📉'
+            elif gmv_g < WARN_T: _gap3_color, _gap3_icon = '#f59e0b', '📊'
+        _gap3_val = _pct(gmv_g)
+        st.markdown(
+            f"<div style='background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;text-align:center;'>"
+            f"<div style='font-size:11px;color:#64748b;font-weight:700;margin-bottom:6px;'>🔄 GAP 3: 环比变化</div>"
+            f"<div style='font-size:24px;font-weight:900;color:{_gap3_color};'>{_gap3_icon} {_gap3_val}</div>"
+            f"<div style='font-size:10px;color:#94a3b8;margin-top:4px;'>vs 上期 {_t2_prev_s}~{_t2_prev_e}</div>"
+            f"</div>", unsafe_allow_html=True)
+
+    # ── Shapley归因条 ──
+    _total_effect = abs(shapley['流量效应']) + abs(shapley['转化效应']) + abs(shapley['客单效应'])
+    if _total_effect > 0:
+        _vp = abs(shapley['流量效应']) / _total_effect * 100
+        _cp = abs(shapley['转化效应']) / _total_effect * 100
+        _ap = abs(shapley['客单效应']) / _total_effect * 100
+        _delta_str = f'¥{shapley["delta"]:+,.0f}' if shapley['delta'] != 0 else '¥0'
+        _v_color = '#dc2626' if shapley['流量效应'] < 0 else '#22c55e'
+        _c_color = '#dc2626' if shapley['转化效应'] < 0 else '#22c55e'
+        _a_color = '#dc2626' if shapley['客单效应'] < 0 else '#22c55e'
+        st.markdown(
+            f"<div style='background:#f1f5f9;border-radius:10px;padding:12px 18px;margin:12px 0 8px 0;'>"
+            f"<div style='font-size:11px;color:#64748b;margin-bottom:6px;'>🔬 Shapley归因 — GMV变化分解（Δ={_delta_str}）</div>"
+            f"<div style='display:flex;gap:12px;align-items:center;'>"
+            f"<div style='flex:1;'><div style='font-size:10px;color:#475569;'>流量</div>"
+            f"<div style='background:#e2e8f0;border-radius:6px;height:8px;margin:2px 0;'>"
+            f"<div style='background:{_v_color};border-radius:6px;height:8px;width:{_vp:.0f}%;'></div></div>"
+            f"<div style='font-size:10px;color:{_v_color};font-weight:700;'>{_vp:.0f}% (¥{shapley['流量效应']:+,.0f})</div></div>"
+            f"<div style='flex:1;'><div style='font-size:10px;color:#475569;'>转化率</div>"
+            f"<div style='background:#e2e8f0;border-radius:6px;height:8px;margin:2px 0;'>"
+            f"<div style='background:{_c_color};border-radius:6px;height:8px;width:{_cp:.0f}%;'></div></div>"
+            f"<div style='font-size:10px;color:{_c_color};font-weight:700;'>{_cp:.0f}% (¥{shapley['转化效应']:+,.0f})</div></div>"
+            f"<div style='flex:1;'><div style='font-size:10px;color:#475569;'>客单价</div>"
+            f"<div style='background:#e2e8f0;border-radius:6px;height:8px;margin:2px 0;'>"
+            f"<div style='background:{_a_color};border-radius:6px;height:8px;width:{_ap:.0f}%;'></div></div>"
+            f"<div style='font-size:10px;color:{_a_color};font-weight:700;'>{_ap:.0f}% (¥{shapley['客单效应']:+,.0f})</div></div>"
+            f"</div></div>",
+            unsafe_allow_html=True)
+
+    # ── Layer 3: 健康评分 + 核心KPI（40% 深挖入口）──
+    st.markdown('<hr style="margin:14px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
+
+    sc1, sc2, sc3 = st.columns([1, 4, 2])
+
     with sc1:
         st.metric('健康评分', f'{health_score:.0f}',
                   help=f"GMV:{scores['GMV']} | 流量:{scores['流量']} | 转化:{scores['转化率']} | 客单价:{scores['客单价']} | 退款:{scores['退款率']}")
@@ -4609,13 +4813,7 @@ with tabs[4]:
         _p0_cnt = sum(1 for k,v in [('gmv',gmv_g),('vis',vis_g),('cvr',cvr_g)] if v is not None and v < DANGER_T)
         st.metric('P0 级问题', _p0_cnt, help='GMV/流量/转化率中降幅>15%的指标数量')
 
-    # ---------- 一级 GMV 公式拆解 ----------
-    st.markdown('<hr style="margin:14px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
-    st.markdown(
-        "<div style='text-align:center;font-size:13px;color:#64748b;margin-bottom:6px;'>"
-        "GMV = <b>人</b>（流量 × 流量质量） × <b>货</b>（转化率 × 客单价） × <b>场</b>（渠道效率 × 推广ROI）"
-        "</div>", unsafe_allow_html=True)
-
+    # 核心KPI卡片（精简版5卡）
     kpi5_cols = st.columns(5)
     _kpi5 = [
         ('💰 支付金额', gmv_g, cur_sum.get('支付金额',0), prev_sum_all.get('支付金额',0), '¥', False),
@@ -4632,14 +4830,14 @@ with tabs[4]:
             cv_s = f'{cv:.2f}%' if ispct else f'{cv:,.0f}'
             pv_s = f'{pv:.2f}%' if ispct else f'{pv:,.0f}'
             ch_s = _pct(mch)
-            # GMV归因提示
+            # Shapley归因提示（替代旧的简单归因）
             hint = ''
-            if '支付金额' in mname and mch is not None and mch < 0:
+            if '支付金额' in mname and mch is not None and mch < 0 and _total_effect > 0:
                 parts = []
-                if vis_g and vis_g < -0.03: parts.append(f'流量{_pct(vis_g)}')
-                if cvr_g and cvr_g < -0.02: parts.append(f'转化{_pct(cvr_g)}')
-                if aov_g and aov_g < -0.02: parts.append(f'客单价{_pct(aov_g)}')
-                hint = f'<div style="font-size:10px;color:#ea580c;margin-top:2px;">主因：{"+".join(parts) if parts else "多因子"}</div>'
+                if shapley['流量效应'] < -1: parts.append(f"流量{_vp:.0f}%")
+                if shapley['转化效应'] < -1: parts.append(f"转化{_cp:.0f}%")
+                if shapley['客单效应'] < -1: parts.append(f"客单{_ap:.0f}%")
+                hint = f'<div style="font-size:10px;color:#ea580c;margin-top:2px;">主因：{"+".join(parts) if parts else "多因子"}</div>' if parts else ''
             st.markdown(
                 f'<div style="background:{bg};border:1px solid {border};border-radius:14px;'
                 f'padding:10px;text-align:center;">'
@@ -4649,7 +4847,7 @@ with tabs[4]:
                 unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════════════
-    # 人货场三大板块（子Tab）
+    # 人货场三大板块（子Tab）— Layer 4 深挖根因
     # ══════════════════════════════════════════════════════════════
     diag_tabs = st.tabs(['👥 人（流量&用户）', '📦 货（商品&转化）', '🏪 场（渠道&推广）', '🛠️ 执行清单'])
 
@@ -5111,7 +5309,7 @@ with tabs[4]:
     # 【执行清单】：P0-P3 行动项（基于人货场诊断结果自动生成）
     # ────────────────────────────────────────────────────────────
     with diag_tabs[3]:
-        st.markdown('<div class="section-title">🛠️ 执行清单 — 基于人货场诊断自动生成</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">🛠️ 作战任务令 — 三List体系（问题·风险·机会）</div>', unsafe_allow_html=True)
         st.caption(f'已识别 {len(ch_model_issues)} 个异常型号 | {len(cvr_drop_models)} 个转化骤降型号 | {len(drop_stars)} 个爆款掉量型号。每条措施绑定实际数据值。')
 
         actions = []
@@ -5236,23 +5434,27 @@ with tabs[4]:
             '② ROI<2输出《XX渠道优化方案》',
             '运营+财务', '每月5号前', '全渠道均ROI>3')
 
-        # ── 展示 ──
+        # ── 展示（三List体系）──
         actions_sorted = sorted(actions, key=lambda x: ['P0','P1','P2','P3'].index(x['p']))
         _p0_actions = [a for a in actions_sorted if a['p']=='P0']
         _p1_actions = [a for a in actions_sorted if a['p']=='P1']
         _p23_actions = [a for a in actions_sorted if a['p'] in ('P2','P3')]
 
+        # ═══════════════════════════════════════
+        # 🚨 List 1: 问题清单（P0/P1 立即行动）
+        # ═══════════════════════════════════════
+        st.markdown("<div style='background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:6px 14px;margin:12px 0 6px 0;'>"
+                    "<b>🚨 问题清单</b> <small style='color:#94a3b8;'>— 已确认的异常，需立即处理</small></div>", unsafe_allow_html=True)
+
         if _p0_actions:
-            st.markdown("<div style='background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:4px 12px;margin-bottom:4px;'>"
-                        "<b>🚨 P0 紧急行动</b></div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size:12px;color:#dc2626;font-weight:700;margin:4px 0;'>P0 紧急行动</div>", unsafe_allow_html=True)
         for act in _p0_actions:
             cls = {'P0':'tag-p0'}[act['p']]
             with st.expander(f"<span class='action-tag {cls}'>{act['p']}</span> **{act['t']}** <small style='color:#94a3b8;'>| {act['o']} | 目标: {act['mt']} | 见效: {act['tl']}</small>", expanded=True):
                 st.markdown(act['d'], unsafe_allow_html=True)
 
         if _p1_actions:
-            st.markdown("<div style='background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:4px 12px;margin-bottom:4px;'>"
-                        "<b>⚠️ P1 重点关注</b></div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size:12px;color:#ea580c;font-weight:700;margin:8px 0 4px 0;'>P1 重点关注</div>", unsafe_allow_html=True)
         for act in _p1_actions:
             with st.expander(f"<span class='action-tag tag-p1'>{act['p']}</span> **{act['t']}** <small style='color:#94a3b8;'>| {act['o']} | 目标: {act['mt']}</small>", expanded=False):
                 st.markdown(act['d'], unsafe_allow_html=True)
@@ -5264,6 +5466,115 @@ with tabs[4]:
 
         if not actions_sorted:
             st.success('✅ 当前所有核心指标健康，无额外干预。')
+
+        # ═══════════════════════════════════════
+        # ⚠️ List 2: 风险清单（预警监控）
+        # ═══════════════════════════════════════
+        risks = []
+        # 1. 连续下滑但未达P0阈值的指标
+        for name, val, thresh, suggestion in [
+            ('GMV', gmv_g, -0.15, '检查核心渠道流量和爆款转化'),
+            ('流量', vis_g, -0.15, '排查推广计划和搜索排名变化'),
+            ('转化率', cvr_g, -0.15, '检查详情页优化和竞品价格'),
+            ('客单价', aov_g, -0.10, '关注高客单SKU曝光量'),
+        ]:
+            if val is not None and val < WARN_T and val > thresh:
+                level = '⚠️ 关注' if val < -0.10 else '👀 观察'
+                icon = '🟡' if val < -0.10 else '🔵'
+                risks.append({
+                    '等级': f'{icon} {level}',
+                    '指标': name,
+                    '当前变化': _pct(val),
+                    '阈值': f'跌破{_pct(thresh)}触发P0',
+                    '建议': suggestion,
+                })
+
+        # 2. 渠道流量占比持续下降
+        if len(cur_by_channel) >= 2:
+            for ch_key, cv in cur_by_channel.items():
+                ch_name = ch_key[0]
+                cv_vis = cv.get('商品访客数', 0)
+                pv = prev_by_channel.get(ch_key, {})
+                pv_vis = pv.get('商品访客数', 0)
+                if pv_vis > 100:
+                    vis_chg = (cv_vis - pv_vis) / pv_vis
+                    if vis_chg < -0.10:
+                        cur_share = cv_vis / max(cur_sum.get('商品访客数', 1), 1) * 100
+                        prev_share = pv_vis / max(prev_sum_all.get('商品访客数', 1), 1) * 100
+                        risks.append({
+                            '等级': '🟡 ⚠️ 关注',
+                            '指标': f'{ch_name}渠道',
+                            '当前变化': f'流量{_pct(vis_chg)}',
+                            '阈值': f'占比 {prev_share:.1f}%→{cur_share:.1f}%',
+                            '建议': '检查渠道推广预算和搜索权重',
+                        })
+
+        if risks:
+            st.markdown("<div style='background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:6px 14px;margin:16px 0 6px 0;'>"
+                        "<b>⚠️ 风险清单</b> <small style='color:#94a3b8;'>— 需持续监控，防止恶化</small></div>", unsafe_allow_html=True)
+            _risk_rows = []
+            for r in risks[:10]:
+                _risk_rows.append({
+                    '风险等级': r['等级'],
+                    '监控指标': r['指标'],
+                    '变化趋势': r['当前变化'],
+                    '触发条件': r['阈值'],
+                    '防控建议': r['建议'],
+                })
+            st.markdown(_html_table(_risk_rows, height=min(300, len(_risk_rows)*36+50)), unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:6px 14px;margin:16px 0 6px 0;'>"
+                        "<b>✅ 风险清单</b> <small style='color:#64748b;'>— 当前未发现明确风险信号</small></div>", unsafe_allow_html=True)
+
+        # ═══════════════════════════════════════
+        # 💡 List 3: 机会清单（增长杠杆）
+        # ═══════════════════════════════════════
+        opportunities = []
+
+        # 1. 增长亮点型号（已有数据）
+        if rising_stars:
+            for r in rising_stars[:5]:
+                opportunities.append({
+                    '类型': '🚀 增长亮点',
+                    '目标': f"{r['型号']}（{r['品类']}）",
+                    '数据': f"本期GMV ¥{r['本期GMV']:,.0f}",
+                    '机会点': '加大推广预算，复制成功模式到同类SKU',
+                    '建议动作': '推广预算+30%，测试3天',
+                })
+
+        # 2. 高转化率但低流量的型号（隐藏的宝石）
+        for mk_key, mv in cur_by_model.items():
+            cvr_val = mv.get('支付转化率', 0) * 100
+            vis_val = mv.get('商品访客数', 0)
+            avg_cvr = cur_sum.get('支付转化率', 0) * 100 if cur_sum.get('支付转化率', 0) else 0
+            if cvr_val > avg_cvr * 1.5 and vis_val > 30 and vis_val < 500:
+                gmv_val = mv.get('支付金额', 0)
+                if gmv_val > 500:
+                    opportunities.append({
+                        '类型': '💎 潜力型号',
+                        '目标': f"{mk_key[2]}（{mk_key[1]}）",
+                        '数据': f"转化{cvr_val:.1f}%(高于均值{avg_cvr:.1f}%) | 访客仅{vis_val:,.0f}",
+                        '机会点': '转化率优异但流量不足，加大曝光可快速起量',
+                        '建议动作': '加入推广计划，设置日预算¥200测试',
+                    })
+
+        if opportunities:
+            opp_display = opportunities[:8]
+            st.markdown("<div style='background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:6px 14px;margin:16px 0 6px 0;'>"
+                        "<b>💡 机会清单</b> <small style='color:#94a3b8;'>— 可主动出击的增长机会</small></div>", unsafe_allow_html=True)
+            _opp_rows = []
+            for o in opp_display:
+                _opp_rows.append({
+                    '机会类型': o['类型'],
+                    '目标': o['目标'],
+                    '关键数据': o['数据'],
+                    '机会分析': o['机会点'],
+                    '建议动作': o['建议动作'],
+                })
+            st.markdown(_html_table(_opp_rows, height=min(300, len(_opp_rows)*36+50)), unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:6px 14px;margin:16px 0 6px 0;'>"
+                        "<b>💡 机会清单</b> <small style='color:#64748b;'>— 暂未发现显著增长机会</small></div>", unsafe_allow_html=True)
 
         # 下载诊断报告
         st.markdown("<hr style='margin:18px 0;border:none;border-top:1px dashed #cbd5e1;'>", unsafe_allow_html=True)
