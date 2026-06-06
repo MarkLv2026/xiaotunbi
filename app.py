@@ -4568,14 +4568,14 @@ if model: _filter_parts.append(f'型号={"+".join(model)}')
 _filter_label = ' | '.join(_filter_parts) if _filter_parts else '全域'
 
 with tabs[4]:
-    st.markdown('<div class="section-title">🔍 智能诊断 V4 — 作战指挥室（华为复盘模型）</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🔍 智能诊断 V4 — 作战指挥室</div>', unsafe_allow_html=True)
     _cmp_label = f'上期 {_t2_prev_s} ~ {_t2_prev_e}'
     st.caption(f'诊断区间：{s} ~ {e} | 筛选范围：{_filter_label} | 对比区间：{_cmp_label}')
 
     # ══════════════════════════════════════
     # A. 核心数据准备（基于当前筛选条件）
     # ══════════════════════════════════════
-    cur_sum = totals  # 复用全局 totals
+    cur_sum = summarize(cur_rows_all)  # 基于排除小豚天猫后的数据重新汇总
 
     def _agg_by_dims(rows, dims):
         out = {}
@@ -4590,7 +4590,7 @@ with tabs[4]:
             v['退款率'] = v['成功退款金额'] / v['支付金额'] if v['支付金额'] else 0
         return out
 
-    cur_rows_all = list(daily)
+    cur_rows_all = [r for r in daily if r.get('渠道', '') != '小豚天猫']
     prev_rows_all_raw = []
     for r in data['daily']:
         d = r.get('日期', '')
@@ -4598,6 +4598,7 @@ with tabs[4]:
         if _t2_prev_s <= d <= _t2_prev_e: prev_rows_all_raw.append(r)
     prev_rows_all = []
     for r in prev_rows_all_raw:
+        if r.get('渠道', '') == '小豚天猫': continue
         if channel and r.get('渠道') not in channel: continue
         if store and r.get('店铺') not in store: continue
         if category and r.get('品类') not in category: continue
@@ -4640,6 +4641,7 @@ with tabs[4]:
             if yoy_s <= d <= yoy_e: yoy_rows_all.append(r)
         yoy_rows_filtered = []
         for r in yoy_rows_all:
+            if r.get('渠道', '') == '小豚天猫': continue
             if channel and r.get('渠道') not in channel: continue
             if store and r.get('店铺') not in store: continue
             if category and r.get('品类') not in category: continue
@@ -4715,8 +4717,11 @@ with tabs[4]:
 
     # ── Layer 2: 三GAP速览（30% 差距定位）──
     st.markdown(
-        "<div style='font-size:13px;color:#475569;font-weight:700;margin:4px 0 8px 0;'>"
+        "<div style='font-size:13px;color:#475569;font-weight:700;margin:4px 0 2px 0;'>"
         "📊 三GAP速览 — 目标达成 · 同比变化 · 环比变化</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div style='font-size:10px;color:#94a3b8;margin:0 0 8px 0;'>"
+        "GAP=差距(Gap)：GAP1 目标vs实际 | GAP2 今年vs去年同期 | GAP3 本期vs上期</div>", unsafe_allow_html=True)
 
     gap1, gap2, gap3 = st.columns(3)
 
