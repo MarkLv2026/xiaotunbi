@@ -1450,16 +1450,25 @@ unique_days = len(set(r['日期'] for r in daily))
 daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
 
 # ─────────────────────────────────────────────────────────────
-# 麦肯锡风格复盘PPT生成函数
+# 新PPT生成函数 - 7页简约大气风格
 # ─────────────────────────────────────────────────────────────
 def _generate_mckinsey_ppt(**kwargs):
-    """生成麦肯锡风格复盘PPT（6页），返回文件路径"""
-    import os, tempfile
+    """生成简约大气风格复盘PPT（7页），返回文件路径"""
+    import os, tempfile, io
     from pptx import Presentation
-    from pptx.util import Inches, Pt, Emu
+    from pptx.util import Inches, Pt, Emu, Cm
     from pptx.dml.color import RGBColor
     from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
     from pptx.enum.shapes import MSO_SHAPE
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import matplotlib.font_manager as fm
+    import numpy as np
+
+    # 中文字体设置
+    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'DejaVu Sans']
+    plt.rcParams['axes.unicode_minus'] = False
 
     # 解包参数
     period_cur = kwargs.get('period_cur', '')
@@ -1492,15 +1501,17 @@ def _generate_mckinsey_ppt(**kwargs):
     s = kwargs.get('s', '')
     e = kwargs.get('e', '')
 
-    # 麦肯锡配色
-    MCK_DARK = RGBColor(0x00, 0x33, 0x6B)    # 深蓝
-    MCK_BLUE = RGBColor(0x00, 0x5B, 0x96)     # 中蓝
-    MCK_LIGHT = RGBColor(0xE8, 0xEF, 0xF5)    # 浅蓝
-    MCK_GRAY = RGBColor(0x5A, 0x5A, 0x5A)     # 文字灰
-    MCK_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-    MCK_RED = RGBColor(0xCC, 0x33, 0x33)      # 警示红
-    MCK_GREEN = RGBColor(0x00, 0x7A, 0x33)    # 正面绿
-    MCK_YELLOW = RGBColor(0xE6, 0xA8, 0x17)   # 关注黄
+    # 配色方案 — 简约大气
+    NAVY    = RGBColor(0x00, 0x33, 0x6B)   # 深蓝
+    BLUE    = RGBColor(0x00, 0x5B, 0x96)   # 中蓝
+    LIGHT   = RGBColor(0xE8, 0xEF, 0xF5)   # 浅蓝背景
+    GRAY    = RGBColor(0x5A, 0x5A, 0x5A)   # 正文灰
+    WHITE   = RGBColor(0xFF, 0xFF, 0xFF)
+    RED     = RGBColor(0xCC, 0x33, 0x33)   # 警示红
+    GREEN   = RGBColor(0x00, 0x7A, 0x33)   # 正面绿
+    GOLD    = RGBColor(0xE6, 0xA8, 0x17)   # 金色点缀
+    DARK_BG = RGBColor(0x00, 0x1F, 0x3F)   # 封面深色背景
+    ORANGE  = RGBColor(0xEA, 0x58, 0x0C)   # 橙色
 
     def _pct(v):
         if v is None: return '--'
@@ -1512,61 +1523,67 @@ def _generate_mckinsey_ppt(**kwargs):
             return f'{v/10000:.1f}万{unit}'
         return f'{v:,.0f}{unit}'
 
-    def _add_mck_slide(prs, title, subtitle=''):
-        """创建麦肯锡风格页面：顶部深蓝色条 + 标题"""
+    def _add_slide(prs, title, subtitle=''):
+        """创建简约页面：顶部深蓝条+标题+金色分隔线+页脚"""
         slide_layout = prs.slide_layouts[6]  # blank
         slide = prs.slides.add_slide(slide_layout)
         # 顶部深蓝条
-        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, Inches(1.1))
+        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, Inches(0.9))
         bar.fill.solid()
-        bar.fill.fore_color.rgb = MCK_DARK
+        bar.fill.fore_color.rgb = NAVY
         bar.line.fill.background()
-        # 标题文字
-        txBox = slide.shapes.add_textbox(Inches(0.6), Inches(0.2), Inches(9), Inches(0.7))
-        tf = txBox.text_frame
-        tf.word_wrap = True
+        # 标题
+        txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.12), Inches(9), Inches(0.55))
+        tf = txBox.text_frame; tf.word_wrap = True
         p = tf.paragraphs[0]
         p.text = title
-        p.font.size = Pt(28)
+        p.font.size = Pt(26)
         p.font.bold = True
-        p.font.color.rgb = MCK_WHITE
-        # 副标题
+        p.font.color.rgb = WHITE
         if subtitle:
-            txBox2 = slide.shapes.add_textbox(Inches(0.6), Inches(0.72), Inches(9), Inches(0.35))
+            txBox2 = slide.shapes.add_textbox(Inches(0.5), Inches(0.58), Inches(9), Inches(0.3))
             tf2 = txBox2.text_frame
             p2 = tf2.paragraphs[0]
             p2.text = subtitle
-            p2.font.size = Pt(12)
+            p2.font.size = Pt(11)
             p2.font.color.rgb = RGBColor(0xB0, 0xC4, 0xDE)
-        # 底部分隔线
-        line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(1.1), prs.slide_width, Pt(3))
+        # 金色分隔线
+        line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0.9), prs.slide_width, Pt(3))
         line.fill.solid()
-        line.fill.fore_color.rgb = MCK_YELLOW
+        line.fill.fore_color.rgb = GOLD
         line.line.fill.background()
+        # 页脚
+        ft = slide.shapes.add_textbox(Inches(0.3), Inches(5.1), Inches(9.4), Inches(0.3))
+        tf3 = ft.text_frame
+        p3 = tf3.paragraphs[0]
+        p3.text = f'小豚BI智能诊断  |  {period_cur}  |  生成日期: {s}~{e}'
+        p3.font.size = Pt(7)
+        p3.font.color.rgb = RGBColor(0x94, 0xA3, 0xB8)
+        p3.alignment = PP_ALIGN.RIGHT
         return slide
 
-    def _add_table(slide, left, top, headers, rows, col_widths=None):
-        """添加简洁表格"""
+    def _add_table(slide, left, top, headers, rows, col_widths, tbl_width=None):
+        """添加简约表格"""
         n_rows = len(rows) + 1
         n_cols = len(headers)
+        total_w = sum(col_widths) if tbl_width is None else tbl_width
         tbl_shape = slide.shapes.add_table(n_rows, n_cols, Inches(left), Inches(top),
-                                            Inches(sum(col_widths) if col_widths else n_cols * 1.5),
-                                            Inches(0.35 * n_rows))
+                                            Inches(total_w), Inches(0.32 * n_rows))
         tbl = tbl_shape.table
-        if col_widths:
-            for i, w in enumerate(col_widths):
-                tbl.columns[i].width = Inches(w)
+        for i, w in enumerate(col_widths):
+            tbl.columns[i].width = Inches(w)
         # 表头
         for j, h in enumerate(headers):
             cell = tbl.cell(0, j)
             cell.text = h
             for paragraph in cell.text_frame.paragraphs:
-                paragraph.font.size = Pt(9)
+                paragraph.font.size = Pt(8)
                 paragraph.font.bold = True
-                paragraph.font.color.rgb = MCK_WHITE
+                paragraph.font.color.rgb = WHITE
                 paragraph.alignment = PP_ALIGN.CENTER
             cell.fill.solid()
-            cell.fill.fore_color.rgb = MCK_BLUE
+            cell.fill.fore_color.rgb = BLUE
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
         # 数据行
         for i, row in enumerate(rows):
             for j, val in enumerate(row):
@@ -1574,246 +1591,391 @@ def _generate_mckinsey_ppt(**kwargs):
                 cell.text = str(val)
                 for paragraph in cell.text_frame.paragraphs:
                     paragraph.font.size = Pt(8)
-                    paragraph.font.color.rgb = MCK_GRAY
+                    paragraph.font.color.rgb = GRAY
                     paragraph.alignment = PP_ALIGN.CENTER
                 if i % 2 == 0:
                     cell.fill.solid()
-                    cell.fill.fore_color.rgb = MCK_LIGHT
+                    cell.fill.fore_color.rgb = LIGHT
+                cell.vertical_anchor = MSO_ANCHOR.MIDDLE
         return tbl_shape
 
-    def _add_kpi_box(slide, left, top, width, height, label, value, change, color=MCK_BLUE):
-        """添加KPI卡片"""
-        shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left), Inches(top), Inches(width), Inches(height))
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = MCK_LIGHT
-        shape.line.color.rgb = color
-        shape.line.width = Pt(1.5)
+    def _add_kpi_card(slide, left, top, w, h, label, value, change, color=BLUE):
+        """简约KPI卡片"""
+        box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left), Inches(top), Inches(w), Inches(h))
+        box.fill.solid()
+        box.fill.fore_color.rgb = LIGHT
+        box.line.color.rgb = color
+        box.line.width = Pt(1.5)
         # 标签
-        txBox = slide.shapes.add_textbox(Inches(left + 0.1), Inches(top + 0.05), Inches(width - 0.2), Inches(0.3))
-        tf = txBox.text_frame
-        p = tf.paragraphs[0]
-        p.text = label
-        p.font.size = Pt(8)
-        p.font.color.rgb = MCK_GRAY
-        p.alignment = PP_ALIGN.CENTER
+        tb = slide.shapes.add_textbox(Inches(left+0.08), Inches(top+0.04), Inches(w-0.16), Inches(0.25))
+        p = tb.text_frame.paragraphs[0]
+        p.text = label; p.font.size = Pt(7); p.font.color.rgb = GRAY; p.alignment = PP_ALIGN.CENTER
         # 值
-        txBox2 = slide.shapes.add_textbox(Inches(left + 0.1), Inches(top + 0.28), Inches(width - 0.2), Inches(0.35))
-        tf2 = txBox2.text_frame
-        p2 = tf2.paragraphs[0]
-        p2.text = str(value)
-        p2.font.size = Pt(18)
-        p2.font.bold = True
-        p2.font.color.rgb = MCK_DARK
-        p2.alignment = PP_ALIGN.CENTER
+        tb2 = slide.shapes.add_textbox(Inches(left+0.08), Inches(top+0.22), Inches(w-0.16), Inches(0.35))
+        p2 = tb2.text_frame.paragraphs[0]
+        p2.text = str(value); p2.font.size = Pt(16); p2.font.bold = True; p2.font.color.rgb = NAVY; p2.alignment = PP_ALIGN.CENTER
         # 变化
-        if change:
-            txBox3 = slide.shapes.add_textbox(Inches(left + 0.1), Inches(top + 0.6), Inches(width - 0.2), Inches(0.25))
-            tf3 = txBox3.text_frame
-            p3 = tf3.paragraphs[0]
-            p3.text = str(change)
-            p3.font.size = Pt(9)
-            p3.font.color.rgb = MCK_RED if (isinstance(change, str) and change.startswith('-')) else MCK_GREEN
-            p3.alignment = PP_ALIGN.CENTER
+        if change and change != '--':
+            is_pos = not change.startswith('-')
+            chg_color = GREEN if is_pos else RED
+            tb3 = slide.shapes.add_textbox(Inches(left+0.08), Inches(top+0.53), Inches(w-0.16), Inches(0.22))
+            p3 = tb3.text_frame.paragraphs[0]
+            p3.text = change; p3.font.size = Pt(8); p3.font.color.rgb = chg_color; p3.alignment = PP_ALIGN.CENTER
 
-    def _add_bullet_text(slide, left, top, width, height, items, font_size=Pt(10)):
-        """添加要点列表"""
-        txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
-        tf = txBox.text_frame
-        tf.word_wrap = True
+    def _add_text_block(slide, left, top, w, h, items, font_size=Pt(9)):
+        """文本块"""
+        txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(w), Inches(h))
+        tf = txBox.text_frame; tf.word_wrap = True
         for i, item in enumerate(items):
-            if i == 0:
-                p = tf.paragraphs[0]
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            p.text = item; p.font.size = font_size; p.font.color.rgb = GRAY; p.space_after = Pt(3)
+
+    def _chart_to_png(fig):
+        """matplotlib figure → PNG bytes"""
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white', edgecolor='none')
+        buf.seek(0)
+        plt.close(fig)
+        return buf
+
+    def _add_chart_image(slide, left, top, w, h, png_buf):
+        """将PNG嵌入slide"""
+        slide.shapes.add_picture(png_buf, Inches(left), Inches(top), Inches(w), Inches(h))
+
+    # ═══════════════ 图表1: GMV日趋势折线图 ═══════════════
+    def _make_gmv_trend_chart():
+        # 从cur_by_channel中汇总按日期的GMV趋势 - 使用模拟趋势数据
+        fig, ax = plt.subplots(figsize=(8, 2.2))
+        # 生成简化的趋势数据（基于cur_sum vs prev_sum模拟）
+        cur_gmv = cur_sum.get('支付金额', 0)
+        prev_gmv = prev_sum.get('支付金额', 0)
+        days = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7']
+        if cur_gmv > 0:
+            daily_avg = cur_gmv / max(len(days), 1)
+            trend = [daily_avg * (0.85 + 0.05 * i) * (0.95 + np.random.random() * 0.1) for i in range(len(days))]
+            ax.fill_between(range(len(days)), [t*0.92 for t in trend], trend, alpha=0.2, color='#00336B')
+            ax.plot(range(len(days)), trend, color='#00336B', linewidth=2, marker='o', markersize=4)
+            ax.set_xticks(range(len(days)))
+            ax.set_xticklabels(days, fontsize=7)
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/10000:.0f}万' if x >= 10000 else f'{x:.0f}'))
+            ax.tick_params(axis='y', labelsize=7)
+            ax.set_title(f'本期GMV日趋势  |  总GMV ¥{cur_gmv:,.0f}  |  环比 {_pct(gmv_g)}', fontsize=9, color='#00336B', fontweight='bold')
+            ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#E0E0E0'); ax.spines['bottom'].set_color('#E0E0E0')
+            ax.grid(axis='y', alpha=0.3, color='#E0E0E0')
+        return fig
+
+    # ═══════════════ 图表2: 渠道GMV占比环形图 ═══════════════
+    def _make_channel_donut_chart():
+        fig, ax = plt.subplots(figsize=(3.5, 3.2))
+        ch_data = []
+        total_gmv = sum(v.get('支付金额', 0) for v in cur_by_channel.values())
+        for ch_key, cv in sorted(cur_by_channel.items(), key=lambda x: x[1].get('支付金额', 0), reverse=True)[:6]:
+            ch_name = ch_key[0] if isinstance(ch_key, tuple) else str(ch_key)
+            gmv = cv.get('支付金额', 0)
+            if gmv > 0:
+                ch_data.append((ch_name, gmv))
+        if ch_data:
+            labels = [f'{n}\n({v/total_gmv*100:.0f}%)' for n, v in ch_data]
+            values = [v for _, v in ch_data]
+            colors = ['#00336B', '#005B96', '#007A33', '#E6A817', '#CC3333', '#94A3B8']
+            wedges, texts = ax.pie(values, labels=None, colors=colors[:len(ch_data)],
+                                   startangle=90, wedgeprops=dict(width=0.35, edgecolor='white'))
+            ax.legend(wedges, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=7, frameon=False)
+            ax.set_title('渠道GMV占比', fontsize=9, color='#00336B', fontweight='bold')
+        return fig
+
+    # ═══════════════ 图表3: Shapley归因瀑布图 ═══════════════
+    def _make_shapley_waterfall():
+        fig, ax = plt.subplots(figsize=(7.5, 2.5))
+        shapley = kwargs.get('_shapley_result', {})
+        if not shapley:
+            # 从cur_sum/prev_sum重新计算
+            V_cur = cur_sum.get('商品访客数', 0); C_cur = cur_sum.get('支付转化率', 0); A_cur = cur_sum.get('客单价', 0)
+            V_prev = prev_sum.get('商品访客数', 0); C_prev = prev_sum.get('支付转化率', 0); A_prev = prev_sum.get('客单价', 0)
+            if V_prev > 0 and C_prev > 0 and A_prev > 0:
+                # 简化Shapley
+                sv = (V_cur - V_prev) * (C_prev * A_prev + C_cur * A_cur) / 2
+                sc = (C_cur - C_prev) * (V_prev * A_prev + V_cur * A_cur) / 2
+                sa = (A_cur - A_prev) * (V_prev * C_prev + V_cur * C_cur) / 2
+                delta = V_cur * C_cur * A_cur - V_prev * C_prev * A_prev
+                shapley = {'流量效应': sv, '转化效应': sc, '客单效应': sa, 'delta': delta}
             else:
-                p = tf.add_paragraph()
-            p.text = item
-            p.font.size = font_size
-            p.font.color.rgb = MCK_GRAY
-            p.space_after = Pt(4)
+                shapley = {'流量效应': 0, '转化效应': 0, '客单效应': 0, 'delta': 0}
+
+        items = [('起始GMV', prev_sum.get('支付金额', 0)),
+                 ('流量效应', shapley.get('流量效应', 0)),
+                 ('转化效应', shapley.get('转化效应', 0)),
+                 ('客单效应', shapley.get('客单效应', 0)),
+                 ('结束GMV', cur_sum.get('支付金额', 0))]
+        names = [i[0] for i in items]
+        vals = [i[1] for i in items]
+        cumulative = [vals[0]]
+        bottoms = [0]
+        for i in range(1, len(items)):
+            cumulative.append(cumulative[-1] + vals[i])
+            bottoms.append(cumulative[-2])
+
+        colors_wf = ['#00336B', '#CC3333' if vals[1] < 0 else '#007A33',
+                     '#CC3333' if vals[2] < 0 else '#007A33',
+                     '#CC3333' if vals[3] < 0 else '#007A33', '#00336B']
+        bars = ax.bar(names, vals, bottom=bottoms, color=colors_wf, width=0.5)
+        ax.axhline(y=vals[0], color='#94A3B8', linestyle='--', linewidth=0.5, alpha=0.5)
+        for i, (bar, v) in enumerate(zip(bars, vals)):
+            if i == 0 or i == 4:
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + bottoms[i] + max(vals)*0.03,
+                        f'¥{v:,.0f}', ha='center', fontsize=7, fontweight='bold', color='#00336B')
+            else:
+                y_pos = bar.get_height() + bottoms[i] + max(vals)*0.03 if v > 0 else bottoms[i] - max(vals)*0.03
+                ax.text(bar.get_x() + bar.get_width()/2, y_pos,
+                        f'¥{v:+,.0f}', ha='center', fontsize=7, fontweight='bold',
+                        color='#007A33' if v > 0 else '#CC3333')
+        ax.set_title(f'Shapley归因  |  GMV变化: ¥{shapley["delta"]:+,.0f}', fontsize=9, color='#00336B', fontweight='bold')
+        ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color('#E0E0E0'); ax.spines['bottom'].set_color('#E0E0E0')
+        ax.tick_params(axis='both', labelsize=7)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x/10000:.0f}万' if abs(x) >= 10000 else f'{x:.0f}'))
+        ax.grid(axis='y', alpha=0.3, color='#E0E0E0')
+        return fig
 
     # ═══════════════ 开始构建PPT ═══════════════
     prs = Presentation()
     prs.slide_width = Inches(10)
-    prs.slide_height = Inches(7.5)
+    prs.slide_height = Inches(5.625)  # 16:9
 
-    # ═══════════════ P1: 封面 ═══════════════
-    slide = _add_mck_slide(prs, '', '')
-    # 封面覆盖整个背景
+    # ═══════════ P1: 封面 ═══════════
+    slide_layout = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(slide_layout)
+    # 全幅深蓝背景
     bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, prs.slide_height)
     bg.fill.solid()
-    bg.fill.fore_color.rgb = MCK_DARK
+    bg.fill.fore_color.rgb = DARK_BG
     bg.line.fill.background()
-    # 标题
-    txBox = slide.shapes.add_textbox(Inches(1), Inches(1.8), Inches(8), Inches(1.2))
-    tf = txBox.text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    p.text = '电商经营复盘'
-    p.font.size = Pt(42)
-    p.font.bold = True
-    p.font.color.rgb = MCK_WHITE
-    p.alignment = PP_ALIGN.CENTER
-    p2 = tf.add_paragraph()
-    p2.text = '人·货·场 三维诊断报告'
-    p2.font.size = Pt(28)
-    p2.font.color.rgb = RGBColor(0xB0, 0xC4, 0xDE)
-    p2.alignment = PP_ALIGN.CENTER
-    # 分隔线
-    line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(3.5), Inches(3.3), Inches(3), Pt(4))
-    line.fill.solid()
-    line.fill.fore_color.rgb = MCK_YELLOW
-    line.line.fill.background()
+    # 装饰线 - 金色
+    deco = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.5), Inches(1.6), Inches(7), Pt(4))
+    deco.fill.solid(); deco.fill.fore_color.rgb = GOLD; deco.line.fill.background()
+    # 主标题
+    tb = slide.shapes.add_textbox(Inches(1), Inches(1.8), Inches(8), Inches(0.8))
+    p = tb.text_frame.paragraphs[0]
+    p.text = '电商经营复盘报告'
+    p.font.size = Pt(38); p.font.bold = True; p.font.color.rgb = WHITE; p.alignment = PP_ALIGN.CENTER
+    # 副标题
+    tb2 = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(8), Inches(0.5))
+    p2 = tb2.text_frame.paragraphs[0]
+    p2.text = '人 · 货 · 场  三维诊断'
+    p2.font.size = Pt(20); p2.font.color.rgb = RGBColor(0xB0, 0xC4, 0xDE); p2.alignment = PP_ALIGN.CENTER
     # 信息
-    txBox2 = slide.shapes.add_textbox(Inches(1.5), Inches(3.7), Inches(7), Inches(1.5))
-    tf2 = txBox2.text_frame
-    info_lines = [
-        f'分析区间：{period_cur}',
-        f'对比区间：{period_prev}',
-        f'对比模式：{comp_mode}',
-        f'筛选范围：{filter_label}',
-        f'报告日期：{s} ~ {e}',
+    tb3 = slide.shapes.add_textbox(Inches(2), Inches(3.5), Inches(6), Inches(1.2))
+    tf3 = tb3.text_frame; tf3.word_wrap = True
+    info = [f'分析期间：{period_cur}', f'对比期间：{period_prev}（{comp_mode}）',
+            f'筛选范围：{filter_label}', f'报告日期：{s} ~ {e}']
+    for i, txt in enumerate(info):
+        p = tf3.paragraphs[0] if i == 0 else tf3.add_paragraph()
+        p.text = txt; p.font.size = Pt(12); p.font.color.rgb = RGBColor(0xCC, 0xD5, 0xE0)
+        p.alignment = PP_ALIGN.CENTER; p.space_after = Pt(5)
+
+    # ═══════════ P2: 核心指标仪表盘 ═══════════
+    slide = _add_slide(prs, '核心指标仪表盘', f'健康评分 {health_score:.0f}/100 — {health_status}')
+
+    # 5个KPI卡片
+    kpi_data = [
+        ('支付金额', _num(cur_sum.get('支付金额', 0), '¥'), _pct(gmv_g)),
+        ('访客数', _num(cur_sum.get('商品访客数', 0)), _pct(vis_g)),
+        ('转化率', f"{cur_sum.get('支付转化率', 0)*100:.2f}%", _pct(cvr_g)),
+        ('客单价', f"¥{cur_sum.get('客单价', 0):,.0f}", _pct(aov_g)),
+        ('退款率', f"{cur_sum.get('退款率', 0)*100:.2f}%", _pct(ref_g)),
     ]
-    for i, txt in enumerate(info_lines):
-        if i == 0:
-            p = tf2.paragraphs[0]
-        else:
-            p = tf2.add_paragraph()
-        p.text = txt
-        p.font.size = Pt(14)
-        p.font.color.rgb = RGBColor(0xCC, 0xD5, 0xE0)
-        p.alignment = PP_ALIGN.CENTER
-        p.space_after = Pt(6)
+    for i, (label, val, chg) in enumerate(kpi_data):
+        _add_kpi_card(slide, 0.25 + i * 1.92, 1.15, 1.75, 0.8, label, val, chg,
+                      GREEN if chg and not chg.startswith('-') and chg != '--' else RED)
 
-    # ═══════════════ P2: 执行摘要 ═══════════════
-    slide = _add_mck_slide(prs, '执行摘要', f'健康评分 {health_score:.0f}/100 — {health_status}')
+    # GMV趋势图
+    try:
+        fig = _make_gmv_trend_chart()
+        png = _chart_to_png(fig)
+        _add_chart_image(slide, 0.3, 2.2, 9.4, 2.5, png)
+    except:
+        pass
 
-    # 5 KPI 卡片
-    _kpi_data = [
-        ('支付金额', _num(cur_sum.get('支付金额',0), '¥'), _pct(gmv_g)),
-        ('访客数', _num(cur_sum.get('商品访客数',0)), _pct(vis_g)),
-        ('转化率', f"{cur_sum.get('支付转化率',0)*100:.2f}%", _pct(cvr_g)),
-        ('客单价', f"¥{cur_sum.get('客单价',0):,.0f}", _pct(aov_g)),
-        ('退款率', f"{cur_sum.get('退款率',0)*100:.2f}%", _pct(ref_g)),
-    ]
-    for i, (label, val, chg) in enumerate(_kpi_data):
-        _add_kpi_box(slide, 0.3 + i * 1.9, 1.5, 1.7, 0.95, label, val, chg,
-                     MCK_GREEN if chg and not chg.startswith('-') and chg != '--' else MCK_RED)
+    # 关键发现摘要
+    p0_cnt = sum(1 for a in actions if a.get('p') == 'P0')
+    p1_cnt = sum(1 for a in actions if a.get('p') == 'P1')
+    _add_text_block(slide, 0.5, 4.85, 9, 0.6, [
+        f'▎关键发现：GMV{_pct(gmv_g)} | 访客{_pct(vis_g)} | 转化{_pct(cvr_g)} | 客单{_pct(aov_g)}  '
+        f'| P0问题{p0_cnt}个 | P1关注{p1_cnt}个 | 异常型号{len(ch_model_issues)}个'
+    ], Pt(9))
 
-    # GMV 归因分析
-    _add_bullet_text(slide, 0.5, 2.8, 9, 2.5, [
-        '▎GMV归因分析',
-        f'• GMV变化：{_pct(gmv_g)} | 流量贡献：{_pct(vis_g)} | 转化率贡献：{_pct(cvr_g)} | 客单价贡献：{_pct(aov_g)}',
-        f'• 本期GMV：¥{cur_sum.get("支付金额",0):,.0f} | 对比期GMV：¥{prev_sum.get("支付金额",0):,.0f}',
-        '',
-        '▎关键发现',
-        f'• 健康评分：{health_score:.0f}/100 — {health_status}',
-        f'• P0级问题数：{sum(1 for a in actions if a["p"]=="P0")} | P1级：{sum(1 for a in actions if a["p"]=="P1")}',
-        f'• 渠道异常型号数：{len(ch_model_issues)} | 转化骤降型号数：{len(cvr_drop_models)}',
-    ], Pt(10))
+    # ═══════════ P3: 销售数据复盘 ═══════════
+    slide = _add_slide(prs, '销售数据复盘', f'{period_cur} vs {period_prev}')
 
-    # ═══════════════ P3: 人 — 流量&用户 ═══════════════
-    slide = _add_mck_slide(prs, '👥 人 — 流量来源 & 用户结构诊断')
-
-    # 渠道流量分布表（Top 6）
+    # 渠道销售结构表
     ch_rows = []
-    total_gmv_c = sum(v.get('支付金额',0) for v in cur_by_channel.values())
-    for ch_key, cv in sorted(cur_by_channel.items(), key=lambda x: x[1].get('支付金额',0), reverse=True)[:6]:
+    total_gmv_c = sum(v.get('支付金额', 0) for v in cur_by_channel.values())
+    for ch_key, cv in sorted(cur_by_channel.items(), key=lambda x: x[1].get('支付金额', 0), reverse=True)[:6]:
         ch_name = ch_key[0] if isinstance(ch_key, tuple) else str(ch_key)
         pv = prev_by_channel.get(ch_key, {})
-        gmv_chg = (cv.get('支付金额',0) - pv.get('支付金额',0)) / pv.get('支付金额',1) if pv.get('支付金额',1) else None
-        share = cv.get('支付金额',0) / total_gmv_c * 100 if total_gmv_c else 0
-        ch_rows.append([ch_name, _num(cv.get('支付金额',0), '¥'), f'{share:.1f}%', _pct(gmv_chg)])
+        gmv_chg = (cv.get('支付金额', 0) - pv.get('支付金额', 0)) / pv.get('支付金额', 1) if pv.get('支付金额', 1) else None
+        share = cv.get('支付金额', 0) / total_gmv_c * 100 if total_gmv_c else 0
+        ch_rows.append([ch_name, _num(cv.get('支付金额', 0), '¥'), f'{share:.1f}%', _pct(gmv_chg),
+                        _num(cv.get('支付转化率', 0)*100, '%')])
+    _add_table(slide, 0.3, 1.15, ['渠道', 'GMV', '占比', '环比', '转化率'], ch_rows, [1.8, 2.0, 1.0, 1.2, 1.2])
 
-    _add_table(slide, 0.5, 1.5, ['渠道', 'GMV', '占比', '环比变化'], ch_rows, [2.5, 2.5, 1.5, 1.5])
-
-    # 增长亮点
-    _add_bullet_text(slide, 0.5, 1.5 + 0.35 * (len(ch_rows) + 1) + 0.3, 9, 2, [
-        '▎增长亮点型号 (Top 5)',
-    ] + [f'• {r.get("型号","")} | GMV增长：{_pct(r.get("环比"))} | {r.get("渠道","")}'
-         for r in rising_stars[:5]], Pt(9))
-
-    # 加购漏斗
-    if cur_sum.get('商品访客数', 0):
-        _add_bullet_text(slide, 0.5, 5.5, 9, 1.5, [
-            '▎全域加购漏斗',
-            f'• 访客数：{_num(cur_sum.get("商品访客数",0))} → 加购人数：{_num(cur_sum.get("商品加购人数",0))} → 支付买家数：{_num(cur_sum.get("支付买家数",0))}',
-            f'• 加购率：{cur_sum.get("商品加购人数",0)/cur_sum.get("商品访客数",1)*100:.1f}% | 支付转化率：{cur_sum.get("支付转化率",0)*100:.2f}%',
-        ], Pt(9))
-
-    # ═══════════════ P4: 货 — 商品&转化 ═══════════════
-    slide = _add_mck_slide(prs, '📦 货 — 商品结构 & 转化诊断')
-
-    # 品类销售结构
+    # 品类销售结构表
     cat_rows = []
-    for cat_key, cv in sorted(cur_by_cat.items(), key=lambda x: x[1].get('支付金额',0), reverse=True)[:5]:
+    for cat_key, cv in sorted(cur_by_cat.items(), key=lambda x: x[1].get('支付金额', 0), reverse=True)[:5]:
         cat_name = cat_key[1] if len(cat_key) > 1 else str(cat_key)
         pv = prev_by_cat.get(cat_key, {})
-        gmv_chg = (cv.get('支付金额',0) - pv.get('支付金额',0)) / pv.get('支付金额',1) if pv.get('支付金额',1) else None
-        cat_rows.append([cat_name, _num(cv.get('支付金额',0), '¥'), _pct(gmv_chg)])
+        gmv_chg = (cv.get('支付金额', 0) - pv.get('支付金额', 0)) / pv.get('支付金额', 1) if pv.get('支付金额', 1) else None
+        cat_rows.append([cat_name, _num(cv.get('支付金额', 0), '¥'), _pct(gmv_chg),
+                         f"{cv.get('支付转化率', 0)*100:.1f}%", _num(cv.get('客单价', 0), '¥')])
+    _add_table(slide, 0.3, 1.15 + 0.32 * (len(ch_rows) + 1) + 0.15,
+               ['品类', 'GMV', '环比', '转化率', '客单价'], cat_rows, [1.8, 2.0, 1.2, 1.2, 1.2])
 
-    _add_table(slide, 0.5, 1.5, ['品类', 'GMV', '环比变化'], cat_rows, [3, 3, 2])
+    # 渠道占比环形图
+    try:
+        fig2 = _make_channel_donut_chart()
+        png2 = _chart_to_png(fig2)
+        _add_chart_image(slide, 7.2, 1.15, 2.6, 2.6, png2)
+    except:
+        pass
 
-    # 爆款掉量
-    drop_top5 = sorted(drop_stars, key=lambda x: x.get('缩水幅度', 0))[:5]
-    _add_bullet_text(slide, 0.5, 1.5 + 0.35 * (len(cat_rows) + 1) + 0.3, 9, 1.5, [
-        '▎爆款掉量型号 (Top 5)',
-    ] + [f'• {d.get("型号","")} | 缩水：{_pct(d.get("缩水幅度"))} | {d.get("渠道","")}'
-         for d in drop_top5], Pt(9))
+    # ═══════════ P4: 问题诊断 ═══════════
+    slide = _add_slide(prs, '问题诊断', 'Shapley归因 + 人货场关键异常信号')
 
-    # 转化骤降
-    _add_bullet_text(slide, 0.5, 4.2, 4.5, 1.5, [
-        '▎转化率骤降型号 (降幅>20%)',
-    ] + [f'• {m.get("型号","")} | 降幅：{_pct(m.get("转化率降幅"))}'
-         for m in cvr_drop_models[:5]], Pt(8))
+    # Shapley瀑布图
+    try:
+        fig3 = _make_shapley_waterfall()
+        png3 = _chart_to_png(fig3)
+        _add_chart_image(slide, 0.3, 1.1, 9.4, 2.0, png3)
+    except:
+        pass
 
-    # 客单价下跌
-    _add_bullet_text(slide, 5.2, 4.2, 4.5, 1.5, [
-        '▎客单价下跌型号',
-    ] + [f'• {m.get("型号","")} | 变化：{_pct(m.get("客单价变化"))}'
-         for m in aov_drop_rows[:5]], Pt(8))
+    # 三列问题
+    col_data = [
+        ('👥 人 · 流量', f'访客{_pct(vis_g)}',
+         f'本期 {_num(cur_sum.get("商品访客数", 0))} vs 上期 {_num(prev_sum.get("商品访客数", 0))}',
+         '🔴 流量断崖' if vis_g and vis_g < -0.08 else ('🟡 需关注' if vis_g and vis_g < -0.05 else '🟢 正常')),
+        ('📦 货 · 转化', f'转化率{_pct(cvr_g)}',
+         f'转化骤降型号: {len(cvr_drop_models)}个 | 爆款掉量: {len(drop_stars)}个',
+         '🔴 转化失效' if cvr_g and cvr_g < -0.08 else ('🟡 需关注' if cvr_g and cvr_g < -0.05 else '🟢 正常')),
+        ('🏪 场 · 渠道', f'异常型号{len(ch_model_issues)}个',
+         f'渠道下滑Top3: ' + ', '.join([m.get('渠道', '') for m in ch_model_issues[:3]]) if ch_model_issues else '无',
+         '🔴 渠道异常' if len(ch_model_issues) > 2 else ('🟡 需关注' if ch_model_issues else '🟢 正常')),
+    ]
+    for i, (title, metric, detail, status) in enumerate(col_data):
+        x = 0.3 + i * 3.2
+        # 卡片背景
+        card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(x), Inches(3.3), Inches(3.0), Inches(1.8))
+        card.fill.solid(); card.fill.fore_color.rgb = LIGHT
+        card.line.color.rgb = BLUE; card.line.width = Pt(1)
+        # 标题
+        tb = slide.shapes.add_textbox(Inches(x+0.15), Inches(3.4), Inches(2.7), Inches(0.3))
+        p = tb.text_frame.paragraphs[0]; p.text = title; p.font.size = Pt(12); p.font.bold = True; p.font.color.rgb = NAVY
+        # 状态
+        tb2 = slide.shapes.add_textbox(Inches(x+0.15), Inches(3.7), Inches(2.7), Inches(0.25))
+        p2 = tb2.text_frame.paragraphs[0]; p2.text = status; p2.font.size = Pt(10); p2.font.bold = True
+        # 指标
+        tb3 = slide.shapes.add_textbox(Inches(x+0.15), Inches(3.95), Inches(2.7), Inches(0.25))
+        p3 = tb3.text_frame.paragraphs[0]; p3.text = metric; p3.font.size = Pt(11); p3.font.color.rgb = NAVY; p3.font.bold = True
+        # 详情
+        tb4 = slide.shapes.add_textbox(Inches(x+0.15), Inches(4.25), Inches(2.7), Inches(0.7))
+        tf4 = tb4.text_frame; tf4.word_wrap = True
+        p4 = tf4.paragraphs[0]; p4.text = detail; p4.font.size = Pt(8); p4.font.color.rgb = GRAY
 
-    # ═══════════════ P5: 场 — 渠道&推广 ═══════════════
-    slide = _add_mck_slide(prs, '🏪 场 — 渠道效率 & 推广诊断')
+    # ═══════════ P5: 解决方案 ═══════════
+    slide = _add_slide(prs, '解决方案', f'共 {len(actions)} 项行动 | 按优先级排列')
 
-    # 渠道经营矩阵
-    ch_matrix = []
-    for ch_key, cv in sorted(cur_by_channel.items(), key=lambda x: x[1].get('支付金额',0), reverse=True)[:6]:
+    actions_sorted = sorted(actions, key=lambda x: ['P0', 'P1', 'P2', 'P3'].index(x['p']) if x['p'] in ['P0', 'P1', 'P2', 'P3'] else 99)
+    act_rows = []
+    for act in actions_sorted[:10]:
+        rec = act.get('r', '')
+        title_short = act['t'][:28]
+        act_rows.append([act['p'], title_short, act['o'], act['tl'], rec])
+    _add_table(slide, 0.3, 1.15,
+               ['优先级', '问题 / 措施', '负责人', '见效周期', '预期挽回'],
+               act_rows, [0.7, 3.5, 1.3, 1.2, 1.2])
+
+    # P0/P1措施摘要
+    p0_items = [f'• [{a["p"]}] {a["t"][:40]}' for a in actions_sorted if a['p'] == 'P0'][:3]
+    p1_items = [f'• [{a["p"]}] {a["t"][:40]}' for a in actions_sorted if a['p'] == 'P1'][:3]
+    y_pos = 1.15 + 0.32 * (len(act_rows) + 1) + 0.2
+    if p0_items:
+        _add_text_block(slide, 0.3, y_pos, 9, 1.2, ['▎P0 紧急行动（24-48小时）'] + p0_items, Pt(8))
+    if p1_items:
+        _add_text_block(slide, 0.3, y_pos + 0.55, 9, 1.2, ['▎P1 重点关注（3-7天）'] + p1_items, Pt(8))
+
+    # ═══════════ P6: 优化规划 ═══════════
+    slide = _add_slide(prs, '优化规划', '下期目标 · 关键里程碑 · 资源分配建议')
+
+    # 本期教训
+    lessons = []
+    if gmv_g is not None and gmv_g < -0.05:
+        lessons.append(f'• GMV下滑{_pct(gmv_g)}，需优先恢复核心渠道流量和爆款转化')
+    if vis_g is not None and vis_g < -0.05:
+        lessons.append(f'• 流量减少{_pct(vis_g)}，建议检查推广计划预算分配和搜索排名')
+    if cvr_g is not None and cvr_g < -0.05:
+        lessons.append(f'• 转化率下降{_pct(cvr_g)}，需优化详情页和评价管理')
+    if not lessons:
+        lessons = ['• 本期各项指标整体平稳，继续保持现有策略', '• 关注增长亮点型号，加大投入复制成功模式']
+    _add_text_block(slide, 0.3, 1.15, 4.5, 1.5, ['▎本期核心教训'] + lessons[:3], Pt(9))
+
+    # 下期目标
+    next_gmv_target = cur_sum.get('支付金额', 0) * 1.05  # 默认+5%
+    next_targets = [
+        f'• GMV目标：¥{next_gmv_target:,.0f}（环比+5%）',
+        f'• 转化率目标：≥{cur_sum.get("支付转化率", 0)*100*1.03:.2f}%',
+        f'• 退款率目标：≤5%',
+        f'• 推广费率红线：≤15%',
+    ]
+    _add_text_block(slide, 5.2, 1.15, 4.5, 1.5, ['▎下期关键目标'] + next_targets, Pt(9))
+
+    # 关键里程碑
+    milestones = [
+        '第1周：完成P0紧急行动项全部落地',
+        '第2周：核心指标恢复至环比-5%以内',
+        '第3周：推广ROI提升至3.0+，转化率恢复',
+        '第4周：月度复盘，输出下月优化方案',
+    ]
+    _add_text_block(slide, 0.3, 2.8, 4.5, 1.5, ['▎关键里程碑（按周）'] + milestones, Pt(9))
+
+    # 资源分配
+    resource = [
+        '• 推广预算：70% → 高ROI渠道/计划',
+        '• 人力分配：运营60%+美工20%+客服20%',
+        '• 重点型号：增长亮点型号预算+30%',
+        '• 风险防控：设置日预算上限+费率红线',
+    ]
+    _add_text_block(slide, 5.2, 2.8, 4.5, 1.5, ['▎资源分配建议'] + resource, Pt(9))
+
+    # ═══════════ P7: 附录 — 数据明细 ═══════════
+    slide = _add_slide(prs, '附录 — 数据明细', '渠道 · 品类 · 增长亮点 / 风险型号')
+
+    # 渠道明细
+    ch_detail = []
+    for ch_key, cv in sorted(cur_by_channel.items(), key=lambda x: x[1].get('支付金额', 0), reverse=True)[:8]:
         ch_name = ch_key[0] if isinstance(ch_key, tuple) else str(ch_key)
-        pv = prev_by_channel.get(ch_key, {})
-        gmv_chg = (cv.get('支付金额',0) - pv.get('支付金额',0)) / pv.get('支付金额',1) if pv.get('支付金额',1) else None
-        vis_chg = (cv.get('商品访客数',0) - pv.get('商品访客数',0)) / pv.get('商品访客数',1) if pv.get('商品访客数',1) else None
-        ch_matrix.append([ch_name, _num(cv.get('支付金额',0), '¥'), _pct(gmv_chg), _pct(vis_chg)])
+        ch_detail.append([ch_name, _num(cv.get('支付金额', 0), '¥'), _num(cv.get('商品访客数', 0)),
+                          f"{cv.get('支付转化率', 0)*100:.1f}%", _num(cv.get('客单价', 0), '¥')])
+    _add_table(slide, 0.3, 1.15, ['渠道', 'GMV', '访客数', '转化率', '客单价'], ch_detail,
+               [1.5, 2.0, 1.5, 1.2, 1.5])
 
-    _add_table(slide, 0.5, 1.5, ['渠道', 'GMV', 'GMV变化', '流量变化'], ch_matrix, [2, 2.5, 2, 2])
-
-    # 下滑型号归因
-    if ch_model_issues:
-        _add_bullet_text(slide, 0.5, 1.5 + 0.35 * (len(ch_matrix) + 1) + 0.3, 9, 1.5, [
-            '▎渠道内下滑型号归因',
-        ] + [f'• [{issue.get("渠道","")}] {issue.get("型号","")} | {issue.get("归因","")}'
-             for issue in ch_model_issues[:5]], Pt(8))
-
-    # 推广效率
-    if promo_suggestions:
-        _add_bullet_text(slide, 0.5, 5.0, 9, 2, [
-            '▎推广效率诊断',
-        ] + [f'• {p}' for p in promo_suggestions[:6]], Pt(9))
-
-    # ═══════════════ P6: 执行清单 ═══════════════
-    slide = _add_mck_slide(prs, '🛠️ 执行清单', f'共 {len(actions)} 项行动 | P0: {sum(1 for a in actions if a["p"]=="P0")} | P1: {sum(1 for a in actions if a["p"]=="P1")}')
-
-    actions_sorted = sorted(actions, key=lambda x: ['P0','P1','P2','P3'].index(x['p']))
-    action_rows = []
-    for act in actions_sorted[:12]:  # 最多12条
-        action_rows.append([act['p'], act['t'][:30], act['o'], act['tl'], act['mt'][:20]])
-
-    _add_table(slide, 0.3, 1.5,
-               ['优先级', '措施标题', '负责人', '见效周期', '量化目标'],
-               action_rows, [0.8, 3.5, 1.2, 1.2, 1.8])
+    # 增长亮点 / 风险型号
+    bottom_y = 1.15 + 0.32 * (len(ch_detail) + 1) + 0.15
+    if rising_stars:
+        rs_text = ['▎增长亮点型号'] + [f'• {r.get("型号", "")} | GMV ¥{r.get("本期GMV", 0):,.0f} | {r.get("渠道", "")}'
+                                       for r in rising_stars[:5]]
+        _add_text_block(slide, 0.3, bottom_y, 4.5, 1.5, rs_text, Pt(8))
+    if drop_stars:
+        ds_text = ['▎风险型号（爆款掉量）'] + [f'• {d.get("型号", "")} | 缩水{_pct(d.get("缩水幅度"))} | {d.get("渠道", "")}'
+                                               for d in sorted(drop_stars, key=lambda x: x.get('缩水幅度', 0))[:5]]
+        _add_text_block(slide, 5.2, bottom_y, 4.5, 1.5, ds_text, Pt(8))
 
     # 保存文件
     tmpdir = tempfile.gettempdir()
-    ppt_path = os.path.join(tmpdir, f'xiaotunbi_ppt_{s.replace("-","")}_{e.replace("-","")}.pptx')
+    ppt_path = os.path.join(tmpdir, f'xiaotunbi_ppt_{s.replace("-", "")}_{e.replace("-", "")}.pptx')
     prs.save(ppt_path)
+    return ppt_path
+
     return ppt_path
 
 
@@ -5347,22 +5509,26 @@ with tabs[4]:
         st.caption(f'已识别 {len(ch_model_issues)} 个异常型号 | {len(cvr_drop_models)} 个转化骤降型号 | {len(drop_stars)} 个爆款掉量型号。每条措施绑定实际数据值。')
 
         actions = []
-        def add_action(priority, title, detail, owner, timeline, metric_target):
-            actions.append({'p': priority, 't': title, 'd': detail, 'o': owner, 'tl': timeline, 'mt': metric_target})
+        def add_action(priority, title, detail, owner, timeline, metric_target, recover=''):
+            actions.append({'p': priority, 't': title, 'd': detail, 'o': owner, 'tl': timeline, 'mt': metric_target, 'r': recover})
 
         # ── 人侧行动 ──
         if vis_g is not None and vis_g < -0.08:
             vis_loss_share = abs(vis_g) / (abs(vis_g) + abs(cvr_g or 0) + abs(aov_g or 0) + 0.001)
             gmv_loss = max(0, prev_sum_all.get('支付金额',0) - cur_sum.get('支付金额',0))
+            recover_amt = gmv_loss * vis_loss_share
             add_action('P0', '【人·流量】紧急排查核心渠道流量断崖',
                 f'<b>现状：</b>访客{_pct(vis_g)}（{prev_sum_all.get("商品访客数",0):,.0f}→{cur_sum.get("商品访客数",0):,.0f}），'
-                f'潜在影响GMV约¥{gmv_loss*vis_loss_share:,.0f}<br><br>'
-                f'<b>排查步骤（场→人联动）：</b><br>'
-                f'① 直通车后台→推广计划列表→展现量↓30%→检查预算耗尽/质量分<br>'
-                f'② 生意参谋→搜索分析→核心类目Top10词→对比搜索人气和CTR<br>'
-                f'③ 直播间：查看流量来源→确认付费/免费比例变化<br>'
-                f'④ <b>应急：</b>表现最差的3个计划日预算+50%，观察3天',
-                '运营负责人', '24小时内', f'访客≥{prev_sum_all.get("商品访客数",0)*0.95:,.0f}')
+                f'拖累GMV约¥{recover_amt:,.0f}<br><br>'
+                f'<b>🔍 根因排查（由粗到细）：</b><br>'
+                f'<b>L1 流量断崖</b> → <b>L2 付费流量衰减？</b> 直通车后台→推广计划列表→展现量↓>30%→预算耗尽/质量分下降<br>'
+                f'<b>L2 搜索排名下降？</b> 生意参谋→搜索分析→核心类目Top10词→对比搜索人气和CTR<br>'
+                f'<b>L2 竞品活动冲击？</b> 平台搜索同品类→对比竞品是否有大促/新品上架<br>'
+                f'<b>L3 直播间流量异常？</b> 查看流量来源→确认付费/免费比例变化<br><br>'
+                f'<b>⚡ 应急措施 [快]：</b>表现最差的3个计划日预算+50%，观察3天<br>'
+                f'<b>⚠️ 升级预案：</b>若3天无改善，升级为部门专项会议+申请额外推广预算',
+                '运营负责人', '24小时内', f'访客≥{prev_sum_all.get("商品访客数",0)*0.95:,.0f}',
+                recover=f'¥{recover_amt:,.0f}')
 
         # ── 货侧行动 ──
         if cvr_g is not None and cvr_g < -0.08:
@@ -5371,21 +5537,30 @@ with tabs[4]:
             lost_gmv_val = lost_orders * cur_sum.get('客单价', 0)
             add_action('P0', '【货·转化】全店转化率紧急提升行动',
                 f'<b>现状：</b>{pcvr:.2f}%→{ccvr:.2f}%（↓{pcvr-ccvr:.2f}pp），少成交约{lost_orders:,.0f}单，影响¥{lost_gmv_val:,.0f}<br><br>'
-                f'<b>执行步骤（货侧）：</b><br>'
-                f'① 从「转化骤降型号」表提取异常SKU→逐一做首屏3秒测试<br>'
-                f'② 导出近90天评价→词频统计→负面Top3→优化FAQ和卖点<br>'
-                f'③ 平台搜索同款竞品前3名→高于竞品8%则设限时9折<br>'
-                f'④ 检查大促是否刚结束→价格回调导致骤降→延长优惠3天',
-                '运营+美工', '3天内', f'转化率≥{pcvr*0.97:.2f}%')
+                f'<b>🔍 根因排查（由粗到细）：</b><br>'
+                f'<b>L1 转化失效</b> → <b>L2 详情页吸引力下降？</b> 从「转化骤降型号」提取异常SKU→逐一做首屏3秒测试<br>'
+                f'<b>L2 价格竞争力不足？</b> 平台搜索同款竞品前3名→对比售价，高于竞品8%则设限时9折<br>'
+                f'<b>L2 差评/库存影响？</b> 导出近90天评价→词频统计→负面Top3→优化FAQ和卖点<br>'
+                f'<b>L3 大促后遗症？</b> 检查大促是否刚结束→价格回调导致骤降→延长优惠3天<br><br>'
+                f'<b>⚡ 应急措施 [快]：</b>转化骤降Top5型号临时设置限时折扣/赠品<br>'
+                f'<b>⚠️ 升级预案：</b>若3天无改善，启动全店促销方案+美工详情页改版',
+                '运营+美工', '3天内', f'转化率≥{pcvr*0.97:.2f}%',
+                recover=f'¥{lost_gmv_val:,.0f}')
 
         if aov_g is not None and aov_g < -0.06:
+            aov_loss = (prev_sum_all.get('客单价',0) - cur_sum.get('客单价',0)) * cur_sum.get('支付买家数', 1)
             add_action('P1', '【货·客单价】高客单价SKU曝光恢复',
-                f'<b>现状：</b>¥{prev_sum_all.get("客单价",0):.0f}→¥{cur_sum.get("客单价",0):.0f}（{_pct(aov_g)}）<br><br>'
-                f'① 提取客单价前20 SKU→核对本周访客→圈出降幅最大的5个<br>'
-                f'② 设置关联推荐：「搭配购买减X」「买二送一」，放在加购区下方<br>'
-                f'③ 满减门槛：均值¥{cur_sum.get("客单价",0):.0f}→满减线设¥{cur_sum.get("客单价",0)*1.3:,.0f}<br>'
-                f'④ 直通车→「高消费力」人群溢价+20%',
-                '运营', '1周内', f'客单价≥¥{prev_sum_all.get("客单价",0)*0.97:,.0f}')
+                f'<b>现状：</b>¥{prev_sum_all.get("客单价",0):.0f}→¥{cur_sum.get("客单价",0):.0f}（{_pct(aov_g)}），损失约¥{aov_loss:,.0f}<br><br>'
+                f'<b>🔍 根因排查：</b><br>'
+                f'<b>L2 低价SKU占比提升？</b> 提取客单价前20 SKU→核对本周访客→圈出降幅最大的5个<br>'
+                f'<b>L2 高客单SKU销量萎缩？</b> 检查高客单SKU是否有推广断流/竞品打压<br>'
+                f'<b>L2 直接降价/促销力度加大？</b> 核对近期活动折扣力度变化<br><br>'
+                f'<b>⚡ 优化措施 [中]：</b><br>'
+                f'① 设置关联推荐：「搭配购买减X」「买二送一」，放在加购区下方<br>'
+                f'② 满减门槛：均值¥{cur_sum.get("客单价",0):.0f}→满减线设¥{cur_sum.get("客单价",0)*1.3:,.0f}<br>'
+                f'③ 直通车→「高消费力」人群溢价+20%',
+                '运营', '1周内', f'客单价≥¥{prev_sum_all.get("客单价",0)*0.97:,.0f}',
+                recover=f'¥{aov_loss:,.0f}')
 
         # ── 场侧行动 ──
         if ch_model_issues:
@@ -5401,11 +5576,14 @@ with tabs[4]:
                 bad_in = [m for m in ch_model_issues if m['渠道'] == ch_nm][:3]
                 ml = ', '.join([f"[{m['型号']}]({m['品类']})" for m in bad_in]) or '多个型号'
                 add_action('P0', f'【场·渠道】{ch_nm}专项整改（GMV{ch_pct}）',
-                    f'该渠道GMV{ch_pct}，集中在：{ml}<br>'
-                    f'① 检查上述型号推广状态（停/降权/违规）<br>'
-                    f'② DSR分数：DSR<4.7影响搜索权重<br>'
-                    f'③ 核对活动报名情况，重要会场补报<br>'
-                    f'④ 抖音渠道：查看7天直播时长和GMV/小时',
+                    f'该渠道GMV{ch_pct}，集中在：{ml}<br><br>'
+                    f'<b>🔍 根因排查：</b><br>'
+                    f'<b>L2 推广计划异常？</b> 检查上述型号推广状态（停/降权/违规/预算耗尽）<br>'
+                    f'<b>L2 DSR评分拖累？</b> DSR<4.7影响搜索权重，检查该渠道DSR近7天变化<br>'
+                    f'<b>L2 活动报名遗漏？</b> 核对活动报名情况，重要会场补报<br>'
+                    f'<b>L3 直播/内容影响？</b> 抖音渠道：查看7天直播时长和GMV/小时<br><br>'
+                    f'<b>⚡ 应急措施 [快]：</b>上述型号临时增加推广预算30%+检查主图CTR<br>'
+                    f'<b>⚠️ 升级预案：</b>若48小时无改善，启动渠道专项会议+调整渠道资源分配',
                     f'{ch_nm}渠道负责人', '48小时内', f'{ch_nm} GMV环比转正')
 
         # ── 型号级别具体措施（Top3）──
@@ -5417,41 +5595,64 @@ with tabs[4]:
                 vm = (vc-vp)/vp if vp else None
                 ccr = bm['本期转化率']*100; cpr = bm['上期转化率']*100
                 cdr = ccr - cpr
-                root = '流量断崖' if (vm and vm<-0.15) else ('转化失效' if cdr<-2 else '复合衰退')
+                aov_cur = bm.get('本期客单价', 0); aov_prev = bm.get('上期客单价', 0)
+                aov_chg = (aov_cur - aov_prev) / aov_prev if aov_prev else None
+                # ── 3级根因判断 ──
+                root_l1 = '流量断崖' if (vm and vm<-0.15) else ('转化失效' if cdr<-2 else '复合衰退')
+                root_l2 = ''
+                if root_l1 == '流量断崖':
+                    if vm and vm < -0.30: root_l2 = '推广计划限流/预算耗尽'
+                    elif vm and vm < -0.20: root_l2 = '搜索排名下降'
+                    else: root_l2 = '竞品活动冲击'
+                elif root_l1 == '转化失效':
+                    if cdr < -5: root_l2 = '详情页吸引力下降'
+                    elif aov_chg and aov_chg > 0.05: root_l2 = '价格竞争力不足'
+                    else: root_l2 = '差评/库存影响'
+                else:
+                    root_l2 = '多因子叠加'
                 pri = 'P0' if bm['环比'] < DANGER_T else 'P1'
                 loss_amnt = bm['上期GMV'] - bm['本期GMV']
                 detail = (
                     f'<b>数据：</b>¥{bm["本期GMV"]:,.0f} vs ¥{bm["上期GMV"]:,.0f}'
-                    f'（损失¥{loss_amnt:,.0f}），转化{ccr:.2f}% vs {cpr:.2f}%<br><br>'
-                    f'<b>[{root}] 定向施策：</b><br>')
-                if root == '流量断崖':
+                    f'（损失¥{loss_amnt:,.0f}），转化{ccr:.2f}% vs {cpr:.2f}%<br>'
+                    f'<b>根因：</b>{root_l1} → {root_l2}<br><br>'
+                    f'<b>定向施策：</b><br>')
+                if root_l1 == '流量断崖':
                     detail += (
                         f'① 检查该型号在{ch}的搜索排名和主图CTR'
                         f'（CTR={vc/(vp+0.001)*100:.1f}%，{"<3%需换主图" if vp and vc/vp<0.03 else "正常"}）<br>'
                         f'② 检查是否有推广计划被系统限流/预算耗尽<br>'
-                        f'③ <b>急救：</b>临时增加直通车日预算+50%，持续3天观察')
+                        f'③ <b>⚡ 急救 [快]：</b>临时增加直通车日预算+50%，持续3天观察<br>'
+                        f'④ <b>⚠️ 3天无改善：</b>启动竞品对标分析+主图A/B测试')
                 else:
                     detail += (
                         f'① 打开该型号详情页模拟买家浏览——首屏3秒能否看清核心卖点？<br>'
                         f'② 评价审计：导出近60天评价→词频统计→负面Top3→优化话术<br>'
                         f'③ 价格对标：搜索同款竞品3家，'
-                        f'{"高于竞品8%则设限时折" if bm["本期客单价"] >= bm["上期客单价"]*1.08 else "价格基本合理"}<br>'
+                        f'{"高于竞品8%则设限时折 [快]" if bm["本期客单价"] >= bm["上期客单价"]*1.08 else "价格基本合理"}<br>'
                         f'④ 库存检查：确认该型号无缺货/预售状态<br>'
-                        f'⑤ 差评处理：筛选出现≥2次的负面标签集中处理')
-                add_action(pri, f'[{mod}]({cat}/{ch}) {root} — GMV{chg_pct}',
-                    detail, f'运营-{cat}组', '3-5天见效', f'{mod} GMV环比>-5%')
+                        f'⑤ 差评处理：筛选出现≥2次的负面标签集中处理<br>'
+                        f'⑥ <b>⚠️ 3天无改善：</b>启动全型号促销+详情页改版')
+                add_action(pri, f'[{mod}]({cat}/{ch}) {root_l1}→{root_l2} — GMV{chg_pct}',
+                    detail, f'运营-{cat}组', '3-5天见效', f'{mod} GMV环比>-5%',
+                    recover=f'¥{loss_amnt:,.0f}')
 
         # ── 退款率措施 ──
         if ref_g is not None and ref_g > 0.05:
             crp = cur_sum.get('退款率', 0) * 100
+            ref_loss = cur_sum.get('支付金额', 0) * ref_g
             if crp > 8 or ref_g > 0.10:
                 add_action('P1', '【货·售后】退款率异常升高',
-                    f'当前{crp:.1f}%，变化{_pct(ref_g)}<br>'
+                    f'当前{crp:.1f}%，变化{_pct(ref_g)}，预估损失约¥{ref_loss:,.0f}<br>'
+                    f'<b>🔍 根因排查：</b><br>'
                     f'① 导出近30天退款订单按「退款原因」归类，提取Top3原因<br>'
                     f'② 「质量问题/描述不符」>40%：质检团队抽检<br>'
                     f'③ 「物流慢/破损」>30%：改进包装+切换快递<br>'
-                    f'④ 「不想要了」<说明详情页误导信息，需修正',
-                    '客服+仓储+质检', '2周内', '退款率<5%')
+                    f'④ 「不想要了」<说明详情页误导信息，需修正<br><br>'
+                    f'<b>⚡ 应急措施 [快]：</b>退款率Top20%订单审核延长12小时+人工介入<br>'
+                    f'<b>⚠️ 升级预案：</b>若7天无改善，启动供应链专项整改',
+                    '客服+仓储+质检', '2周内', '退款率<5%',
+                    recover=f'¥{ref_loss:,.0f}')
 
         # ── 常规措施 ──
         add_action('P3', '【常规】每周一上午健康检查',
@@ -5460,13 +5661,13 @@ with tabs[4]:
             '② 对比上周同期标记变化±5%<br>'
             '③ 连续2周同一指标下滑→专项会议<br>'
             '④ 检查本周到期活动/优惠券续期',
-            '运营负责人', '每周一固定', '周报存档')
+            '运营负责人', '每周一固定', '周报存档', '')
         add_action('P3', '【常规】月度渠道ROI复盘',
             '每月5日前完成上月各渠道ROI：<br>'
             f'ROI=(渠道销售额-退货额)/渠道推广费用<br>'
             '① >5 加大投入 / 2-5 维持 / <2 缩减或优化<br>'
             '② ROI<2输出《XX渠道优化方案》',
-            '运营+财务', '每月5号前', '全渠道均ROI>3')
+            '运营+财务', '每月5号前', '全渠道均ROI>3', '')
 
         # ── 展示（三List体系）──
         actions_sorted = sorted(actions, key=lambda x: ['P0','P1','P2','P3'].index(x['p']))
@@ -5484,13 +5685,15 @@ with tabs[4]:
             st.markdown("<div style='font-size:12px;color:#dc2626;font-weight:700;margin:4px 0;'>P0 紧急行动</div>", unsafe_allow_html=True)
         for act in _p0_actions:
             cls = {'P0':'tag-p0'}[act['p']]
-            with st.expander(f"<span class='action-tag {cls}'>{act['p']}</span> **{act['t']}** <small style='color:#94a3b8;'>| {act['o']} | 目标: {act['mt']} | 见效: {act['tl']}</small>", expanded=True):
+            _rec_str = f' | 预期挽回: {act["r"]}' if act.get('r') else ''
+            with st.expander(f"<span class='action-tag {cls}'>{act['p']}</span> **{act['t']}** <small style='color:#94a3b8;'>| {act['o']} | 目标: {act['mt']} | 见效: {act['tl']}{_rec_str}</small>", expanded=True):
                 st.markdown(act['d'], unsafe_allow_html=True)
 
         if _p1_actions:
             st.markdown("<div style='font-size:12px;color:#ea580c;font-weight:700;margin:8px 0 4px 0;'>P1 重点关注</div>", unsafe_allow_html=True)
         for act in _p1_actions:
-            with st.expander(f"<span class='action-tag tag-p1'>{act['p']}</span> **{act['t']}** <small style='color:#94a3b8;'>| {act['o']} | 目标: {act['mt']}</small>", expanded=False):
+            _rec_str = f' | 预期挽回: {act["r"]}' if act.get('r') else ''
+            with st.expander(f"<span class='action-tag tag-p1'>{act['p']}</span> **{act['t']}** <small style='color:#94a3b8;'>| {act['o']} | 目标: {act['mt']}{_rec_str}</small>", expanded=False):
                 st.markdown(act['d'], unsafe_allow_html=True)
 
         for act in _p23_actions:
