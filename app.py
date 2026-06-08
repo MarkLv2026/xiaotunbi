@@ -187,6 +187,13 @@ CSS = '''
 .styled-table tbody td {padding:7px 10px; border-bottom:1px solid #e5e7eb; vertical-align:middle;}
 .styled-table tbody tr:hover {background:#eff6ff;}
 .styled-table td span {white-space:normal;}
+/* 侧边栏文件上传区 & 按钮文字修复（深色背景下看不清） */
+[data-testid="stSidebar"] [data-testid="stFileUploader"] * {color: #1e293b !important;}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] {background: #f8fafc; border: 1px dashed rgba(255,255,255,.5) !important; border-radius: 12px;}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] small {color: #64748b !important;}
+[data-testid="stSidebar"] .stButton > button {color: #0f172a !important; background: #e2e8f0 !important; border: none; font-weight: 600;}
+[data-testid="stSidebar"] .stButton > button:hover {background: #cbd5e1 !important; color: #0f172a !important;}
+[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] {color: #0f172a !important;}
 </style>
 '''
 st.markdown(CSS, unsafe_allow_html=True)
