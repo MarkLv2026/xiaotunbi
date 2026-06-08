@@ -141,6 +141,11 @@ def _slicer(label, options, key):
 
 st.set_page_config(page_title='小豚当家BI看板', layout='wide', initial_sidebar_state='expanded')
 
+# 防御性 session state 预初始化（防止 Streamlit "SessionInfo not initialized" 错误）
+for _k, _v in [('authenticated', False), ('username', ''), ('role', '')]:
+    if _k not in st.session_state:
+        st.session_state[_k] = _v
+
 CSS = '''
 <style>
 :root {--navy:#07111f;--blue:#1d4ed8;--cyan:#06b6d4;--green:#22c55e;--orange:#f59e0b;--red:#ef4444;--muted:#64748b;}
@@ -215,12 +220,7 @@ import hashlib, json as _json_lib
 _USERS_FILE = pathlib.Path(__file__).parent / 'users.json'
 _SALT = 'xiaotun_bi_2026_salt'
 
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-if 'username' not in st.session_state:
-    st.session_state.username = ''
-if 'role' not in st.session_state:
-    st.session_state.role = ''
+# session state 已在 set_page_config 后预初始化，此处无需重复
 
 if not st.session_state.authenticated:
     col_center = st.columns([1, 2, 1])
