@@ -1841,8 +1841,8 @@ with tabs[0]:
     _ps_wan = round(promo_spend / 10000, 1) if promo_spend else 0
     # 推广指标环比/同比
     if promo_rows:
-        _pfc_d = _promo_delta(promo_spend, promo_mom_fc, promo_yoy_fc, '')
-        _proi_d = _promo_delta(promo_roi, promo_mom_roi, promo_yoy_roi, '')
+        _pfc_d = _promo_delta(promo_spend, promo_mom_fc, promo_yoy_fc, '%')
+        _proi_d = _promo_delta(promo_roi, promo_mom_roi, promo_yoy_roi, '%')
         _prate_d = _promo_delta(promo_rate, promo_mom_rate, promo_yoy_rate, '%')
         k8.metric('推广费', f"¥{_ps_wan}万" if promo_spend >= 10000 else f"¥{promo_spend:,.0f}", _pfc_d)
         k9.metric('ROI', f"{promo_roi:.2f}" if promo_roi else '--', _proi_d)
@@ -1853,10 +1853,10 @@ with tabs[0]:
         k10.metric('费率', f"{promo_rate:.2f}%" if promo_rate else '--')
     # Row 3: 推广效率指标
     if promo_rows:
-        _pdroi_d = _promo_delta(promo_direct_roi, promo_mom_droi, promo_yoy_droi, '')
+        _pdroi_d = _promo_delta(promo_direct_roi, promo_mom_droi, promo_yoy_droi, '%')
         _pctr_d = _promo_delta(promo_ctr*100, promo_mom_ctr*100, promo_yoy_ctr*100, '%')
-        _pcpc_d = _promo_delta(promo_cpc, promo_mom_cpc, promo_yoy_cpc, '')
-        _poc_d = _promo_delta(promo_order_cost, promo_mom_order_cost, promo_yoy_order_cost, '')
+        _pcpc_d = _promo_delta(promo_cpc, promo_mom_cpc, promo_yoy_cpc, '%')
+        _poc_d = _promo_delta(promo_order_cost, promo_mom_order_cost, promo_yoy_order_cost, '%')
         _prs = promo_order_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
         _prs_m = promo_mom_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
         _prs_y = promo_yoy_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
@@ -2085,11 +2085,11 @@ with tabs[1]:
         _p_order_cost = _ps / _porders if _porders else 0
         _poc_m = promo_mom_fc / _porders if _porders else 0
         _poc_y = promo_yoy_fc / _porders if _porders else 0
-        pfc_d = _promo_delta(_ps, promo_mom_fc, promo_yoy_fc, '')
-        proi_d = _promo_delta(_ro, promo_mom_roi, promo_yoy_roi, '')
+        pfc_d = _promo_delta(_ps, promo_mom_fc, promo_yoy_fc, '%')
+        proi_d = _promo_delta(_ro, promo_mom_roi, promo_yoy_roi, '%')
         pctr_d = _promo_delta(_ctr*100, promo_mom_ctr*100, promo_yoy_ctr*100, '%')
-        cpc_d = _promo_delta(_cpc, promo_mom_cpc, promo_yoy_cpc, '')
-        pda_d = _promo_delta(_da, promo_mom_amt, promo_yoy_amt, '')
+        cpc_d = _promo_delta(_cpc, promo_mom_cpc, promo_yoy_cpc, '%')
+        pda_d = _promo_delta(_da, promo_mom_amt, promo_yoy_amt, '%')
         poc_d_text = _promo_delta(_p_order_cost, _poc_m, _poc_y, '')
         pk1, pk2, pk3, pk4, pk5, pk6 = st.columns(6)
         pk1.metric('推广花费', f"¥{_wan(_ps)}万" if _ps >= 10000 else f"¥{_ps:,.0f}", pfc_d)
