@@ -189,11 +189,23 @@ CSS = '''
 .styled-table td span {white-space:normal;}
 /* 侧边栏文件上传区 & 按钮文字修复（深色背景下看不清） */
 [data-testid="stSidebar"] [data-testid="stFileUploader"] * {color: #1e293b !important;}
-[data-testid="stSidebar"] [data-testid="stFileUploader"] {background: #f8fafc; border: 1px dashed rgba(255,255,255,.5) !important; border-radius: 12px;}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] {background: #f8fafc; border: 1px dashed #94a3b8 !important; border-radius: 12px;}
 [data-testid="stSidebar"] [data-testid="stFileUploader"] small {color: #64748b !important;}
-[data-testid="stSidebar"] .stButton > button {color: #0f172a !important; background: #e2e8f0 !important; border: none; font-weight: 600;}
-[data-testid="stSidebar"] .stButton > button:hover {background: #cbd5e1 !important; color: #0f172a !important;}
-[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] {color: #0f172a !important;}
+/* 隐藏英文拖拽提示，用CSS伪元素覆盖为中文 */
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] span[data-testid="stFileUploaderDropzoneInstructions"] > div > span:first-child {font-size: 0;}
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] span[data-testid="stFileUploaderDropzoneInstructions"] > div > span:first-child::after {content: "拖拽文件到此处"; font-size: 14px; color: #1d4ed8;}
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] small {font-size: 0 !important;}
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] small::after {content: "每个文件限 500MB • XLSX"; font-size: 12px; color: #64748b;}
+/* Browse files 按钮汉化 */
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button[data-testid="stBaseButton-secondary"] {font-size: 0 !important;}
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button[data-testid="stBaseButton-secondary"]::after {content: "选择文件"; font-size: 14px; color: #0f172a !important;}
+/* 同步按钮和退出登录按钮 - 加强选择器覆盖 */
+[data-testid="stSidebar"] button {color: #0f172a !important; font-weight: 600;}
+[data-testid="stSidebar"] button p {color: #0f172a !important;}
+[data-testid="stSidebar"] button span {color: #0f172a !important;}
+[data-testid="stSidebar"] .stButton button {background: #dde3f0 !important; color: #0f172a !important; border: 1px solid #b8c4d9 !important;}
+[data-testid="stSidebar"] .stButton button:hover {background: #c8d2e8 !important;}
+[data-testid="stSidebar"] .stButton button * {color: #0f172a !important;}
 </style>
 '''
 st.markdown(CSS, unsafe_allow_html=True)
