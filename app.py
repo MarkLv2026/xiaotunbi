@@ -4693,9 +4693,17 @@ with tabs[4]:
                 _tdata = targets.get(_main_ym, {})
                 _shop_rows_t = _tdata.get('shop', [])
                 if _shop_rows_t:
+                    # 获取目标数据中属于当前筛选期间(s~e)的日期列
+                    _tgt_dates = targets.get(_main_ym, {}).get('dates', [])
+                    _period_dates = [d for d in _tgt_dates if s <= d <= e]
                     for tr in _shop_rows_t:
                         if '成交金额' in str(tr.get('指标', '')) and '目标' in str(tr.get('指标', '')):
-                            gmv_target = sum(v for k, v in tr.items() if k not in ('店铺', '指标') and isinstance(v, (int, float)))
+                            if _period_dates:
+                                # 只汇总筛选期间对应的日期目标
+                                gmv_target = sum(tr.get(d, 0.0) for d in _period_dates)
+                            else:
+                                # 无匹配日期时回退到合计列
+                                gmv_target = tr.get('合计', 0.0)
                             if gmv_target > 0:
                                 gmv_target_gap = (cur_sum.get('支付金额', 0) - gmv_target) / gmv_target
                             break
