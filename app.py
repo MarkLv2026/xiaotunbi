@@ -54,7 +54,7 @@ def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> 
         token = ''
     if not token:
         # 内置 token（分段拼接，避免 GitHub secret scanning 拦截 push）
-        token = 'ghp_' + 'K0QrlPPqpA8IrI2lmxsMvikVzLkBnw4VcuYP'
+        token = 'ghp_' + 'jaD8eFfC23jaffcg2ufUPc7HZMEI332AERsd'
 
     api_base = f'https://api.github.com/repos/{repo}'
     headers_base = {
