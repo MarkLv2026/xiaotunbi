@@ -5853,6 +5853,8 @@ with tabs[4]:
 
     if _gen_ppt:
         with st.spinner('正在生成麦肯锡风格复盘PPT...'):
+            _period_label_cur = f'{s} ~ {e}'
+            _period_label_prev = f'{prev_s} ~ {prev_e}'
             _ppt_path = _generate_mckinsey_ppt(
                 period_cur=_period_label_cur, period_prev=_period_label_prev,
                 comp_mode=comp_mode, filter_label=_filter_label,
