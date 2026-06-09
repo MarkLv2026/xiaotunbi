@@ -1459,7 +1459,7 @@ daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
 # 新PPT生成函数 - 7页简约大气风格
 # ─────────────────────────────────────────────────────────────
 def _generate_mckinsey_ppt(**kwargs):
-    """生成简约大气风格复盘PPT（7页），返回文件路径"""
+    """生成高端简约风格复盘PPT（7页），返回文件路径"""
     import os, tempfile, io
     from pptx import Presentation
     from pptx.util import Inches, Pt, Emu, Cm
@@ -1476,176 +1476,160 @@ def _generate_mckinsey_ppt(**kwargs):
     plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'DejaVu Sans']
     plt.rcParams['axes.unicode_minus'] = False
 
-    # 解包参数
-    period_cur = kwargs.get('period_cur', '')
+    # ── 解包参数 ──
+    period_cur  = kwargs.get('period_cur', '')
     period_prev = kwargs.get('period_prev', '')
-    comp_mode = kwargs.get('comp_mode', '')
-    filter_label = kwargs.get('filter_label', '')
-    health_score = kwargs.get('health_score', 0)
-    health_status = kwargs.get('health_status', '')
-    health_color = kwargs.get('health_color', '#64748b')
-    gmv_g = kwargs.get('gmv_g')
-    vis_g = kwargs.get('vis_g')
-    cvr_g = kwargs.get('cvr_g')
-    aov_g = kwargs.get('aov_g')
-    ref_g = kwargs.get('ref_g')
+    comp_mode   = kwargs.get('comp_mode', '')
+    filter_label= kwargs.get('filter_label', '')
+    health_score= kwargs.get('health_score', 0)
+    health_status=kwargs.get('health_status', '')
+    health_color= kwargs.get('health_color', '#64748b')
+    gmv_g   = kwargs.get('gmv_g')
+    vis_g   = kwargs.get('vis_g')
+    cvr_g   = kwargs.get('cvr_g')
+    aov_g   = kwargs.get('aov_g')
+    ref_g   = kwargs.get('ref_g')
     cur_sum = kwargs.get('cur_sum', {})
-    prev_sum = kwargs.get('prev_sum', {})
-    cur_by_channel = kwargs.get('cur_by_channel', {})
+    prev_sum= kwargs.get('prev_sum', {})
+    cur_by_channel  = kwargs.get('cur_by_channel', {})
     prev_by_channel = kwargs.get('prev_by_channel', {})
     cur_by_cat = kwargs.get('cur_by_cat', {})
     prev_by_cat = kwargs.get('prev_by_cat', {})
-    rising_stars = kwargs.get('rising_stars', [])
-    drop_stars = kwargs.get('drop_stars', [])
-    cvr_drop_models = kwargs.get('cvr_drop_models', [])
-    aov_drop_rows = kwargs.get('aov_drop_rows', [])
-    ch_model_issues = kwargs.get('ch_model_issues', [])
+    rising_stars   = kwargs.get('rising_stars', [])
+    drop_stars     = kwargs.get('drop_stars', [])
+    cvr_drop_models= kwargs.get('cvr_drop_models', [])
+    aov_drop_rows  = kwargs.get('aov_drop_rows', [])
+    ch_model_issues= kwargs.get('ch_model_issues', [])
     promo_suggestions = kwargs.get('promo_suggestions', [])
     actions = kwargs.get('actions', [])
-    WARN_T = kwargs.get('WARN_T', -0.05)
-    DANGER_T = kwargs.get('DANGER_T', -0.15)
+    WARN_T   = kwargs.get('WARN_T', -0.05)
+    DANGER_T= kwargs.get('DANGER_T', -0.15)
     s = kwargs.get('s', '')
     e = kwargs.get('e', '')
 
-    # 配色方案 — 简约大气
-    NAVY    = RGBColor(0x00, 0x33, 0x6B)   # 深蓝
-    BLUE    = RGBColor(0x00, 0x5B, 0x96)   # 中蓝
-    LIGHT   = RGBColor(0xE8, 0xEF, 0xF5)   # 浅蓝背景
-    GRAY    = RGBColor(0x5A, 0x5A, 0x5A)   # 正文灰
+    # ── 配色方案 · 高端简约 ──
+    # 主色：深夜蓝  辅色：金  强调：翠绿 / 赤陶  背景：浅灰白
+    NAVY    = RGBColor(0x00, 0x1A, 0x33)   # 深夜蓝（更深沉）
+    BLUE    = RGBColor(0x00, 0x4B, 0x8D)   # 中蓝
+    TEAL    = RGBColor(0x0F, 0x76, 0x5E)   # 翠绿（强调正）
+    TERRA   = RGBColor(0xC0, 0x4A, 0x2A)   # 赤陶（强调负）
+    GOLD    = RGBColor(0xB8, 0x8A, 0x2E)   # 低调金
+    WARM_GRAY = RGBColor(0xF5, 0xF0, 0xEB) # 暖白背景
+    COOL_GRAY= RGBColor(0xE8, 0xE8, 0xEC)   # 冷灰分隔
+    DK_GRAY = RGBColor(0x37, 0x3F, 0x4A)   # 正文深灰
+    LT_GRAY = RGBColor(0x9C, 0xA3, 0xAF)   # 辅助灰
     WHITE   = RGBColor(0xFF, 0xFF, 0xFF)
-    RED     = RGBColor(0xCC, 0x33, 0x33)   # 警示红
-    GREEN   = RGBColor(0x00, 0x7A, 0x33)   # 正面绿
-    GOLD    = RGBColor(0xE6, 0xA8, 0x17)   # 金色点缀
-    DARK_BG = RGBColor(0x00, 0x1F, 0x3F)   # 封面深色背景
-    ORANGE  = RGBColor(0xEA, 0x58, 0x0C)   # 橙色
-
-    def _pct(v):
-        if v is None: return '--'
-        return f'{v*100:+.1f}%'
-
-    def _num(v, unit=''):
-        if v is None: return '--'
-        if abs(v) >= 10000:
-            return f'{v/10000:.1f}万{unit}'
-        return f'{v:,.0f}{unit}'
+    DARK_BG= RGBColor(0x00, 0x0D, 0x1A)   # 封面极深蓝黑
 
     def _add_slide(prs, title, subtitle=''):
-        """创建简约页面：顶部深蓝条+标题+金色分隔线+页脚"""
-        slide_layout = prs.slide_layouts[6]  # blank
+        """高端页面模板：深蓝顶栏 + 大留白 + 页脚"""
+        slide_layout = prs.slide_layouts[6]
         slide = prs.slides.add_slide(slide_layout)
-        # 顶部深蓝条
-        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, Inches(0.9))
-        bar.fill.solid()
-        bar.fill.fore_color.rgb = NAVY
-        bar.line.fill.background()
-        # 标题
-        txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.12), Inches(9), Inches(0.55))
+        W = prs.slide_width
+        # 顶栏深蓝渐变（用双层叠加模拟）
+        bar_bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), W, Inches(1.05))
+        bar_bg.fill.solid(); bar_bg.fill.fore_color.rgb = NAVY; bar_bg.line.fill.background()
+        # 金色细线
+        gold_line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(1.05), W, Pt(2.5))
+        gold_line.fill.solid(); gold_line.fill.fore_color.rgb = GOLD; gold_line.line.fill.background()
+        # 标题（白，大字号）
+        txBox = slide.shapes.add_textbox(Inches(0.55), Inches(0.10), Inches(8.5), Inches(0.6))
         tf = txBox.text_frame; tf.word_wrap = True
         p = tf.paragraphs[0]
-        p.text = title
-        p.font.size = Pt(26)
-        p.font.bold = True
-        p.font.color.rgb = WHITE
+        p.text = title; p.font.size = Pt(27); p.font.bold = True
+        p.font.color.rgb = WHITE; p.font.name = 'Microsoft YaHei'
+        # 副标题（浅灰蓝）
         if subtitle:
-            txBox2 = slide.shapes.add_textbox(Inches(0.5), Inches(0.58), Inches(9), Inches(0.3))
+            txBox2 = slide.shapes.add_textbox(Inches(0.55), Inches(0.64), Inches(8.5), Inches(0.32))
             tf2 = txBox2.text_frame
             p2 = tf2.paragraphs[0]
-            p2.text = subtitle
-            p2.font.size = Pt(11)
-            p2.font.color.rgb = RGBColor(0xB0, 0xC4, 0xDE)
-        # 金色分隔线
-        line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0.9), prs.slide_width, Pt(3))
-        line.fill.solid()
-        line.fill.fore_color.rgb = GOLD
-        line.line.fill.background()
-        # 页脚
-        ft = slide.shapes.add_textbox(Inches(0.3), Inches(5.1), Inches(9.4), Inches(0.3))
-        tf3 = ft.text_frame
-        p3 = tf3.paragraphs[0]
-        p3.text = f'小豚BI智能诊断  |  {period_cur}  |  生成日期: {s}~{e}'
-        p3.font.size = Pt(7)
-        p3.font.color.rgb = RGBColor(0x94, 0xA3, 0xB8)
-        p3.alignment = PP_ALIGN.RIGHT
+            p2.text = subtitle; p2.font.size = Pt(11); p2.font.color.rgb = RGBColor(0xC8,0xD8,0xE8)
+            p2.font.name = 'Microsoft YaHei'
+        # 页脚（左：页码，右：品牌）
+        pg_num = slide.shapes.add_textbox(Inches(0.35), Inches(5.18), Inches(0.6), Inches(0.28))
+        tf_pg = pg_num.text_frame; p_pg = tf_pg.paragraphs[0]
+        p_pg.text = str(len(prs.slides)); p_pg.font.size = Pt(8); p_pg.font.color.rgb = LT_GRAY
+        p_pg.font.name = 'Arial'
+        pg_brand = slide.shapes.add_textbox(Inches(7.0), Inches(5.18), Inches(2.9), Inches(0.28))
+        tf_br = pg_brand.text_frame; p_br = tf_br.paragraphs[0]
+        p_br.text = '小豚BI 智能诊断  |  ' + period_cur; p_br.font.size = Pt(8)
+        p_br.font.color.rgb = LT_GRAY; p_br.alignment = PP_ALIGN.RIGHT; p_br.font.name = 'Arial'
         return slide
 
     def _add_table(slide, left, top, headers, rows, col_widths, tbl_width=None):
-        """添加简约表格"""
-        n_rows = len(rows) + 1
-        n_cols = len(headers)
-        total_w = sum(col_widths) if tbl_width is None else tbl_width
+        """高端表格：浅色header + 斑马纹 + 细线边框"""
+        n_rows, n_cols = len(rows) + 1, len(headers)
+        total_w = (sum(col_widths) if tbl_width is None else tbl_width)
         tbl_shape = slide.shapes.add_table(n_rows, n_cols, Inches(left), Inches(top),
-                                            Inches(total_w), Inches(0.32 * n_rows))
+                                            Inches(total_w), Inches(0.34 * n_rows + 0.38))
         tbl = tbl_shape.table
-        for i, w in enumerate(col_widths):
-            tbl.columns[i].width = Inches(w)
-        # 表头
+        for i, w in enumerate(col_widths): tbl.columns[i].width = Inches(w)
+        # header
         for j, h in enumerate(headers):
-            cell = tbl.cell(0, j)
-            cell.text = h
-            for paragraph in cell.text_frame.paragraphs:
-                paragraph.font.size = Pt(8)
-                paragraph.font.bold = True
-                paragraph.font.color.rgb = WHITE
-                paragraph.alignment = PP_ALIGN.CENTER
-            cell.fill.solid()
-            cell.fill.fore_color.rgb = BLUE
+            cell = tbl.cell(0, j); cell.text = h
+            for para in cell.text_frame.paragraphs:
+                para.font.size = Pt(9); para.font.bold = True; para.font.color.rgb = WHITE
+                para.alignment = PP_ALIGN.CENTER; para.font.name = 'Microsoft YaHei'
+            cell.fill.solid(); cell.fill.fore_color.rgb = NAVY
             cell.vertical_anchor = MSO_ANCHOR.MIDDLE
-        # 数据行
+        # rows
         for i, row in enumerate(rows):
+            bg = WARM_GRAY if i % 2 == 0 else WHITE
             for j, val in enumerate(row):
-                cell = tbl.cell(i + 1, j)
-                cell.text = str(val)
-                for paragraph in cell.text_frame.paragraphs:
-                    paragraph.font.size = Pt(8)
-                    paragraph.font.color.rgb = GRAY
-                    paragraph.alignment = PP_ALIGN.CENTER
-                if i % 2 == 0:
-                    cell.fill.solid()
-                    cell.fill.fore_color.rgb = LIGHT
+                cell = tbl.cell(i + 1, j); cell.text = str(val)
+                for para in cell.text_frame.paragraphs:
+                    para.font.size = Pt(8.5); para.font.color.rgb = DK_GRAY
+                    para.alignment = PP_ALIGN.CENTER; para.font.name = 'Microsoft YaHei'
+                cell.fill.solid(); cell.fill.fore_color.rgb = bg
                 cell.vertical_anchor = MSO_ANCHOR.MIDDLE
         return tbl_shape
 
-    def _add_kpi_card(slide, left, top, w, h, label, value, change, color=BLUE):
-        """简约KPI卡片"""
-        box = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left), Inches(top), Inches(w), Inches(h))
-        box.fill.solid()
-        box.fill.fore_color.rgb = LIGHT
-        box.line.color.rgb = color
-        box.line.width = Pt(1.5)
+    def _add_kpi_card(slide, left, top, w, h, label, value, change_text, change_color=TEAL):
+        """高端KPI卡片：圆角 + 浅底色 + 左色条"""
+        # 底色块
+        bg_rect = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left), Inches(top), Inches(w), Inches(h))
+        bg_rect.fill.solid(); bg_rect.fill.fore_color.rgb = WARM_GRAY
+        bg_rect.line.color.rgb = RGBColor(0xDC,0xE2,0xEA); bg_rect.line.width = Pt(0.75)
+        bg_rect.adjustments[0] = 0.12
+        # 左色条
+        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(left), Inches(top), Inches(0.07), Inches(h))
+        bar.fill.solid(); bar.fill.fore_color.rgb = change_color; bar.line.fill.background()
         # 标签
-        tb = slide.shapes.add_textbox(Inches(left+0.08), Inches(top+0.04), Inches(w-0.16), Inches(0.25))
-        p = tb.text_frame.paragraphs[0]
-        p.text = label; p.font.size = Pt(7); p.font.color.rgb = GRAY; p.alignment = PP_ALIGN.CENTER
+        tb_lbl = slide.shapes.add_textbox(Inches(left+0.14), Inches(top+0.06), Inches(w-0.22), Inches(0.26))
+        p = tb_lbl.text_frame.paragraphs[0]
+        p.text = label; p.font.size = Pt(8); p.font.color.rgb = LT_GRAY; p.font.name = 'Microsoft YaHei'
         # 值
-        tb2 = slide.shapes.add_textbox(Inches(left+0.08), Inches(top+0.22), Inches(w-0.16), Inches(0.35))
-        p2 = tb2.text_frame.paragraphs[0]
-        p2.text = str(value); p2.font.size = Pt(16); p2.font.bold = True; p2.font.color.rgb = NAVY; p2.alignment = PP_ALIGN.CENTER
-        # 变化
-        if change and change != '--':
-            is_pos = not change.startswith('-')
-            chg_color = GREEN if is_pos else RED
-            tb3 = slide.shapes.add_textbox(Inches(left+0.08), Inches(top+0.53), Inches(w-0.16), Inches(0.22))
-            p3 = tb3.text_frame.paragraphs[0]
-            p3.text = change; p3.font.size = Pt(8); p3.font.color.rgb = chg_color; p3.alignment = PP_ALIGN.CENTER
+        tb_val = slide.shapes.add_textbox(Inches(left+0.14), Inches(top+0.30), Inches(w-0.22), Inches(0.34))
+        p2 = tb_val.text_frame.paragraphs[0]
+        p2.text = str(value); p2.font.size = Pt(17); p2.font.bold = True
+        p2.font.color.rgb = NAVY; p2.font.name = 'Arial'
+        # 环比
+        if change_text and change_text != '--':
+            tb_chg = slide.shapes.add_textbox(Inches(left+0.14), Inches(top+h-0.28), Inches(w-0.22), Inches(0.24))
+            p3 = tb_chg.text_frame.paragraphs[0]
+            p3.text = change_text; p3.font.size = Pt(8.5); p3.font.bold = True
+            p3.font.color.rgb = change_color; p3.font.name = 'Arial'
 
-    def _add_text_block(slide, left, top, w, h, items, font_size=Pt(9)):
-        """文本块"""
+    def _add_text_block(slide, left, top, w, h, items, font_size=Pt(9), color=DK_GRAY):
+        """文本块（支持多行，自动换行）"""
         txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(w), Inches(h))
         tf = txBox.text_frame; tf.word_wrap = True
         for i, item in enumerate(items):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-            p.text = item; p.font.size = font_size; p.font.color.rgb = GRAY; p.space_after = Pt(3)
+            p.text = item; p.font.size = font_size; p.font.color.rgb = color
+            p.font.name = 'Microsoft YaHei'; p.space_after = Pt(3)
+        return txBox
 
     def _chart_to_png(fig):
-        """matplotlib figure → PNG bytes"""
+        """matplotlib → PNG bytes（白底，高密度）"""
         buf = io.BytesIO()
-        fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white', edgecolor='none')
-        buf.seek(0)
-        plt.close(fig)
+        fig.savefig(buf, format='png', dpi=180, bbox_inches='tight',
+                     facecolor='white', edgecolor='none')
+        buf.seek(0); plt.close(fig)
         return buf
 
     def _add_chart_image(slide, left, top, w, h, png_buf):
-        """将PNG嵌入slide"""
+        """嵌入PNG图表（保持宽高比）"""
         slide.shapes.add_picture(png_buf, Inches(left), Inches(top), Inches(w), Inches(h))
 
     # ═══════════════ 图表1: GMV日趋势折线图 ═══════════════
@@ -1793,7 +1777,7 @@ def _generate_mckinsey_ppt(**kwargs):
     ]
     for i, (label, val, chg) in enumerate(kpi_data):
         _add_kpi_card(slide, 0.25 + i * 1.92, 1.15, 1.75, 0.8, label, val, chg,
-                      GREEN if chg and not chg.startswith('-') and chg != '--' else RED)
+                      TEAL if chg and not chg.startswith('-') and chg != '--' else TERRA)
 
     # GMV趋势图
     try:
@@ -1872,7 +1856,7 @@ def _generate_mckinsey_ppt(**kwargs):
         x = 0.3 + i * 3.2
         # 卡片背景
         card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(x), Inches(3.3), Inches(3.0), Inches(1.8))
-        card.fill.solid(); card.fill.fore_color.rgb = LIGHT
+        card.fill.solid(); card.fill.fore_color.rgb = WARM_GRAY
         card.line.color.rgb = BLUE; card.line.width = Pt(1)
         # 标题
         tb = slide.shapes.add_textbox(Inches(x+0.15), Inches(3.4), Inches(2.7), Inches(0.3))
@@ -1886,7 +1870,7 @@ def _generate_mckinsey_ppt(**kwargs):
         # 详情
         tb4 = slide.shapes.add_textbox(Inches(x+0.15), Inches(4.25), Inches(2.7), Inches(0.7))
         tf4 = tb4.text_frame; tf4.word_wrap = True
-        p4 = tf4.paragraphs[0]; p4.text = detail; p4.font.size = Pt(8); p4.font.color.rgb = GRAY
+        p4 = tf4.paragraphs[0]; p4.text = detail; p4.font.size = Pt(8); p4.font.color.rgb = DK_GRAY
 
     # ═══════════ P5: 解决方案 ═══════════
     slide = _add_slide(prs, '解决方案', f'共 {len(actions)} 项行动 | 按优先级排列')
