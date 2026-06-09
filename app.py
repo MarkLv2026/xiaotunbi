@@ -409,12 +409,10 @@ def load_promo_data(file_bytes: bytes):
     rows = []
     for sheet_name in ['京东推广数据源', '天猫推广数据源']:
         try:
-            if hasattr(wb, 'get_sheet_by_name'):
-                ws = wb.get_sheet_by_name(sheet_name)
-            else:
-                if sheet_name not in wb.sheetnames:
-                    continue
-                ws = wb[sheet_name]
+            # openpyxl 3.x 兼容：直接使用 wb[sheet_name]
+            if sheet_name not in wb.sheetnames:
+                continue
+            ws = wb[sheet_name]
         except Exception:
             continue
         # Read header
@@ -674,12 +672,32 @@ elif _REPO_TARGETS.exists():
 if _targets_bytes:
     try:
         with st.spinner('正在解析目标数据...'):
-            targets = load_targets(_targets_bytes)
-        _total_months = len(targets)
-        if _total_months > 0:
-            st.success(f'目标数据已加载：{_total_months} 个月份')
+            # 添加详细错误诊断
+            try:
+                targets = load_targets(_targets_bytes)
+            except Exception as _load_err:
+                # 捕获并显示详细的加载错误
+                st.error(f'❌ 目标数据解析错误：{type(_load_err).__name__}: {_load_err}')
+                import traceback
+                _tb = traceback.format_exc()
+                with st.expander('查看详细错误信息'):
+                    st.code(_tb, language='text')
+                targets = {}
+            
+        if targets:
+            _total_months = len(targets)
+            st.success(f'✅ 目标数据已加载：{_total_months} 个月份')
+        else:
+            st.warning('⚠️ 目标数据为空，请检查Excel格式')
     except Exception as e:
-        st.warning(f'目标数据解析失败：{e}')
+        st.error(f'❌ 目标数据加载失败：{type(e).__name__}: {e}')
+        import traceback
+        _tb = traceback.format_exc()
+        with st.expander('查看详细错误信息'):
+            st.code(_tb, language='text')
+        st.info('💡 应用将继续运行，但目标达成模块可能不可用')
+else:
+    st.info('💡 未找到目标数据文件。请在侧边栏上传目标Excel文件。')
 
 meta = data['meta']
 if _sales_loaded:
