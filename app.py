@@ -818,7 +818,7 @@ if False:  # 临时禁用，修复启动崩溃
 fc = st.container(border=True)
 with fc:
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    _dr = meta['dateRange']
+    _dr = data['meta']['dateRange']
     _default_start = datetime.date.fromisoformat(_dr[0]) if _sales_loaded else datetime.date.today().replace(day=1)
     _default_end = datetime.date.fromisoformat(_dr[1]) if _sales_loaded else datetime.date.today()
     with c1:
