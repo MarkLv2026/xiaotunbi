@@ -649,8 +649,9 @@ promo_rows = []
 
 # pickle缓存路径（解析后自动保存，下次启动直接加载，0秒 vs 11秒）
 # 优先用仓库内置的预计算pickle，否则回退到.data_cache本地缓存
-_CACHE_SALES_PKL = (_REPO_DIR / 'last_sales.pkl') if (_REPO_DIR / 'last_sales.pkl').exists() else (_CACHE_DIR / 'last_sales.pkl')
-_CACHE_PROMO_PKL = (_REPO_DIR / 'last_promo.pkl') if (_REPO_DIR / 'last_promo.pkl').exists() else (_CACHE_DIR / 'last_promo.pkl')
+# pickle缓存路径：回退到 .data_cache 本地缓存（仓库 data/ 目录下的大文件已移除）
+_CACHE_SALES_PKL = _CACHE_DIR / 'last_sales.pkl'
+_CACHE_PROMO_PKL = _CACHE_DIR / 'last_promo.pkl'
 
 def _restore_from_session():
     """从 session_state 恢复缓存数据（在 Streamlit 上下文安全时调用）"""
