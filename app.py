@@ -660,7 +660,7 @@ if _promo_bytes:
     except Exception as e:
         st.warning(f'推广数据解析失败：{e}')
 
-# 目标数据加载
+# 目标数据加载 —— 改为按需懒加载，避免启动时因大文件解析导致崩溃
 targets = {}
 _targets_bytes = None
 if _CACHE_TARGETS.exists():
@@ -669,35 +669,32 @@ elif _REPO_TARGETS.exists():
     _targets_bytes = _REPO_TARGETS.read_bytes()
     _CACHE_TARGETS.write_bytes(_targets_bytes)
 
-if _targets_bytes:
+# 启动时只记录状态，不解析大文件（避免内存/超时问题）
+_targets_available = bool(_targets_bytes)
+if _targets_available:
+    st.info('💡 检测到目标数据文件，将在「目标达成」Tab中按需加载')
+
+
+def _lazy_load_targets():
+    """按需加载目标数据，使用session_state缓存避免重复解析"""
+    global targets
+    if 'targets_loaded' in st.session_state and st.session_state.targets_loaded:
+        return st.session_state.get('targets_data', {})
+    
+    if not _targets_bytes:
+        return {}
+    
     try:
-        with st.spinner('正在解析目标数据...'):
-            # 添加详细错误诊断
-            try:
-                targets = load_targets(_targets_bytes)
-            except Exception as _load_err:
-                # 捕获并显示详细的加载错误
-                st.error(f'❌ 目标数据解析错误：{type(_load_err).__name__}: {_load_err}')
-                import traceback
-                _tb = traceback.format_exc()
-                with st.expander('查看详细错误信息'):
-                    st.code(_tb, language='text')
-                targets = {}
-            
-        if targets:
-            _total_months = len(targets)
-            st.success(f'✅ 目标数据已加载：{_total_months} 个月份')
-        else:
-            st.warning('⚠️ 目标数据为空，请检查Excel格式')
+        targets = load_targets(_targets_bytes)
+        st.session_state.targets_loaded = True
+        st.session_state.targets_data = targets
+        return targets
     except Exception as e:
-        st.error(f'❌ 目标数据加载失败：{type(e).__name__}: {e}')
+        st.error(f'❌ 目标数据解析失败：{type(e).__name__}: {e}')
         import traceback
-        _tb = traceback.format_exc()
         with st.expander('查看详细错误信息'):
-            st.code(_tb, language='text')
-        st.info('💡 应用将继续运行，但目标达成模块可能不可用')
-else:
-    st.info('💡 未找到目标数据文件。请在侧边栏上传目标Excel文件。')
+            st.code(traceback.format_exc(), language='text')
+        return {}
 
 meta = data['meta']
 if _sales_loaded:
@@ -6504,6 +6501,9 @@ with tabs[5]:
 with tabs[6]:
     st.markdown("""<div class="hero" style="padding:20px 28px 10px;"><div><span class="badge">🎯</span><span class="badge">目标达成追踪</span></div>
         <div class="hero-sub">店铺/单品日度目标 vs 实际达成，自动从销售数据填充</div></div>""", unsafe_allow_html=True)
+
+    # 按需加载目标数据
+    targets = _lazy_load_targets()
 
     if not targets:
         st.info('📭 尚未上传目标数据。请在左侧「数据源更新」中选择「销售目标」上传 Excel，然后点击同步到云端。')
