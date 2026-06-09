@@ -277,6 +277,13 @@ with st.sidebar:
             uploaded_sales = st.file_uploader('上传销售 Excel 数据源', type=['xlsx'], key='sales_up')
             if uploaded_sales is not None:
                 _CACHE_SALES.write_bytes(uploaded_sales.getvalue())
+                # 删除旧的pickle缓存，强制下次重新解析新数据
+                if _CACHE_SALES_PKL.exists():
+                    _CACHE_SALES_PKL.unlink()
+                # 清除session_state中的旧缓存
+                for key in ['cached_sales_data', 'targets_loaded', 'targets_data']:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.caption('✅ 销售数据已保存（本次会话）')
             elif _CACHE_SALES.exists():
                 mtime = datetime.datetime.fromtimestamp(_CACHE_SALES.stat().st_mtime)
@@ -643,8 +650,12 @@ _sales_empty = {
 }
 
 # 模块级默认值（避免启动时访问 st.session_state 导致崩溃）
-data = _sales_empty
-_sales_loaded = False
+# 使用try-except避免在每次rerun时重置data
+try:
+    data  # 检查data是否已定义
+except NameError:
+    data = _sales_empty
+    _sales_loaded = False
 promo_rows = []
 
 # pickle缓存路径（解析后自动保存，下次启动直接加载，0秒 vs 11秒）
