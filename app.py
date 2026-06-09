@@ -1974,8 +1974,6 @@ def _generate_mckinsey_ppt(**kwargs):
     prs.save(ppt_path)
     return ppt_path
 
-    return ppt_path
-
 
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
