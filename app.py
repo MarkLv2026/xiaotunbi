@@ -1962,12 +1962,10 @@ def _generate_mckinsey_ppt(**kwargs):
     # 增长亮点 / 风险型号
     bottom_y = 1.15 + 0.32 * (len(ch_detail) + 1) + 0.15
     if rising_stars:
-        rs_text = ['▎增长亮点型号'] + [f'• {r.get("型号", "")} | GMV ¥{r.get("本期GMV", 0):,.0f} | {r.get("渠道", "")}'
-                                       for r in rising_stars[:5]]
+        rs_text = ['▎增长亮点型号'] + [f'• {r.get("型号", "")} | GMV ¥{r.get("本期GMV", 0):,.0f} | {r.get("渠道", "")}' for r in rising_stars[:5]]
         _add_text_block(slide, 0.3, bottom_y, 4.5, 1.5, rs_text, Pt(8))
     if drop_stars:
-        ds_text = ['▎风险型号（爆款掉量）'] + [f'• {d.get("型号", "")} | 缩水{_pct(d.get("缩水幅度"))} | {d.get("渠道", "")}'
-                                               for d in sorted(drop_stars, key=lambda x: x.get('缩水幅度', 0))[:5]]
+        ds_text = ['▎风险型号（爆款掉量）'] + [f'• {d.get("型号", "")} | 缩水{_pct(d.get("缩水幅度"))} | {d.get("渠道", "")}' for d in sorted(drop_stars, key=lambda x: x.get('缩水幅度', 0))[:5]]
         _add_text_block(slide, 5.2, bottom_y, 4.5, 1.5, ds_text, Pt(8))
 
     # 保存文件
