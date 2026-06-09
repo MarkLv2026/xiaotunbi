@@ -706,24 +706,29 @@ def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
 
 # 目标数据加载 —— 改为按需懒加载，避免启动时因大文件解析导致崩溃
 targets = {}
-_targets_bytes = None
-if _CACHE_TARGETS.exists():
-    _targets_bytes = _CACHE_TARGETS.read_bytes()
-elif _REPO_TARGETS.exists():
-    _targets_bytes = _REPO_TARGETS.read_bytes()
-    _CACHE_TARGETS.write_bytes(_targets_bytes)
+_targets_bytes = None  # 懒加载：不在导入时读取文件
 
-# 启动时只记录状态，不解析大文件（避免内存/超时问题）
-_targets_available = bool(_targets_bytes)
-if _targets_available:
-    st.info('💡 检测到目标数据文件，将在「目标达成」Tab中按需加载')
+# 启动时不读取大文件，避免内存/超时问题
+# _targets_bytes将在_lazy_load_targets()中按需加载
+_targets_available = False  # 延迟检测文件是否存在
 
 
 def _lazy_load_targets():
     """按需加载目标数据，使用session_state缓存避免重复解析"""
-    global targets
+    global targets, _targets_bytes
     if 'targets_loaded' in st.session_state and st.session_state.targets_loaded:
         return st.session_state.get('targets_data', {})
+    
+    # 懒加载：首次调用时才读取文件
+    if _targets_bytes is None:
+        if _CACHE_TARGETS.exists():
+            _targets_bytes = _CACHE_TARGETS.read_bytes()
+        elif _REPO_TARGETS.exists():
+            _targets_bytes = _REPO_TARGETS.read_bytes()
+            try:
+                _CACHE_TARGETS.write_bytes(_targets_bytes)
+            except Exception:
+                pass
     
     if not _targets_bytes:
         return {}
