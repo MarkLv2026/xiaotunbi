@@ -654,8 +654,9 @@ else:
     promo_rows = []
 
 # pickle缓存路径（解析后自动保存，下次启动直接加载，0秒 vs 11秒）
-_CACHE_SALES_PKL = _CACHE_DIR / 'last_sales.pkl'
-_CACHE_PROMO_PKL = _CACHE_DIR / 'last_promo.pkl'
+# 优先用仓库内置的预计算pickle，否则回退到.data_cache本地缓存
+_CACHE_SALES_PKL = (_REPO_DIR / 'last_sales.pkl') if (_REPO_DIR / 'last_sales.pkl').exists() else (_CACHE_DIR / 'last_sales.pkl')
+_CACHE_PROMO_PKL = (_REPO_DIR / 'last_promo.pkl') if (_REPO_DIR / 'last_promo.pkl').exists() else (_CACHE_DIR / 'last_promo.pkl')
 
 def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
     """优先加载pickle缓存，否则解析源文件并保存pickle"""
