@@ -4181,10 +4181,39 @@ with tabs[3]:
                              '访客数': int(avg_vis),
                              '转化率': avg_buyers / avg_vis if avg_vis else 0})
     if dow_avg:
-        fig = px.bar(df(dow_avg), x='星期', y='支付金额', color='转化率',
-                     color_continuous_scale='RdYlGn', title='各星期日均支付金额（颜色=转化率）',
-                     text=[f"{r['支付金额']}万" for r in dow_avg])
-        fig.update_layout(height=340, template='plotly_white')
+        fig = go.Figure()
+        # 柱状图 — 支付金额（左Y轴）
+        fig.add_trace(go.Bar(
+            x=[r['星期'] for r in dow_avg],
+            y=[r['支付金额'] for r in dow_avg],
+            name='支付金额',
+            marker_color='#3B82F6',
+            text=[f"{r['支付金额']:.1f}万" for r in dow_avg],
+            textposition='outside',
+            yaxis='y1'
+        ))
+        # 折线图 — 转化率（右Y轴，%）
+        fig.add_trace(go.Scatter(
+            x=[r['星期'] for r in dow_avg],
+            y=[r['转化率'] * 100 for r in dow_avg],
+            name='转化率',
+            mode='lines+markers+text',
+            text=[f"{r['转化率']*100:.2f}%" for r in dow_avg],
+            textposition='top center',
+            line=dict(color='#E6A817', width=3),
+            marker=dict(size=10, color='#E6A817'),
+            yaxis='y2'
+        ))
+        fig.update_layout(
+            title='各星期日均支付金额与转化率',
+            height=380,
+            template='plotly_white',
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+            yaxis=dict(title='支付金额（万元）', side='left', showgrid=True),
+            yaxis2=dict(title='转化率（%）', side='right', overlaying='y', showgrid=False),
+            xaxis=dict(title='星期'),
+            margin=dict(t=80)
+        )
         st.plotly_chart(fig, width="stretch")
 
     # ═══════════════════════════════════════════════════
