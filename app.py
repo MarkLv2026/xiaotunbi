@@ -129,12 +129,15 @@ def _slicer(label, options, key):
         return []
     all_opts = list(options)
     # Clean stale values from session_state if options changed
-    if sk in st.session_state:
-        saved = st.session_state[sk]
-        if isinstance(saved, list):
-            valid = [v for v in saved if v in all_opts]
-            if len(valid) != len(saved):
-                st.session_state[sk] = valid
+    try:
+        if sk in st.session_state:
+            saved = st.session_state[sk]
+            if isinstance(saved, list):
+                valid = [v for v in saved if v in all_opts]
+                if len(valid) != len(saved):
+                    st.session_state[sk] = valid
+    except Exception:
+        pass  # SessionInfo may not be ready yet; will be initialized by multiselect itself
     sel = st.multiselect(label, options=all_opts, default=[], key=sk, placeholder='全选')
     return list(sel) if sel else all_opts
 
@@ -142,9 +145,12 @@ def _slicer(label, options, key):
 st.set_page_config(page_title='小豚当家BI看板', layout='wide', initial_sidebar_state='expanded')
 
 # 防御性 session state 预初始化（防止 Streamlit "SessionInfo not initialized" 错误）
-for _k, _v in [('authenticated', False), ('username', ''), ('role', '')]:
-    if _k not in st.session_state:
-        st.session_state[_k] = _v
+try:
+    for _k, _v in [('authenticated', False), ('username', ''), ('role', '')]:
+        if _k not in st.session_state:
+            st.session_state[_k] = _v
+except Exception:
+    pass  # SessionInfo 尚未就绪，widget 首次渲染时会自动创建
 
 CSS = '''
 <style>
