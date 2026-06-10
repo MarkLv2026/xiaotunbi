@@ -1151,23 +1151,36 @@ def period_delta_text(metric_key):
 
 # ── 全局全屏 JS（只注入一次，避免每个表格都嵌入完整 JS 导致 400 错误）──
 # 修复：使用事件委托 + 更健壮的DOM操作，兼容所有浏览器
+# 关键：Streamlit 的 iframe 中 document 可能不同，使用 window.parent.document 向上查找
 _FS_GLOBAL_JS = """<script>
 (function(){
 if(window._fsInited)return;window._fsInited=1;
 
+// 获取根 document（兼容 iframe 嵌套）
+function _fsGetDoc(){
+    try{
+        if(window.parent && window.parent.document && window.parent.document.body){
+            return window.parent.document;
+        }
+    }catch(e){}
+    return document;
+}
+
 // 创建遮罩层（如果不存在）
 function _fsGetOverlay(id){
-    var ov=document.getElementById(id+'_fs');
+    var doc=_fsGetDoc();
+    var ov=doc.getElementById(id+'_fs');
     if(ov)return ov;
     return null;
 }
 
 function _fsCreateOverlay(id, title, contentHTML){
-    var ov=document.createElement('div');
+    var doc=_fsGetDoc();
+    var ov=doc.createElement('div');
     ov.id=id+'_fs';
     ov.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">'+title+'</span><button class="_fs-close-btn" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">'+contentHTML+'</div>';
     ov.style.cssText='display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
-    document.body.appendChild(ov);
+    doc.body.appendChild(ov);
     // 绑定关闭按钮点击事件
     var closeBtn=ov.querySelector('._fs-close-btn');
     if(closeBtn){
@@ -1194,7 +1207,8 @@ window._fsOpen=function(el){
 };
 
 window._fsClose=function(id){
-    var ov=document.getElementById(id+'_fs');
+    var doc=_fsGetDoc();
+    var ov=doc.getElementById(id+'_fs');
     if(ov)ov.style.display='none';
 };
 
