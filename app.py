@@ -318,6 +318,13 @@ with st.sidebar:
             uploaded_promo = st.file_uploader('上传推广 Excel（含京东/天猫推广sheet）', type=['xlsx'], key='promo_up')
             if uploaded_promo is not None:
                 _CACHE_PROMO.write_bytes(uploaded_promo.getvalue())
+                # 删除旧的pickle缓存，强制下次重新解析新数据
+                if _CACHE_PROMO_PKL.exists():
+                    _CACHE_PROMO_PKL.unlink()
+                # 清除session_state中的旧缓存
+                for key in ['cached_promo_rows']:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.caption('✅ 推广数据已保存（本次会话）')
             elif _CACHE_PROMO.exists():
                 mtime = datetime.datetime.fromtimestamp(_CACHE_PROMO.stat().st_mtime)
