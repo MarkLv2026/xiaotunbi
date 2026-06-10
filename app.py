@@ -1213,6 +1213,7 @@ window._fsClose=function(id){
 };
 
 // 事件委托：监听所有全屏按钮点击（兼容动态生成的按钮）
+// 使用 capture 阶段确保在 Streamlit 拦截前捕获
 document.addEventListener('click',function(e){
     var btn=e.target.closest('._fs-btn');
     if(btn){
@@ -1220,7 +1221,7 @@ document.addEventListener('click',function(e){
         e.stopPropagation();
         window._fsOpen(btn);
     }
-});
+}, true);
 })();
 </script>"""
 
