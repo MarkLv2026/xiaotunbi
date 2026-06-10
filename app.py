@@ -509,23 +509,30 @@ def load_targets(file_bytes: bytes):
         max_col = min(ws.max_column, 60)
 
         # ── 1. 找日期行 ──
-        # 策略：找 C="店铺" D="指标" 的行，上一行就是日期行
-        date_row_idx = 0
-        date_cols = []  # [(col_idx, 'YYYY-MM-DD'), ...]
+        # 策略：找 C="店铺" D="指标" 的行，然后尝试多行检测日期
+        # 兼容多种布局：日期可能在上一行 / 同一行 / 下一行
+        header_row = 0
         for r in range(1, min(20, max_row + 1)):
             c3 = ws.cell(r, 3).value
             c4 = ws.cell(r, 4).value
             if c3 == '店铺' and c4 == '指标':
-                date_row_idx = r - 1  # 上一行
+                header_row = r
                 break
-        if date_row_idx < 1:
+        if header_row < 1:
             continue
 
-        for c in range(7, max_col + 1):
-            v = ws.cell(date_row_idx, c).value
-            if isinstance(v, (int, float)) and 40000 < v < 50000:
-                dt = _excel_epoch + _td(days=int(v))
-                date_cols.append((c, dt.strftime('%Y-%m-%d')))
+        date_cols = []  # [(col_idx, 'YYYY-MM-DD'), ...]
+        # 按优先级尝试：上一行 → 当前行 → 下一行
+        for candidate_row in (header_row - 1, header_row, header_row + 1):
+            if candidate_row < 1:
+                continue
+            for c in range(7, max_col + 1):
+                v = ws.cell(candidate_row, c).value
+                if isinstance(v, (int, float)) and 40000 < v < 50000:
+                    dt = _excel_epoch + _td(days=int(v))
+                    date_cols.append((c, dt.strftime('%Y-%m-%d')))
+            if date_cols:
+                break  # 找到日期就停止
 
         if not date_cols:
             continue
@@ -536,7 +543,7 @@ def load_targets(file_bytes: bytes):
         current_shop = ''
         current_model = ''
 
-        for r in range(date_row_idx + 2, max_row + 1):
+        for r in range(header_row + 2, max_row + 1):
             c3 = ws.cell(r, 3).value
             c4 = ws.cell(r, 4).value
             c5 = ws.cell(r, 5).value
