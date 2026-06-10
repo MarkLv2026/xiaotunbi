@@ -21,6 +21,9 @@ _CACHE_DIR.mkdir(exist_ok=True)
 _CACHE_FILE = _CACHE_DIR / 'last_upload.xlsx'
 _CACHE_SALES = _CACHE_DIR / 'last_sales.xlsx'
 _CACHE_PROMO = _CACHE_DIR / 'last_promo.xlsx'
+# pickle缓存路径（解析后自动保存，下次启动直接加载，0秒 vs 11秒）
+_CACHE_SALES_PKL = _CACHE_DIR / 'last_sales.pkl'
+_CACHE_PROMO_PKL = _CACHE_DIR / 'last_promo.pkl'
 _CACHE_TARGETS = _CACHE_DIR / 'last_targets.xlsx'
 
 # 仓库内置数据路径（GitHub 持久化，容器重启后仍有效）
@@ -745,12 +748,6 @@ try:
         promo_rows = st.session_state.cached_promo_rows
 except Exception:
     pass
-
-# pickle缓存路径（解析后自动保存，下次启动直接加载，0秒 vs 11秒）
-# 优先用仓库内置的预计算pickle，否则回退到.data_cache本地缓存
-# pickle缓存路径：回退到 .data_cache 本地缓存（仓库 data/ 目录下的大文件已移除）
-_CACHE_SALES_PKL = _CACHE_DIR / 'last_sales.pkl'
-_CACHE_PROMO_PKL = _CACHE_DIR / 'last_promo.pkl'
 
 def _restore_from_session():
     """从 session_state 恢复缓存数据（在 Streamlit 上下文安全时调用）"""
