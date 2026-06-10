@@ -343,27 +343,69 @@ with st.sidebar:
             else:
                 st.caption('💡 上传数据后可同步到云端，使所有账号持久可见')
         elif data_type == '销售目标':
-            uploaded_targets = st.file_uploader('上传目标拆解 Excel（含各月Sheet）', type=['xlsx'], key='targets_up')
+            uploaded_targets = st.file_uploader('上传目标拆解 Excel（一个月一个Sheet，或多个月合在一个文件）', type=['xlsx'], key='targets_up')
             if uploaded_targets is not None:
-                _CACHE_TARGETS.write_bytes(uploaded_targets.getvalue())
-                # 清除所有目标缓存（全局变量 + session_state），强制重新解析新上传的文件
-                global _targets_bytes
-                _targets_bytes = None
+                _file_bytes = uploaded_targets.getvalue()
+                # ── 按月拆分保存（核心改动）──
+                # 每个Sheet保存为独立文件：.data_cache/targets/targets_2026-05.xlsx
+                # 同月份自动覆盖旧数据，不同月份互不影响
+                _CACHE_TARGETS_DIR = _CACHE_DIR / 'targets'
+                _CACHE_TARGETS_DIR.mkdir(exist_ok=True)
+                import openpyxl as _xl2, io, re as _re2
+                wb = _xl2.load_workbook(io.BytesIO(_file_bytes), data_only=True)
+                parsed_months = []
+                for ws_name in wb.sheetnames:
+                    m = _re2.search(r'(\d+)年(\d+)月', ws_name)
+                    if not m:
+                        continue
+                    year = int('20' + m.group(1))
+                    month = int(m.group(2))
+                    ym = f'{year}-{month:02d}'
+                    # 创建只含该Sheet的工作簿
+                    new_wb = _xl2.Workbook()
+                    new_wb.remove(new_wb.active)
+                    src_ws = wb[ws_name]
+                    new_ws = new_wb.create_sheet(title=src_ws.title)
+                    for row in src_ws.iter_rows():
+                        for cell in row:
+                            new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
+                    month_path = _CACHE_TARGETS_DIR / f'targets_{ym}.xlsx'
+                    new_wb.save(month_path)
+                    parsed_months.append(ym)
+                # 同时保存完整文件（向后兼容，供同步使用）
+                _CACHE_TARGETS.write_bytes(_file_bytes)
+                # 清除session_state缓存，强制重新加载
                 for key in ['targets_loaded', 'targets_data']:
                     if key in st.session_state:
                         del st.session_state[key]
-                st.caption('✅ 目标数据已保存（本次会话）')
-            elif _CACHE_TARGETS.exists():
-                mtime = datetime.datetime.fromtimestamp(_CACHE_TARGETS.stat().st_mtime)
-                st.caption(f'📂 目标数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
-            elif _REPO_TARGETS.exists():
-                mtime = datetime.datetime.fromtimestamp(_REPO_TARGETS.stat().st_mtime)
-                st.caption(f'☁️ 目标数据（云端）：{mtime.strftime("%Y-%m-%d %H:%M")}')
+                st.caption(f'✅ 已保存 {len(parsed_months)} 个月份：{", ".join(parsed_months)}')
             else:
-                st.caption('请上传目标拆解 Excel（如：小豚电商重点工作跟进表）')
+                # 检查按月缓存
+                _CACHE_TARGETS_DIR = _CACHE_DIR / 'targets'
+                if _CACHE_TARGETS_DIR.exists():
+                    _month_files = sorted(_CACHE_TARGETS_DIR.glob('targets_*.xlsx'))
+                    if _month_files:
+                        _months = [f.stem.replace('targets_', '') for f in _month_files]
+                        st.caption(f'📂 目标数据：{", ".join(_months)}')
+                    elif _CACHE_TARGETS.exists():
+                        mtime = datetime.datetime.fromtimestamp(_CACHE_TARGETS.stat().st_mtime)
+                        st.caption(f'📂 目标数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
+                    elif _REPO_TARGETS.exists():
+                        mtime = datetime.datetime.fromtimestamp(_REPO_TARGETS.stat().st_mtime)
+                        st.caption(f'☁️ 目标数据（云端）：{mtime.strftime("%Y-%m-%d %H:%M")}')
+                    else:
+                        st.caption('请上传目标拆解 Excel')
+                elif _CACHE_TARGETS.exists():
+                    mtime = datetime.datetime.fromtimestamp(_CACHE_TARGETS.stat().st_mtime)
+                    st.caption(f'📂 目标数据：{mtime.strftime("%Y-%m-%d %H:%M")}')
+                elif _REPO_TARGETS.exists():
+                    mtime = datetime.datetime.fromtimestamp(_REPO_TARGETS.stat().st_mtime)
+                    st.caption(f'☁️ 目标数据（云端）：{mtime.strftime("%Y-%m-%d %H:%M")}')
+                else:
+                    st.caption('请上传目标拆解 Excel（如：小豚电商重点工作跟进表）')
             st.markdown('**建议工作表**')
             st.caption('26年5月目标拆解及登记 / 26年6月目标拆解及登记 ...')
-            # 同步按钮
+            # 同步按钮（推送完整文件，向后兼容）
             _targets_ready = _CACHE_TARGETS.exists()
             if _targets_ready:
                 if st.button('📤 同步目标数据到云端', use_container_width=True, key='sync_targets'):
@@ -534,8 +576,12 @@ def load_targets(file_bytes: bytes):
                 continue
             for c in range(7, max_col + 1):
                 v = ws.cell(candidate_row, c).value
+                dt = None
                 if isinstance(v, (int, float)) and 40000 < v < 50000:
                     dt = _excel_epoch + _td(days=int(v))
+                elif hasattr(v, 'strftime'):  # datetime/date 对象（公式计算的日期）
+                    dt = v
+                if dt:
                     date_cols.append((c, dt.strftime('%Y-%m-%d')))
             if date_cols:
                 break  # 找到日期就停止
@@ -775,13 +821,27 @@ _targets_available = False  # 延迟检测文件是否存在
 
 
 def _lazy_load_targets():
-    """按需加载目标数据，使用session_state缓存避免重复解析"""
-    global targets, _targets_bytes
+    """按需加载目标数据——按月独立文件加载，同月份自动覆盖"""
+    global targets
     if 'targets_loaded' in st.session_state and st.session_state.targets_loaded:
         return st.session_state.get('targets_data', {})
-    
-    # 懒加载：首次调用时才读取文件
-    if _targets_bytes is None:
+
+    targets = {}
+    _CACHE_TARGETS_DIR = _CACHE_DIR / 'targets'
+
+    # 1. 优先：按月缓存目录加载（支持多个月份独立文件）
+    if _CACHE_TARGETS_DIR.exists():
+        for month_file in sorted(_CACHE_TARGETS_DIR.glob('targets_*.xlsx')):
+            try:
+                file_bytes = month_file.read_bytes()
+                month_targets = load_targets(file_bytes)
+                targets.update(month_targets)
+            except Exception:
+                pass  # 单个月份解析失败不影响其他月份
+
+    # 2. 回退：完整文件（向后兼容）
+    if not targets:
+        _targets_bytes = None
         if _CACHE_TARGETS.exists():
             _targets_bytes = _CACHE_TARGETS.read_bytes()
         elif _REPO_TARGETS.exists():
@@ -790,21 +850,19 @@ def _lazy_load_targets():
                 _CACHE_TARGETS.write_bytes(_targets_bytes)
             except Exception:
                 pass
-    
-    if not _targets_bytes:
-        return {}
-    
-    try:
-        targets = load_targets(_targets_bytes)
+        if _targets_bytes:
+            try:
+                targets = load_targets(_targets_bytes)
+            except Exception as e:
+                st.error(f'❌ 目标数据解析失败：{type(e).__name__}: {e}')
+                import traceback
+                with st.expander('查看详细错误信息'):
+                    st.code(traceback.format_exc(), language='text')
+
+    if targets:
         st.session_state.targets_loaded = True
         st.session_state.targets_data = targets
-        return targets
-    except Exception as e:
-        st.error(f'❌ 目标数据解析失败：{type(e).__name__}: {e}')
-        import traceback
-        with st.expander('查看详细错误信息'):
-            st.code(traceback.format_exc(), language='text')
-        return {}
+    return targets
 
 # ── 数据完整性检测（已移至 tabs[0] 内部，避免模块级Streamlit调用崩溃）──
 
