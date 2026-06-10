@@ -346,7 +346,9 @@ with st.sidebar:
             uploaded_targets = st.file_uploader('上传目标拆解 Excel（含各月Sheet）', type=['xlsx'], key='targets_up')
             if uploaded_targets is not None:
                 _CACHE_TARGETS.write_bytes(uploaded_targets.getvalue())
-                # 清除session_state中的目标缓存，强制重新解析新上传的文件
+                # 清除所有目标缓存（全局变量 + session_state），强制重新解析新上传的文件
+                global _targets_bytes
+                _targets_bytes = None
                 for key in ['targets_loaded', 'targets_data']:
                     if key in st.session_state:
                         del st.session_state[key]
@@ -547,7 +549,16 @@ def load_targets(file_bytes: bytes):
         current_shop = ''
         current_model = ''
 
-        for r in range(header_row + 2, max_row + 1):
+        # 数据起始行：表头行的下一行（header_row + 1）
+        # 注意：某些Sheet可能有额外的分隔/标题行，用 while 跳过空行
+        data_start = header_row + 1
+        while data_start <= max_row:
+            c3 = ws.cell(data_start, 3).value
+            c4 = ws.cell(data_start, 4).value
+            if c3 or c4:
+                break
+            data_start += 1
+        for r in range(data_start, max_row + 1):
             c3 = ws.cell(r, 3).value
             c4 = ws.cell(r, 4).value
             c5 = ws.cell(r, 5).value
