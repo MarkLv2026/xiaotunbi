@@ -6667,10 +6667,8 @@ with tabs[6]:
             _raw_daily_target = [r for r in data['daily'] if r.get('日期', '').startswith(_cur_ym_prefix)]
             # 推广数据同样不受全局筛选影响
             # 确保 _promo_bytes 已加载（用户可能直接跳转到目标达成模块，未经过tabs[0]）
-            global _promo_bytes
-            if _promo_bytes is None:
-                _promo_bytes = _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
-            _all_promo_raw = load_promo_data(_promo_bytes) if _promo_bytes else []
+            _local_promo_bytes = _promo_bytes if _promo_bytes is not None else _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
+            _all_promo_raw = load_promo_data(_local_promo_bytes) if _local_promo_bytes else []
             _raw_promo_target = [r for r in _all_promo_raw if r.get('_date', '').startswith(_cur_ym_prefix)]
 
             if not _raw_daily_target:
