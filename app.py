@@ -346,6 +346,10 @@ with st.sidebar:
             uploaded_targets = st.file_uploader('上传目标拆解 Excel（含各月Sheet）', type=['xlsx'], key='targets_up')
             if uploaded_targets is not None:
                 _CACHE_TARGETS.write_bytes(uploaded_targets.getvalue())
+                # 清除session_state中的目标缓存，强制重新解析新上传的文件
+                for key in ['targets_loaded', 'targets_data']:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.caption('✅ 目标数据已保存（本次会话）')
             elif _CACHE_TARGETS.exists():
                 mtime = datetime.datetime.fromtimestamp(_CACHE_TARGETS.stat().st_mtime)
@@ -6662,6 +6666,10 @@ with tabs[6]:
             _cur_ym_prefix = _sel_ym + '-'
             _raw_daily_target = [r for r in data['daily'] if r.get('日期', '').startswith(_cur_ym_prefix)]
             # 推广数据同样不受全局筛选影响
+            # 确保 _promo_bytes 已加载（用户可能直接跳转到目标达成模块，未经过tabs[0]）
+            global _promo_bytes
+            if _promo_bytes is None:
+                _promo_bytes = _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
             _all_promo_raw = load_promo_data(_promo_bytes) if _promo_bytes else []
             _raw_promo_target = [r for r in _all_promo_raw if r.get('_date', '').startswith(_cur_ym_prefix)]
 
