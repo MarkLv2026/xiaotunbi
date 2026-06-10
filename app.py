@@ -1150,26 +1150,63 @@ def period_delta_text(metric_key):
 
 
 # ── 全局全屏 JS（只注入一次，避免每个表格都嵌入完整 JS 导致 400 错误）──
+# 修复：使用事件委托 + 更健壮的DOM操作，兼容所有浏览器
 _FS_GLOBAL_JS = """<script>
 (function(){
 if(window._fsInited)return;window._fsInited=1;
+
+// 创建遮罩层（如果不存在）
+function _fsGetOverlay(id){
+    var ov=document.getElementById(id+'_fs');
+    if(ov)return ov;
+    return null;
+}
+
+function _fsCreateOverlay(id, title, contentHTML){
+    var ov=document.createElement('div');
+    ov.id=id+'_fs';
+    ov.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">'+title+'</span><button class="_fs-close-btn" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">'+contentHTML+'</div>';
+    ov.style.cssText='display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
+    document.body.appendChild(ov);
+    // 绑定关闭按钮点击事件
+    var closeBtn=ov.querySelector('._fs-close-btn');
+    if(closeBtn){
+        closeBtn.addEventListener('click',function(e){
+            e.stopPropagation();
+            ov.style.display='none';
+        });
+    }
+    return ov;
+}
+
 window._fsOpen=function(el){
-var id=el.getAttribute('data-fs-id');
-var title=el.getAttribute('data-fs-title')||'';
-var wrap=document.getElementById(id);
-if(!wrap)return;
-var ov=document.getElementById(id+'_fs');
-if(ov){ov.style.display='flex';return;}
-ov=document.createElement('div');
-ov.id=id+'_fs';
-ov.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">'+title+'</span><button onclick="this.parentElement.parentElement.style.display=\\'none\\'" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">'+wrap.innerHTML+'</div>';
-ov.style.cssText='display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
-document.body.appendChild(ov);
+    var id=el.getAttribute('data-fs-id');
+    var title=el.getAttribute('data-fs-title')||'';
+    var wrap=document.getElementById(id);
+    if(!wrap)return;
+    var ov=_fsGetOverlay(id);
+    if(ov){
+        ov.style.display='flex';
+        return;
+    }
+    ov=_fsCreateOverlay(id,title,wrap.innerHTML);
+    ov.style.display='flex';
 };
+
 window._fsClose=function(id){
-var ov=document.getElementById(id+'_fs');
-if(ov)ov.style.display='none';
+    var ov=document.getElementById(id+'_fs');
+    if(ov)ov.style.display='none';
 };
+
+// 事件委托：监听所有全屏按钮点击（兼容动态生成的按钮）
+document.addEventListener('click',function(e){
+    var btn=e.target.closest('._fs-btn');
+    if(btn){
+        e.preventDefault();
+        e.stopPropagation();
+        window._fsOpen(btn);
+    }
+});
 })();
 </script>"""
 
@@ -1192,7 +1229,7 @@ def _wrap_fullscreen(inner_html, title='', fullscreen=True):
     _inject_fs_js()
     tbl_id = 'tbl_' + _uuid_mod.uuid4().hex[:8]
     fs_btn = (
-        f'<button onclick="window._fsOpen(this)" data-fs-id="{tbl_id}" data-fs-title="{title}" '
+        f'<button class="_fs-btn" data-fs-id="{tbl_id}" data-fs-title="{title}" '
         f'style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
         f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
     )
@@ -1224,7 +1261,7 @@ def _render_html_table(rows, headers, keys, align='center', height=520, title=''
     fullscreen_btn = ''
     if fullscreen:
         fullscreen_btn = (
-            f'<button onclick="window._fsOpen(this)" data-fs-id="{tbl_id}" data-fs-title="{title}" '
+            f'<button class="_fs-btn" data-fs-id="{tbl_id}" data-fs-title="{title}" '
             f'style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
             f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
         )
@@ -7063,41 +7100,16 @@ with tabs[6]:
                 color = '#22c55e' if rate_val >= 100 else '#ef4444' if rate_val < 80 else '#f59e0b'
                 return f'<span style="color:{color};font-weight:bold;">{rate_val:.1f}%</span>'
 
-            def _build_fullscreen_js(tbl_id, title):
-                """为目标达成表格生成全屏 JS"""
-                return f"""
-<script>
-(function() {{
-    var overlay = null;
-    window['_fsOpen_{tbl_id}'] = function() {{
-        if (overlay) return;
-        var tblWrap = document.getElementById('{tbl_id}');
-        var content = tblWrap.innerHTML;
-        overlay = document.createElement('div');
-        overlay.id = '{tbl_id}_fs';
-        overlay.innerHTML = '<style>.styled-table{{width:100%;border-collapse:collapse;font-size:13px;}}.styled-table th{{background:#1e293b;color:#e2e8f0;border-bottom:2px solid #334155;padding:10px 8px;position:sticky;top:0;z-index:1;}}.styled-table td{{padding:7px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap;color:#1e293b;}}.styled-table tbody tr:nth-child(even){{background:#f8fafc;}}.styled-table tbody tr:hover{{background:#e2e8f0;}}</style>' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">{title}</span><button onclick="window._fsClose_{tbl_id}()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">' + content + '</div>';
-        overlay.style.cssText = 'display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
-        document.body.appendChild(overlay);
-    }};
-    window['_fsClose_{tbl_id}'] = function() {{
-        if (overlay) {{ overlay.remove(); overlay = null; }}
-    }};
-}})();
-</script>
-"""
-
             def _render_target_table(header_cols, title, table_data):
                 """渲染带全屏按钮的目标达成表格"""
                 tbl_id = 'tgt_' + _uuid_mod.uuid4().hex[:8]
-                fs_js = _build_fullscreen_js(tbl_id, title)
+                _inject_fs_js()
                 fs_btn = (
-                    f'<button onclick="window._fsOpen_{tbl_id}()" '
+                    f'<button class="_fs-btn" data-fs-id="{tbl_id}" data-fs-title="{title}" '
                     f'style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
                     f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
                 )
-                html = fs_js
-                html += f'<div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-weight:700;font-size:14px;">{title}</span>{fs_btn}</div>'
+                html = f'<div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-weight:700;font-size:14px;">{title}</span>{fs_btn}</div>'
                 html += f'<div id="{tbl_id}" class="styled-table-wrap"><table class="styled-table">'
                 html += '<thead><tr>'
                 for h in header_cols:
