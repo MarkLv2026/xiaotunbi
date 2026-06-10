@@ -7006,11 +7006,43 @@ with tabs[6]:
                 return 0.0
 
             def _get_target_row_by_indicator(rows_data, target_indicator):
-                """从目标行列表中查找对应目标值行（按指标名匹配）"""
-                for tr in rows_data:
-                    if tr['指标'] == target_indicator:
-                        return tr
+                """从目标行列表中查找对应目标值行（按指标名匹配，支持别名）"""
+                # 指标别名映射：兼容不同月份/不同模板的命名差异
+                # 5月旧模板 vs 6月新模板
+                aliases = {
+                    '成交金额目标': ['成交金额目标', '销额目标'],
+                    '销额目标': ['销额目标', '成交金额目标'],
+                    '支付件数目标': ['支付件数目标', '销量目标'],
+                    '销量目标': ['销量目标', '支付件数目标'],
+                    '实际成交金额': ['实际成交金额', '实际销额'],
+                    '实际销额': ['实际销额', '实际成交金额'],
+                    '实际支付件数': ['实际支付件数', '实际销量'],
+                    '实际销量': ['实际销量', '实际支付件数'],
+                    '成交金额达成率': ['成交金额达成率', '销额达成率'],
+                    '销额达成率': ['销额达成率', '成交金额达成率'],
+                    '目标费率': ['目标费率', '费率目标'],
+                    '费率目标': ['费率目标', '目标费率'],
+                }
+                candidates = aliases.get(target_indicator, [target_indicator])
+                for candi in candidates:
+                    for tr in rows_data:
+                        if tr['指标'] == candi:
+                            return tr
                 return None
+
+            def _get_actual_summary(actual_summary, key):
+                """从actual_summary字典中查找键，支持别名（兼容5月旧模板命名）"""
+                if key in actual_summary:
+                    return actual_summary[key]
+                aliases = {
+                    '实际成交金额': ['实际成交金额', '实际销额'],
+                    '成交金额达成': ['成交金额达成', '实际销额'],
+                    '实际支付件数': ['实际支付件数', '实际销量'],
+                }
+                for alias in aliases.get(key, []):
+                    if alias in actual_summary:
+                        return actual_summary[alias]
+                return {}
 
             def _fmt_val(v, is_pct=False):
                 """格式化数值：金额用千分位，百分比保留1位"""
@@ -7215,7 +7247,7 @@ with tabs[6]:
                         # 成交金额达成率 = 实际成交金额 / 成交金额目标 × 100
                         actual_key = '实际成交金额' if model_name else '成交金额达成'
                         target_key = '成交金额目标'
-                        actual_row = actual_summary.get(actual_key, {})
+                        actual_row = _get_actual_summary(actual_summary, actual_key)
                         target_row = _get_target_row_by_indicator(rows_data, target_key)
                         if target_row is None:
                             continue
@@ -7244,7 +7276,7 @@ with tabs[6]:
                     elif '费率' in indicator and '目标' not in indicator:
                         # 实际费率 = 推广花费 / 实际成交金额 × 100
                         actual_key = '实际成交金额' if model_name else '成交金额达成'
-                        actual_row = actual_summary.get(actual_key, {})
+                        actual_row = _get_actual_summary(actual_summary, actual_key)
                         spend_row_data = actual_summary.get('实际投入金额', {})
                         row_vals = [indicator]
                         # 直接汇总后相除，与结构表保持一致（不逐日过滤无销额的天）
