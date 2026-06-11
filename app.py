@@ -384,11 +384,20 @@ with st.sidebar:
                     parsed_months.append(ym)
                 # 同时保存完整文件（向后兼容，供同步使用）
                 _CACHE_TARGETS.write_bytes(_file_bytes)
+                # ── 自动持久化到 data/targets.xlsx + 推送 GitHub ──
+                try:
+                    # 1. 保存到 data/targets.xlsx（本地持久化， Streamlit Cloud 重启后仍存在）
+                    _REPO_DATA_DIR.mkdir(exist_ok=True)
+                    _REPO_TARGETS.write_bytes(_file_bytes)
+                    # 2. 自动推送到 GitHub（静默执行，不弹窗）
+                    _ok, _msg = _push_xlsx_to_github(_file_bytes, 'data/targets.xlsx', f'自动同步目标数据（{len(parsed_months)}个月）')
+                except Exception as _e:
+                    pass  # 静默失败，不影响主流程
                 # 清除session_state缓存，强制重新加载
                 for key in ['targets_loaded', 'targets_data']:
                     if key in st.session_state:
                         del st.session_state[key]
-                st.caption(f'✅ 已保存 {len(parsed_months)} 个月份：{", ".join(parsed_months)}')
+                st.caption(f'✅ 已保存 {len(parsed_months)} 个月份：{", ".join(parsed_months)}（已自动同步云端）')
             else:
                 # 检查按月缓存
                 _CACHE_TARGETS_DIR = _CACHE_DIR / 'targets'
@@ -1149,91 +1158,22 @@ def period_delta_text(metric_key):
     return f'{a} / {b}'
 
 
-# ── 全局全屏 JS（只注入一次，避免每个表格都嵌入完整 JS 导致 400 错误）──
-# 修复：使用事件委托 + 更健壮的DOM操作，兼容所有浏览器
-# 关键：Streamlit 的 iframe 中 document 可能不同，使用 window.parent.document 向上查找
-_FS_GLOBAL_JS = """<script>
-(function(){
-if(window._fsInited)return;window._fsInited=1;
+# ── 全屏功能：使用 Streamlit 原生 dialog 实现 ──
+# 避免 JS 在 iframe 中被拦截的问题
 
-// 获取根 document（兼容 iframe 嵌套）
-function _fsGetDoc(){
-    try{
-        if(window.parent && window.parent.document && window.parent.document.body){
-            return window.parent.document;
-        }
-    }catch(e){}
-    return document;
-}
-
-// 创建遮罩层（如果不存在）
-function _fsGetOverlay(id){
-    var doc=_fsGetDoc();
-    var ov=doc.getElementById(id+'_fs');
-    if(ov)return ov;
-    return null;
-}
-
-function _fsCreateOverlay(id, title, contentHTML){
-    var doc=_fsGetDoc();
-    var ov=doc.createElement('div');
-    ov.id=id+'_fs';
-    ov.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">'+title+'</span><button class="_fs-close-btn" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">'+contentHTML+'</div>';
-    ov.style.cssText='display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
-    doc.body.appendChild(ov);
-    // 绑定关闭按钮点击事件
-    var closeBtn=ov.querySelector('._fs-close-btn');
-    if(closeBtn){
-        closeBtn.addEventListener('click',function(e){
-            e.stopPropagation();
-            ov.style.display='none';
-        });
-    }
-    return ov;
-}
-
-window._fsOpen=function(el){
-    var id=el.getAttribute('data-fs-id');
-    var title=el.getAttribute('data-fs-title')||'';
-    var wrap=document.getElementById(id);
-    if(!wrap)return;
-    var ov=_fsGetOverlay(id);
-    if(ov){
-        ov.style.display='flex';
-        return;
-    }
-    ov=_fsCreateOverlay(id,title,wrap.innerHTML);
-    ov.style.display='flex';
-};
-
-window._fsClose=function(id){
-    var doc=_fsGetDoc();
-    var ov=doc.getElementById(id+'_fs');
-    if(ov)ov.style.display='none';
-};
-
-// 事件委托：监听所有全屏按钮点击（兼容动态生成的按钮）
-// 使用 capture 阶段确保在 Streamlit 拦截前捕获
-document.addEventListener('click',function(e){
-    var btn=e.target.closest('._fs-btn');
-    if(btn){
-        e.preventDefault();
-        e.stopPropagation();
-        window._fsOpen(btn);
-    }
-}, true);
-})();
-</script>"""
-
-_FS_INJECTED = False
-
-
-def _inject_fs_js():
-    """注入全局全屏 JS（仅首次调用生效）"""
-    global _FS_INJECTED
-    if not _FS_INJECTED:
-        _FS_INJECTED = True
-        st.markdown(_FS_GLOBAL_JS, unsafe_allow_html=True)
+def _open_fullscreen_dialog(title, df, height=600):
+    """使用 st.dialog 打开全屏表格弹窗"""
+    @st.dialog(title, width="large")
+    def _fs_dialog():
+        st.dataframe(
+            df,
+            use_container_width=True,
+            height=height,
+            hide_index=True
+        )
+        if st.button("✕ 关闭", type="primary"):
+            st.rerun()
+    _fs_dialog()
 
 
 def _wrap_fullscreen(inner_html, title='', fullscreen=True):
@@ -1241,15 +1181,10 @@ def _wrap_fullscreen(inner_html, title='', fullscreen=True):
     import uuid as _uuid_mod
     if not fullscreen or not inner_html:
         return inner_html, None
-    _inject_fs_js()
     tbl_id = 'tbl_' + _uuid_mod.uuid4().hex[:8]
-    fs_btn = (
-        f'<button class="_fs-btn" data-fs-id="{tbl_id}" data-fs-title="{title}" '
-        f'style="float:right;margin-bottom:4px;padding:3px 10px;font-size:12px;'
-        f'background:#1d4ed8;color:#fff;border:none;border-radius:4px;cursor:pointer;">⛶ 全屏</button>'
-    )
+    # 不再使用 JS 全屏按钮，改为在表格上方显示提示
     title_html = f'<div style="font-weight:700;font-size:14px;margin-bottom:4px;">{title}</div>' if title else ''
-    full_html = f'{title_html}{fs_btn}<div id="{tbl_id}">{inner_html}</div>'
+    full_html = f'{title_html}<div id="{tbl_id}">{inner_html}</div>'
     return full_html, tbl_id
 
 
@@ -5087,9 +5022,11 @@ with tabs[4]:
     cur_by_model   = _agg_by_dims(cur_rows_all, ['渠道','品类','型号'])
     cur_by_cat     = _agg_by_dims(cur_rows_all, ['渠道','品类'])
     cur_by_channel = _agg_by_dims(cur_rows_all, ['渠道'])
+    cur_by_store   = _agg_by_dims(cur_rows_all, ['渠道','店铺'])  # 新增：店铺级聚合
     prev_by_model  = _agg_by_dims(prev_rows_all, ['渠道','品类','型号'])
     prev_by_cat    = _agg_by_dims(prev_rows_all, ['渠道','品类'])
     prev_by_channel= _agg_by_dims(prev_rows_all, ['渠道'])
+    prev_by_store  = _agg_by_dims(prev_rows_all, ['渠道','店铺'])  # 新增：店铺级聚合
 
     prev_sum_all = summarize(prev_rows_all)
     def _global_chg(k):
@@ -5410,6 +5347,96 @@ with tabs[4]:
             _chf_html = _html_table(_ch_flow, height=min(340, len(_ch_flow)*36+50))
             st.markdown(_wrap_fullscreen(_chf_html, title='👥 渠道流量结构')[0], unsafe_allow_html=True)
 
+        # 店铺级流量下钻分析（人侧核心增强）
+        st.markdown('#### 🏬 店铺流量健康度诊断（下钻分析）')
+        st.caption('识别哪个店铺的哪个指标（流量、转化率、客单价、加购率）出现问题')
+
+        _store_flow = []
+        for store_key, cv in cur_by_store.items():
+            pv = prev_by_store.get(store_key, {})
+            _cv_vis  = cv.get('商品访客数', 0)
+            _pv_vis  = pv.get('商品访客数', 0)
+            _cv_buyer = cv.get('支付买家数', 0)
+            _pv_buyer = pv.get('支付买家数', 0)
+            _cv_cvr  = cv.get('支付转化率', 0) * 100
+            _pv_cvr  = pv.get('支付转化率', 0) * 100
+            _cv_aov  = cv.get('客单价', 0)
+            _pv_aov  = pv.get('客单价', 0)
+            _cv_cart = cv.get('商品加购人数', 0)
+            _pv_cart = pv.get('商品加购人数', 0)
+            _cv_gmv  = cv.get('支付金额', 0)
+            _pv_gmv  = pv.get('支付金额', 0)
+
+            _vis_chg = (_cv_vis - _pv_vis) / _pv_vis if _pv_vis else None
+            _cvr_chg = (_cv_cvr - _pv_cvr)  # 百分点变化，不需除以100
+            _aov_chg = (_cv_aov - _pv_aov) / _pv_aov if _pv_aov else None
+            _cart_chg = (_cv_cart - _pv_cart) / _pv_cart if _pv_cart else None
+            _gmv_chg = (_cv_gmv - _pv_gmv) / _pv_gmv if _pv_gmv else None
+
+            # 识别问题指标
+            problem_indicators = []
+            _has_severe_problem = False
+            if _vis_chg is not None and _vis_chg < -0.08:
+                problem_indicators.append(f"流量{_pct(_vis_chg)}")
+                if _vis_chg < -0.15:
+                    _has_severe_problem = True
+            if _cvr_chg is not None and _cvr_chg < -0.08:
+                problem_indicators.append(f"转化率{_cvr_chg:+.2f}pp")
+                if _cvr_chg < -0.15:
+                    _has_severe_problem = True
+            if _aov_chg is not None and _aov_chg < -0.06:
+                problem_indicators.append(f"客单价{_pct(_aov_chg)}")
+                if _aov_chg < -0.15:
+                    _has_severe_problem = True
+            if _cart_chg is not None and _cart_chg < -0.08:
+                problem_indicators.append(f"加购率{_pct(_cart_chg)}")
+                if _cart_chg < -0.15:
+                    _has_severe_problem = True
+
+            _problem_str = ' | '.join(problem_indicators) if problem_indicators else '✅ 正常'
+
+            # 计算GMV变化的数值（用于排序）
+            _gmv_chg_val = (_gmv_chg or 0)
+
+            _store_flow.append({
+                '渠道': store_key[0],
+                '店铺': store_key[1],
+                '本期GMV': f'¥{_cv_gmv:,.0f}',
+                'GMV变化': f"<span style='color:{'#22c55e' if _gmv_chg_val >= 0 else '#ef4444'};font-weight:700'>{_pct(_gmv_chg)}</span>",
+                '_gmv_chg_val': _gmv_chg_val,  # 内部使用，不显示
+                '访客数': f'{_cv_vis:,.0f}',
+                '访客变化': f"<span style='color:{'#22c55e' if (_vis_chg or 0) >= 0 else '#ef4444'}'>{_pct(_vis_chg)}</span>",
+                '_vis_chg_val': (_vis_chg or 0),
+                '转化率': f'{_cv_cvr:.2f}%',
+                '转化变化': f"<span style='color:{'#22c55e' if _cvr_chg >= 0 else '#ef4444'}'>{_cvr_chg:+.2f}pp</span>",
+                '_cvr_chg_val': _cvr_chg,
+                '客单价': f'¥{_cv_aov:,.0f}',
+                '客单变化': f"<span style='color:{'#22c55e' if (_aov_chg or 0) >= 0 else '#ef4444'}'>{_pct(_aov_chg)}</span>",
+                '_aov_chg_val': (_aov_chg or 0),
+                '加购人数': f'{_cv_cart:,.0f}',
+                '加购变化': f"<span style='color:{'#22c55e' if (_cart_chg or 0) >= 0 else '#ef4444'}'>{_pct(_cart_chg)}</span>",
+                '_cart_chg_val': (_cart_chg or 0),
+                '问题指标': _problem_str,
+                '_has_severe_problem': _has_severe_problem,
+            })
+
+        # 排序：问题店铺在前（严重问题最前），然后是GMV下降幅度
+        _store_flow_sorted = sorted(
+            _store_flow,
+            key=lambda x: (
+                0 if '✅' in x['问题指标'] else (2 if x['_has_severe_problem'] else 1),  # 0=正常, 1=轻度问题, 2=严重问题
+                x['_gmv_chg_val']  # GMV变化升序（问题多的在前）
+            )
+        )
+        # 移除内部使用的排序字段
+        for row in _store_flow_sorted:
+            for key in ['_gmv_chg_val', '_vis_chg_val', '_cvr_chg_val', '_aov_chg_val', '_cart_chg_val', '_has_severe_problem']:
+                row.pop(key, None)
+
+        if _store_flow_sorted:
+            _store_html = _html_table(_store_flow_sorted, height=min(400, len(_store_flow_sorted)*36+50))
+            st.markdown(_wrap_fullscreen(_store_html, title='🏬 店铺流量健康度')[0], unsafe_allow_html=True)
+
         # 加购漏斗（人侧视角）
         st.markdown('#### 🔽 全域加购漏斗（人侧）')
         _funnel_data = [
@@ -5594,6 +5621,98 @@ with tabs[4]:
             st.markdown(_html_table(aov_drop_rows[:15], height=min(420, len(aov_drop_rows)*36+40)), unsafe_allow_html=True)
         else:
             st.info('✅ 未发现客单价明显下跌型号（阈值：降幅>10%，件数>10）。')
+
+        # 单品级下钻诊断（货侧核心增强）
+        st.markdown('#### 🔍 单品健康度诊断（下钻分析）')
+        st.caption('识别哪个单品的哪个指标（流量、转化率、客单价、加购率）出现问题')
+
+        _model_diag = []
+        for mk_key, mv in cur_by_model.items():
+            pv_m = prev_by_model.get(mk_key, {})
+            _cv_vis  = mv.get('商品访客数', 0)
+            _pv_vis  = pv_m.get('商品访客数', 0)
+            _cv_buyer = mv.get('支付买家数', 0)
+            _cv_cvr  = mv.get('支付转化率', 0) * 100
+            _pv_cvr  = pv_m.get('支付转化率', 0) * 100
+            _cv_aov  = mv.get('客单价', 0)
+            _pv_aov  = pv_m.get('客单价', 0)
+            _cv_cart = mv.get('商品加购人数', 0)
+            _pv_cart = pv_m.get('商品加购人数', 0)
+            _cv_gmv  = mv.get('支付金额', 0)
+            _pv_gmv  = pv_m.get('支付金额', 0)
+
+            _vis_chg = (_cv_vis - _pv_vis) / _pv_vis if _pv_vis else None
+            _cvr_chg = _cv_cvr - _pv_cvr  # 百分点变化
+            _aov_chg = (_cv_aov - _pv_aov) / _pv_aov if _pv_aov else None
+            _cart_chg = (_cv_cart - _pv_cart) / _pv_cart if _pv_cart else None
+            _gmv_chg = (_cv_gmv - _pv_gmv) / _pv_gmv if _pv_gmv else None
+
+            # 识别问题指标（只标记明显下降）
+            problem_indicators = []
+            _has_severe_problem = False
+            if _vis_chg is not None and _vis_chg < -0.08 and _cv_vis >= 30:
+                problem_indicators.append(f"流量{_pct(_vis_chg)}")
+                if _vis_chg < -0.15:
+                    _has_severe_problem = True
+            if _cvr_chg < -0.08:
+                problem_indicators.append(f"转化率{_cvr_chg:+.2f}pp")
+                if _cvr_chg < -0.15:
+                    _has_severe_problem = True
+            if _aov_chg is not None and _aov_chg < -0.06:
+                problem_indicators.append(f"客单价{_pct(_aov_chg)}")
+                if _aov_chg < -0.15:
+                    _has_severe_problem = True
+            if _cart_chg is not None and _cart_chg < -0.08 and _cv_cart >= 20:
+                problem_indicators.append(f"加购率{_pct(_cart_chg)}")
+                if _cart_chg < -0.15:
+                    _has_severe_problem = True
+
+            _problem_str = ' | '.join(problem_indicators) if problem_indicators else '✅ 正常'
+
+            # 只保留有问题的单品或GMVTOP20的单品
+            _is_top_model = _cv_gmv >= sorted([v.get('支付金额',0) for v in cur_by_model.values()], reverse=True)[:20][-1] if len(cur_by_model) >= 20 else True
+
+            if problem_indicators or _is_top_model:
+                _gmv_chg_val = (_gmv_chg or 0)
+                _model_diag.append({
+                    '渠道': mk_key[0],
+                    '品类': mk_key[1],
+                    '型号': mk_key[2],
+                    '本期GMV': f'¥{_cv_gmv:,.0f}',
+                    'GMV变化': f"<span style='color:{'#22c55e' if (_gmv_chg or 0) >= 0 else '#ef4444'};font-weight:700'>{_pct(_gmv_chg)}</span>",
+                    '_gmv_chg_val': _gmv_chg_val,
+                    '访客数': f'{_cv_vis:,.0f}',
+                    '访客变化': f"<span style='color:{'#22c55e' if (_vis_chg or 0) >= 0 else '#ef4444'}'>{_pct(_vis_chg)}</span>",
+                    '_vis_chg_val': (_vis_chg or 0),
+                    '转化率': f'{_cv_cvr:.2f}%',
+                    '转化变化': f"<span style='color:{'#22c55e' if _cvr_chg >= 0 else '#ef4444'}'>{_cvr_chg:+.2f}pp</span>",
+                    '_cvr_chg_val': _cvr_chg,
+                    '客单价': f'¥{_cv_aov:,.0f}',
+                    '客单变化': f"<span style='color:{'#22c55e' if (_aov_chg or 0) >= 0 else '#ef4444'}'>{_pct(_aov_chg)}</span>",
+                    '_aov_chg_val': (_aov_chg or 0),
+                    '加购人数': f'{_cv_cart:,.0f}',
+                    '加购变化': f"<span style='color:{'#22c55e' if (_cart_chg or 0) >= 0 else '#ef4444'}'>{_pct(_cart_chg)}</span>",
+                    '_cart_chg_val': (_cart_chg or 0),
+                    '问题指标': _problem_str,
+                    '_has_severe_problem': _has_severe_problem,
+                })
+
+        # 排序：问题单品在前（严重问题最前），然后是GMV下降幅度
+        _model_diag_sorted = sorted(
+            _model_diag,
+            key=lambda x: (
+                0 if '✅' in x['问题指标'] else (2 if x['_has_severe_problem'] else 1),
+                    x['_gmv_chg_val']
+                )
+            )
+        # 移除内部使用的排序字段
+        for row in _model_diag_sorted:
+            for key in ['_gmv_chg_val', '_vis_chg_val', '_cvr_chg_val', '_aov_chg_val', '_cart_chg_val', '_has_severe_problem']:
+                row.pop(key, None)
+
+        if _model_diag_sorted:
+            _model_html = _html_table(_model_diag_sorted[:30], height=min(600, len(_model_diag_sorted)*36+50))
+            st.markdown(_wrap_fullscreen(_model_html, title='🔍 单品健康度诊断')[0], unsafe_allow_html=True)
 
     # ────────────────────────────────────────────────────────────
     # 【场】：渠道 ROI 矩阵、推广诊断、流量效率
@@ -5799,6 +5918,141 @@ with tabs[4]:
             else:
                 st.info('✅ 推广数据表现平稳，未发现明显异常。')
 
+        # 推广指标下钻诊断（场侧核心增强）
+        if promo_rows:
+            st.markdown('<hr style="margin:16px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
+            st.markdown('#### 🎯 推广计划健康度诊断（下钻分析）')
+            st.caption('识别哪个推广计划/营销场景的哪个指标（直接ROI、总ROI、花费、转化率、CPC、点击率）出现问题')
+
+            # 按推广计划和营销场景聚合
+            def _agg_promo_by_dims(rows, dims):
+                result = {}
+                for r in rows:
+                    key = tuple(r.get(d, '') for d in dims)
+                    if key not in result:
+                        result[key] = {'_花费': 0, '_展现数': 0, '_点击数': 0, '_直接订单金额': 0, '_总订单金额': 0, '_总成交订单量': 0, '_直接订单量': 0}
+                    for k in ['_花费', '_展现数', '_点击数', '_直接订单金额', '_总订单金额', '_总成交订单量', '_直接订单量']:
+                        result[key][k] += r.get(k, 0)
+                return result
+
+            # 本期和推广对比期数据
+            promo_cur  = [r for r in promo_rows if s  <= r.get('_date','') <= e  ]
+            promo_prev = [r for r in promo_rows if _t2_prev_s <= r.get('_date','') <= _t2_prev_e]
+
+            # 按推广计划聚合
+            promo_by_plan_cur = _agg_promo_by_dims(promo_cur, ['_渠道', '_店铺', '_营销场景', '推广计划'])
+            promo_by_plan_prev = _agg_promo_by_dims(promo_prev, ['_渠道', '_店铺', '_营销场景', '推广计划'])
+
+            # 按营销场景聚合
+            promo_by_scene_cur = _agg_promo_by_dims(promo_cur, ['_渠道', '_店铺', '_营销场景'])
+            promo_by_scene_prev = _agg_promo_by_dims(promo_prev, ['_渠道', '_店铺', '_营销场景'])
+
+            # 合并两个维度用于分析
+            _promo_diag = []
+
+            # 先分析推广计划级别
+            for plan_key, pv in promo_by_plan_cur.items():
+                pv_p = promo_by_plan_prev.get(plan_key, {})
+
+                _spend_cur = pv['_花费']; _spend_prev = pv_p.get('_花费', 0)
+                _impr_cur = pv['_展现数']; _impr_prev = pv_p.get('_展现数', 0)
+                _click_cur = pv['_点击数']; _click_prev = pv_p.get('_点击数', 0)
+                _direct_cur = pv['_直接订单金额']; _direct_prev = pv_p.get('_直接订单金额', 0)
+                _total_cur = pv['_总订单金额']; _total_prev = pv_p.get('_总订单金额', 0)
+
+                # 计算指标
+                _direct_roi_cur = _direct_cur / _spend_cur if _spend_cur else 0
+                _direct_roi_prev = _direct_prev / _spend_prev if _spend_prev else 0
+                _total_roi_cur = _total_cur / _spend_cur if _spend_cur else 0
+                _total_roi_prev = _total_prev / _spend_prev if _spend_prev else 0
+                _ctr_cur = _click_cur / _impr_cur * 100 if _impr_cur else 0
+                _ctr_prev = _click_prev / _impr_prev * 100 if _impr_prev else 0
+                _cpc_cur = _spend_cur / _click_cur if _click_cur else 0
+                _cpc_prev = _spend_prev / _click_prev if _click_prev else 0
+
+                # 计算变化
+                _spend_chg = (_spend_cur - _spend_prev) / _spend_prev if _spend_prev else None
+                _direct_roi_chg = (_direct_roi_cur - _direct_roi_prev) / _direct_roi_prev if _direct_roi_prev else None
+                _total_roi_chg = (_total_roi_cur - _total_roi_prev) / _total_roi_prev if _total_roi_prev else None
+                _ctr_chg = (_ctr_cur - _ctr_prev) / _ctr_prev * 100 if _ctr_prev else None
+                _cpc_chg = (_cpc_cur - _cpc_prev) / _cpc_prev if _cpc_prev else None
+
+                # 识别问题指标
+                problem_indicators = []
+                _has_severe_problem = False
+
+                if _spend_chg is not None and _spend_chg < -0.20 and _spend_cur >= 100:
+                    problem_indicators.append(f"花费{_pct(_spend_chg)}")
+                    if _spend_chg < -0.50:
+                        _has_severe_problem = True
+
+                if _direct_roi_chg is not None and _direct_roi_chg < -0.15:
+                    problem_indicators.append(f"直接ROI{_pct(_direct_roi_chg)}")
+                    if _direct_roi_chg < -0.30:
+                        _has_severe_problem = True
+
+                if _total_roi_chg is not None and _total_roi_chg < -0.15:
+                    problem_indicators.append(f"总ROI{_pct(_total_roi_chg)}")
+                    if _total_roi_chg < -0.30:
+                        _has_severe_problem = True
+
+                if _ctr_chg is not None and _ctr_chg < -0.15:
+                    problem_indicators.append(f"点击率{_pct(_ctr_chg)}")
+                    if _ctr_chg < -0.30:
+                        _has_severe_problem = True
+
+                if _cpc_chg is not None and _cpc_chg > 0.30:
+                    problem_indicators.append(f"CPC{_pct(_cpc_chg)}")
+                    if _cpc_chg > 0.50:
+                        _has_severe_problem = True
+
+                _problem_str = ' | '.join(problem_indicators) if problem_indicators else '✅ 正常'
+
+                # 只保留有问题的推广计划或花费TOP20的计划
+                _is_top_plan = _spend_cur >= sorted([v['_花费'] for v in promo_by_plan_cur.values()], reverse=True)[:20][-1] if len(promo_by_plan_cur) >= 20 else True
+
+                if problem_indicators or _is_top_plan:
+                    _promo_diag.append({
+                        '渠道': plan_key[0],
+                        '店铺': plan_key[1],
+                        '营销场景': plan_key[2],
+                        '推广计划': plan_key[3],
+                        '花费': f'¥{_spend_cur:,.0f}',
+                        '花费变化': f"<span style='color:{'#22c55e' if (_spend_chg or 0) >= 0 else '#ef4444'}'>{_pct(_spend_chg)}</span>",
+                        '_spend_chg_val': (_spend_chg or 0),
+                        '直接ROI': f'{_direct_roi_cur:.2f}',
+                        '直接ROI变化': f"<span style='color:{'#22c55e' if (_direct_roi_chg or 0) >= 0 else '#ef4444'}'>{_pct(_direct_roi_chg)}</span>",
+                        '_direct_roi_chg_val': (_direct_roi_chg or 0),
+                        '总ROI': f'{_total_roi_cur:.2f}',
+                        '总ROI变化': f"<span style='color:{'#22c55e' if (_total_roi_chg or 0) >= 0 else '#ef4444'}'>{_pct(_total_roi_chg)}</span>",
+                        '_total_roi_chg_val': (_total_roi_chg or 0),
+                        '点击率': f'{_ctr_cur:.2f}%',
+                        'CTR变化': f"<span style='color:{'#22c55e' if (_ctr_chg or 0) >= 0 else '#ef4444'}'>{_pct(_ctr_chg)}</span>",
+                        '_ctr_chg_val': (_ctr_chg or 0),
+                        'CPC': f'¥{_cpc_cur:.2f}',
+                        'CPC变化': f"<span style='color:{'#22c55e' if (_cpc_chg or 0) <= 0 else '#ef4444'}'>{_pct(_cpc_chg)}</span>",
+                        '_cpc_chg_val': (_cpc_chg or 0),
+                        '问题指标': _problem_str,
+                        '_has_severe_problem': _has_severe_problem,
+                    })
+
+            # 排序：问题计划在前（严重问题最前）
+            _promo_diag_sorted = sorted(
+                _promo_diag,
+                key=lambda x: (
+                    0 if '✅' in x['问题指标'] else (2 if x['_has_severe_problem'] else 1),
+                    min(x['_spend_chg_val'], x['_direct_roi_chg_val'], x['_total_roi_chg_val'], x['_ctr_chg_val'], -x['_cpc_chg_val'])
+                )
+            )
+            # 移除内部使用的排序字段
+            for row in _promo_diag_sorted:
+                for key in ['_spend_chg_val', '_direct_roi_chg_val', '_total_roi_chg_val', '_ctr_chg_val', '_cpc_chg_val', '_has_severe_problem']:
+                    row.pop(key, None)
+
+            if _promo_diag_sorted:
+                _promo_html = _html_table(_promo_diag_sorted[:30], height=min(700, len(_promo_diag_sorted)*36+50))
+                st.markdown(_wrap_fullscreen(_promo_html, title='🎯 推广计划健康度')[0], unsafe_allow_html=True)
+
     # ────────────────────────────────────────────────────────────
     # 【执行清单】：P0-P3 行动项（基于人货场诊断结果自动生成）
     # ────────────────────────────────────────────────────────────
@@ -5951,6 +6205,203 @@ with tabs[4]:
                     f'<b>⚠️ 升级预案：</b>若7天无改善，启动供应链专项整改',
                     '客服+仓储+质检', '2周内', '退款率<5%',
                     recover=f'¥{ref_loss:,.0f}')
+
+        # ── 基于下钻分析的具体措施 ──
+        # 1. 问题店铺的具体措施
+        if cur_by_store:
+            store_problems = []
+            for store_key, cv in cur_by_store.items():
+                pv = prev_by_store.get(store_key, {})
+                _cv_vis  = cv.get('商品访客数', 0)
+                _pv_vis  = pv.get('商品访客数', 0)
+                _cv_cvr  = cv.get('支付转化率', 0) * 100
+                _pv_cvr  = pv.get('支付转化率', 0) * 100
+                _cv_aov  = cv.get('客单价', 0)
+                _pv_aov  = pv.get('客单价', 0)
+                _cv_cart = cv.get('商品加购人数', 0)
+                _pv_cart = pv.get('商品加购人数', 0)
+
+                _vis_chg = (_cv_vis - _pv_vis) / _pv_vis if _pv_vis else None
+                _cvr_chg = _cv_cvr - _pv_cvr
+                _aov_chg = (_cv_aov - _pv_aov) / _pv_aov if _pv_aov else None
+                _cart_chg = (_cv_cart - _pv_cart) / _pv_cart if _pv_cart else None
+
+                problems = []
+                if _vis_chg is not None and _vis_chg < -0.08:
+                    problems.append(('流量', _vis_chg))
+                if _cvr_chg < -0.08:
+                    problems.append(('转化率', _cvr_chg/100))
+                if _aov_chg is not None and _aov_chg < -0.06:
+                    problems.append(('客单价', _aov_chg))
+                if _cart_chg is not None and _cart_chg < -0.08:
+                    problems.append(('加购率', _cart_chg))
+
+                if problems:
+                    store_problems.append({
+                        '渠道': store_key[0],
+                        '店铺': store_key[1],
+                        '问题指标': [p[0] for p in problems],
+                        '问题详情': [f"{p[0]}{_pct(p[1])}" for p in problems],
+                        '严重程度': 'P0' if any(abs(p[1]) > 0.15 for p in problems if p[1] is not None) else 'P1'
+                    })
+
+            # 生成店铺级行动建议
+            for sp in store_problems[:5]:  # 只处理前5个最严重的问题店铺
+                priority = sp['严重程度']
+                problem_desc = '、'.join(sp['问题详情'])
+                add_action(priority, f'【店铺·{sp["店铺"]}】{sp["渠道"]}店铺指标异常',
+                    f'<b>现状：</b>{sp["店铺"]}的{problem_desc}<br><br>'
+                    f'<b>🔍 根因排查：</b><br>'
+                    f'<b>L2 店铺层级流量下降？</b> 检查店铺层级流量来源变化<br>'
+                    f'<b>L2 店铺活动力度不足？</b> 对比竞品店铺活动力度<br>'
+                    f'<b>L2 店铺DSR评分下降？</b> 检查店铺近期评价和DSR变化<br><br>'
+                    f'<b>⚡ 应急措施 [快]：</b><br>'
+                    f'① 临时增加店铺推广预算20%<br>'
+                    f'② 设置店铺限时折扣/满减活动<br>'
+                    f'③ 优化店铺首页和主图CTR',
+                    f'{sp["店铺"]}店铺负责人', '48小时内', f'店铺核心指标环比转正',
+                    recover=f'预计挽回: {sp["店铺"]}')
+
+        # 2. 问题单品的具体措施
+        if cur_by_model:
+            model_problems = []
+            for mk_key, mv in cur_by_model.items():
+                pv_m = prev_by_model.get(mk_key, {})
+                _cv_vis  = mv.get('商品访客数', 0)
+                _pv_vis  = pv_m.get('商品访客数', 0)
+                _cv_cvr  = mv.get('支付转化率', 0) * 100
+                _pv_cvr  = pv_m.get('支付转化率', 0) * 100
+                _cv_aov  = mv.get('客单价', 0)
+                _pv_aov  = pv_m.get('客单价', 0)
+
+                _vis_chg = (_cv_vis - _pv_vis) / _pv_vis if _pv_vis else None
+                _cvr_chg = _cv_cvr - _pv_cvr
+                _aov_chg = (_cv_aov - _pv_aov) / _pv_aov if _pv_aov else None
+
+                problems = []
+                if _vis_chg is not None and _vis_chg < -0.08 and _cv_vis >= 30:
+                    problems.append(('流量', _vis_chg))
+                if _cvr_chg < -0.08:
+                    problems.append(('转化率', _cvr_chg/100))
+                if _aov_chg is not None and _aov_chg < -0.06:
+                    problems.append(('客单价', _aov_chg))
+
+                if problems:
+                    model_problems.append({
+                        '渠道': mk_key[0],
+                        '品类': mk_key[1],
+                        '型号': mk_key[2],
+                        '问题指标': [p[0] for p in problems],
+                        '问题详情': [f"{p[0]}{_pct(p[1])}" for p in problems],
+                        '严重程度': 'P0' if any(abs(p[1]) > 0.15 for p in problems if p[1] is not None) else 'P1',
+                        'GMV': mv.get('支付金额', 0)
+                    })
+
+            # 按GMV排序，优先处理高GMV的问题单品
+            model_problems.sort(key=lambda x: x['GMV'], reverse=True)
+
+            # 生成单品级行动建议
+            for mp in model_problems[:10]:  # 只处理前10个最严重的问题单品
+                priority = mp['严重程度']
+                problem_desc = '、'.join(mp['问题详情'])
+                add_action(priority, f'【单品·{mp["型号"]}】{mp["品类"]}单品指标异常',
+                    f'<b>现状：</b>{mp["型号"]}的{problem_desc}，本期GMV ¥{mp["GMV"]:,.0f}<br><br>'
+                    f'<b>🔍 根因排查：</b><br>'
+                    f'<b>L2 详情页吸引力下降？</b> 做首屏3秒测试，检查主图和详情页<br>'
+                    f'<b>L2 价格竞争力不足？</b> 平台搜索同款竞品，对比售价<br>'
+                    f'<b>L2 差评/库存影响？</b> 导出近90天评价，检查负面评价<br><br>'
+                    f'<b>⚡ 应急措施 [快]：</b><br>'
+                    f'① 临时设置限时折扣/赠品<br>'
+                    f'② 优化主图和详情页前3屏<br>'
+                    f'③ 检查推广计划和关键词质量分',
+                    f'{mp["渠道"]}运营', '3天内', f'{mp["型号"]}转化率≥上期90%',
+                    recover=f'¥{mp["GMV"] * 0.2:,.0f}')
+
+        # 3. 问题推广计划的具体措施
+        if promo_rows:
+            promo_cur  = [r for r in promo_rows if s  <= r.get('_date','') <= e  ]
+            promo_prev = [r for r in promo_rows if _t2_prev_s <= r.get('_date','') <= _t2_prev_e]
+
+            def _agg_promo_by_dims(rows, dims):
+                result = {}
+                for r in rows:
+                    key = tuple(r.get(d, '') for d in dims)
+                    if key not in result:
+                        result[key] = {'_花费': 0, '_直接订单金额': 0, '_总订单金额': 0, '_点击数': 0, '_展现数': 0}
+                    for k in ['_花费', '_直接订单金额', '_总订单金额', '_点击数', '_展现数']:
+                        result[key][k] += r.get(k, 0)
+                return result
+
+            promo_by_plan_cur = _agg_promo_by_dims(promo_cur, ['_渠道', '_店铺', '_营销场景', '推广计划'])
+            promo_by_plan_prev = _agg_promo_by_dims(promo_prev, ['_渠道', '_店铺', '_营销场景', '推广计划'])
+
+            promo_problems = []
+            for plan_key, pv in promo_by_plan_cur.items():
+                pv_p = promo_by_plan_prev.get(plan_key, {})
+                _spend_cur = pv['_花费']; _spend_prev = pv_p.get('_花费', 0)
+                _direct_cur = pv['_直接订单金额']; _direct_prev = pv_p.get('_直接订单金额', 0)
+                _total_cur = pv['_总订单金额']; _total_prev = pv_p.get('_总订单金额', 0)
+                _click_cur = pv['_点击数']; _click_prev = pv_p.get('_点击数', 0)
+                _impr_cur = pv['_展现数']; _impr_prev = pv_p.get('_展现数', 0)
+
+                _direct_roi_cur = _direct_cur / _spend_cur if _spend_cur else 0
+                _direct_roi_prev = _direct_prev / _spend_prev if _spend_prev else 0
+                _total_roi_cur = _total_cur / _spend_cur if _spend_cur else 0
+                _total_roi_prev = _total_prev / _spend_prev if _spend_prev else 0
+                _ctr_cur = _click_cur / _impr_cur * 100 if _impr_cur else 0
+                _ctr_prev = _click_prev / _impr_prev * 100 if _impr_prev else 0
+                _cpc_cur = _spend_cur / _click_cur if _click_cur else 0
+                _cpc_prev = _spend_prev / _click_prev if _click_prev else 0
+
+                _spend_chg = (_spend_cur - _spend_prev) / _spend_prev if _spend_prev else None
+                _direct_roi_chg = (_direct_roi_cur - _direct_roi_prev) / _direct_roi_prev if _direct_roi_prev else None
+                _total_roi_chg = (_total_roi_cur - _total_roi_prev) / _total_roi_prev if _total_roi_prev else None
+                _ctr_chg = (_ctr_cur - _ctr_prev) / _ctr_prev * 100 if _ctr_prev else None
+                _cpc_chg = (_cpc_cur - _cpc_prev) / _cpc_prev if _cpc_prev else None
+
+                problems = []
+                if _spend_chg is not None and _spend_chg < -0.20 and _spend_cur >= 100:
+                    problems.append(('花费', _spend_chg))
+                if _direct_roi_chg is not None and _direct_roi_chg < -0.15:
+                    problems.append(('直接ROI', _direct_roi_chg))
+                if _total_roi_chg is not None and _total_roi_chg < -0.15:
+                    problems.append(('总ROI', _total_roi_chg))
+                if _ctr_chg is not None and _ctr_chg < -0.15:
+                    problems.append(('点击率', _ctr_chg/100))
+                if _cpc_chg is not None and _cpc_chg > 0.30:
+                    problems.append(('CPC', _cpc_chg))
+
+                if problems:
+                    promo_problems.append({
+                        '渠道': plan_key[0],
+                        '店铺': plan_key[1],
+                        '营销场景': plan_key[2],
+                        '推广计划': plan_key[3],
+                        '问题指标': [p[0] for p in problems],
+                        '问题详情': [f"{p[0]}{_pct(p[1])}" for p in problems],
+                        '严重程度': 'P0' if any(abs(p[1]) > 0.30 for p in problems if p[1] is not None) else 'P1',
+                        '花费': _spend_cur
+                    })
+
+            # 按花费排序，优先处理高花费的问题推广计划
+            promo_problems.sort(key=lambda x: x['花费'], reverse=True)
+
+            # 生成推广计划级行动建议
+            for pp in promo_problems[:10]:  # 只处理前10个最严重的问题推广计划
+                priority = pp['严重程度']
+                problem_desc = '、'.join(pp['问题详情'])
+                add_action(priority, f'【推广·{pp["推广计划"]}】{pp["营销场景"]}推广指标异常',
+                    f'<b>现状：</b>{pp["推广计划"]}的{problem_desc}，本期花费 ¥{pp["花费"]:,.0f}<br><br>'
+                    f'<b>🔍 根因排查：</b><br>'
+                    f'<b>L2 创意质量下降？</b> 检查主图/视频创意CTR变化<br>'
+                    f'<b>L2 定向人群过时？</b> 检查人群包新鲜度和覆盖率<br>'
+                    f'<b>L2 关键词质量分下降？</b> 检查关键词质量分和出价竞争力<br><br>'
+                    f'<b>⚡ 应急措施 [快]：</b><br>'
+                    f'① ROI<1的计划立即暂停<br>'
+                    f'② 更换创意主图/视频（A/B测试3组）<br>'
+                    f'③ 检查落地页加载速度和转化路径',
+                    f'{pp["渠道"]}推广负责人', '24小时内', f'{pp["推广计划"]} ROI≥上期80%',
+                    recover=f'¥{pp["花费"] * 0.3:,.0f}')
 
         # ── 常规措施 ──
         add_action('P3', '【常规】每周一上午健康检查',
