@@ -1002,6 +1002,42 @@ def group(rows, key):
         out.append(v)
     return sorted(out, key=lambda x: x['支付金额'], reverse=True)
 
+
+# ========== 全局全屏 JS（所有表格复用） ==========
+_FS_GLOBAL_JS = """<script>
+(function(){
+if(window._fsInited)return;window._fsInited=1;
+window._fsOpen=function(el){
+var id=el.getAttribute('data-fs-id');
+var title=el.getAttribute('data-fs-title')||'';
+var wrap=document.getElementById(id);
+if(!wrap)return;
+var ov=document.getElementById(id+'_fs');
+if(ov){ov.style.display='flex';return;}
+ov=document.createElement('div');
+ov.id=id+'_fs';
+ov.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-shrink:0;padding:0 8px;"><span style="color:#fff;font-size:18px;font-weight:700;">'+title+'</span><button onclick="this.parentElement.parentElement.style.display=\\'none\\'" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:14px;font-weight:600;">✕ 关闭</button></div><div style="flex:1;overflow:auto;background:#fff;border-radius:8px;min-height:0;">'+wrap.innerHTML+'</div>';
+ov.style.cssText='display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.82);z-index:2147483647;flex-direction:column;padding:20px;box-sizing:border-box;';
+document.body.appendChild(ov);
+};
+window._fsClose=function(id){
+var ov=document.getElementById(id+'_fs');
+if(ov)ov.style.display='none';
+};
+})();
+</script>"""
+
+_FS_INJECTED = False
+
+
+def _inject_fs_js():
+    """注入全局全屏 JS（仅首次调用生效）"""
+    global _FS_INJECTED
+    if not _FS_INJECTED:
+        _FS_INJECTED = True
+        st.markdown(_FS_GLOBAL_JS, unsafe_allow_html=True)
+
+
 def pivot_agg(rows, row_dims, col_dims, val_metrics, all_dims):
     """
     通用透视表聚合函数。
