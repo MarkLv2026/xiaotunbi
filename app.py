@@ -44,8 +44,13 @@ def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> 
     """
     import base64
     import json
+    import time
     import urllib.request
     import urllib.error
+    import datetime as _dt
+
+    _start_time = _dt.datetime.now()
+    print(f"[GitHub API] 开始推送 {repo_path} @ {_start_time.strftime('%H:%M:%S')}")
 
     # 读取 secrets（优先 secrets，回退内置 token）
     repo = 'MarkLv2026/xiaotunbi'
@@ -66,16 +71,30 @@ def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> 
         'Accept': 'application/vnd.github+json',
     }
 
-    def _api(method: str, url: str, body=None):
+    import time
+    
+    def _api(method: str, url: str, body=None, max_retries=3):
+        """带重试的 API 请求"""
         data = json.dumps(body).encode('utf-8') if body else None
         req = urllib.request.Request(url, data=data, headers=headers_base, method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                return json.loads(resp.read().decode('utf-8')), None
-        except urllib.error.HTTPError as exc:
-            return None, f'HTTP {exc.code}: {exc.read().decode("utf-8", errors="replace")[:200]}'
-        except Exception as exc:
-            return None, str(exc)
+        
+        for attempt in range(max_retries):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    return json.loads(resp.read().decode('utf-8')), None
+            except urllib.error.HTTPError as exc:
+                err_msg = f'HTTP {exc.code}: {exc.read().decode("utf-8", errors="replace")[:200]}'
+                if attempt < max_retries - 1 and exc.code in [429, 500, 502, 503, 504]:
+                    time.sleep(2 ** attempt)  # 指数退避
+                    continue
+                return None, err_msg
+            except Exception as exc:
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+                    continue
+                return None, str(exc)
+        
+        return None, '重试次数已用尽'
 
     # ── Step 1: 获取远程 HEAD ──
     ref_data, err = _api('GET', f'{api_base}/git/refs/heads/main')
@@ -122,6 +141,7 @@ def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> 
     if err:
         return False, f'更新 ref 失败（可能存在并发冲突，请稍后重试）: {err}'
 
+    print(f"[GitHub API] 推送成功 ✅ commit: {new_commit_sha[:7]} (耗时 {(_dt.datetime.now() - _start_time).total_seconds():.1f}s)")
     return True, f'同步成功 ✅ commit: {new_commit_sha[:7]}'
 
 def _slicer(label, options, key):
@@ -461,7 +481,6 @@ with st.sidebar:
             st.session_state[_k] = ''
         st.rerun()
 
-@st.cache_data(show_spinner=False)
 @st.cache_data(show_spinner=False)
 def load_data(file_bytes: bytes):
     return parse_sales_workbook(file_bytes)
