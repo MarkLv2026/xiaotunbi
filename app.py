@@ -4934,6 +4934,374 @@ with tabs[3]:
 # 智能诊断工具函数（华为方法论注入）
 # ═══════════════════════════════════════════════════════════════
 
+def _generate_midea_ppt(**kwargs):
+    """
+    生成"美的"风格复盘PPT（6页，简洁现代）
+    - 配色：美的蓝(#0066CC) + 白色 + 浅灰
+    - 风格：简洁、现代、大量留白
+    - 布局：清晰层次、易读
+    """
+    import os, tempfile, io
+    from pptx import Presentation
+    from pptx.util import Inches, Pt, Emu, Cm
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+    from pptx.enum.shapes import MSO_SHAPE
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import matplotlib.font_manager as fm
+    import numpy as np
+
+    # 中文字体
+    plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS']
+    plt.rcParams['axes.unicode_minus'] = False
+
+    # ── 解包参数 ──
+    period_cur  = kwargs.get('period_cur', '')
+    period_prev = kwargs.get('period_prev', '')
+    comp_mode   = kwargs.get('comp_mode', '')
+    filter_label= kwargs.get('filter_label', '')
+    health_score= kwargs.get('health_score', 0)
+    health_status=kwargs.get('health_status', '')
+    gmv_g   = kwargs.get('gmv_g')
+    vis_g   = kwargs.get('vis_g')
+    cvr_g   = kwargs.get('cvr_g')
+    aov_g   = kwargs.get('aov_g')
+    cur_sum = kwargs.get('cur_sum', {})
+    prev_sum= kwargs.get('prev_sum', {})
+    cur_by_channel  = kwargs.get('cur_by_channel', {})
+    cur_by_cat = kwargs.get('cur_by_cat', {})
+    rising_stars   = kwargs.get('rising_stars', [])
+    actions = kwargs.get('actions', [])
+    s = kwargs.get('s', '')
+    e = kwargs.get('e', '')
+
+    # ── 美的配色方案 ──
+    MIDEA_BLUE   = RGBColor(0x00, 0x66, 0xCC)  # 美的蓝（主色）
+    MIDEA_LIGHT  = RGBColor(0x33, 0x99, 0xFF)  # 浅蓝（强调）
+    MIDEA_DARK   = RGBColor(0x00, 0x44, 0x88)  # 深蓝（标题）
+    WHITE        = RGBColor(0xFF, 0xFF, 0xFF)
+    LIGHT_GRAY   = RGBColor(0xF5, 0xF5, 0xF5)  # 浅灰背景
+    DARK_GRAY    = RGBColor(0x33, 0x33, 0x33)  # 深灰文字
+    MID_GRAY     = RGBColor(0x88, 0x88, 0x88)  # 中灰辅助
+    GREEN        = RGBColor(0x00, 0xAA, 0x55)  # 绿色（正向）
+    RED          = RGBColor(0xDD, 0x33, 0x33)  # 红色（负向）
+
+    # ── 辅助函数 ──
+    def _pct(v):
+        if v is None: return '--'
+        return f'{v*100:+.1f}%' if abs(v) < 10 else f'{v*100:+.0f}%'
+
+    def _num(v, unit=''):
+        if v is None: return '--'
+        if unit == '¥':
+            return f'¥{v:,.0f}' if v >= 10000 else f'¥{v:,.0f}'
+        return f'{v:,.0f}'
+
+    # ── 创建幻灯片 ──
+    prs = Presentation()
+    prs.slide_width = Inches(10)
+    prs.slide_height = Inches(5.625)  # 16:9
+
+    # ── 页面模板：简洁现代风格 ──
+    def _add_slide(prs, title, subtitle=''):
+        slide_layout = prs.slide_layouts[6]
+        slide = prs.slides.add_slide(slide_layout)
+        W = prs.slide_width
+        H = prs.slide_height
+        
+        # 白色背景
+        bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), W, H)
+        bg.fill.solid()
+        bg.fill.fore_color.rgb = WHITE
+        bg.line.fill.background()
+        
+        # 顶部蓝色标题栏（简洁，高度适中）
+        title_bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), W, Inches(0.85))
+        title_bar.fill.solid()
+        title_bar.fill.fore_color.rgb = MIDEA_BLUE
+        title_bar.line.fill.background()
+        
+        # 标题文字
+        txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.15), Inches(8), Inches(0.5))
+        tf = txBox.text_frame
+        p = tf.paragraphs[0]
+        p.text = title
+        p.font.size = Pt(24)
+        p.font.bold = True
+        p.font.color.rgb = WHITE
+        p.font.name = 'Microsoft YaHei'
+        
+        # 副标题（如果有）
+        if subtitle:
+            txBox2 = slide.shapes.add_textbox(Inches(0.5), Inches(0.58), Inches(8), Inches(0.25))
+            tf2 = txBox2.text_frame
+            p2 = tf2.paragraphs[0]
+            p2.text = subtitle
+            p2.font.size = Pt(10)
+            p2.font.color.rgb = RGBColor(0xCC, 0xE5, 0xFF)
+            p2.font.name = 'Microsoft YaHei'
+        
+        # 页脚（简洁）
+        footer = slide.shapes.add_textbox(Inches(0.5), Inches(5.35), Inches(9), Inches(0.2))
+        tf3 = footer.text_frame
+        p3 = tf3.paragraphs[0]
+        p3.text = f'小豚BI  |  {period_cur}'
+        p3.font.size = Pt(8)
+        p3.font.color.rgb = MID_GRAY
+        p3.font.name = 'Arial'
+        p3.alignment = PP_ALIGN.RIGHT
+        
+        return slide
+
+    # ── 添加文本框 ──
+    def _add_text(slide, left, top, width, height, text, font_size=Pt(11), color=DARK_GRAY, bold=False):
+        txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
+        tf = txBox.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.text = text
+        p.font.size = font_size
+        p.font.color.rgb = color
+        p.font.name = 'Microsoft YaHei'
+        p.font.bold = bold
+        return txBox
+
+    # ── 添加表格 ──
+    def _add_table(slide, left, top, headers, rows, col_widths):
+        n_rows = len(rows) + 1
+        n_cols = len(headers)
+        total_w = sum(col_widths)
+        
+        tbl_shape = slide.shapes.add_table(n_rows, n_cols, 
+                                           Inches(left), Inches(top),
+                                           Inches(total_w), 
+                                           Inches(0.35 * n_rows + 0.4))
+        tbl = tbl_shape.table
+        
+        # 设置列宽
+        for i, w in enumerate(col_widths):
+            tbl.columns[i].width = Inches(w)
+        
+        # 表头（蓝色背景，白色文字）
+        for j, h in enumerate(headers):
+            cell = tbl.cell(0, j)
+            cell.text = h
+            for para in cell.text_frame.paragraphs:
+                para.font.size = Pt(10)
+                para.font.bold = True
+                para.font.color.rgb = WHITE
+                para.alignment = PP_ALIGN.CENTER
+                para.font.name = 'Microsoft YaHei'
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = MIDEA_BLUE
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+        
+        # 数据行（斑马纹）
+        for i, row in enumerate(rows):
+            bg = LIGHT_GRAY if i % 2 == 0 else WHITE
+            for j, val in enumerate(row):
+                cell = tbl.cell(i + 1, j)
+                cell.text = str(val)
+                for para in cell.text_frame.paragraphs:
+                    para.font.size = Pt(9)
+                    para.font.color.rgb = DARK_GRAY
+                    para.alignment = PP_ALIGN.CENTER
+                    para.font.name = 'Microsoft YaHei'
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = bg
+                cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+        
+        return tbl_shape
+
+    # ═══════════ P1: 封面 ═══════════
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    W = prs.slide_width
+    H = prs.slide_height
+    
+    # 全幅蓝色背景
+    bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), W, H)
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = MIDEA_BLUE
+    bg.line.fill.background()
+    
+    # 主标题（白色，大字号）
+    tb = slide.shapes.add_textbox(Inches(1), Inches(1.8), Inches(8), Inches(1.0))
+    p = tb.text_frame.paragraphs[0]
+    p.text = '电商经营复盘报告'
+    p.font.size = Pt(42)
+    p.font.bold = True
+    p.font.color.rgb = WHITE
+    p.alignment = PP_ALIGN.CENTER
+    p.font.name = 'Microsoft YaHei'
+    
+    # 副标题
+    tb2 = slide.shapes.add_textbox(Inches(1), Inches(2.8), Inches(8), Inches(0.6))
+    p2 = tb2.text_frame.paragraphs[0]
+    p2.text = '经营概览  ·  问题分析  ·  优化建议'
+    p2.font.size = Pt(18)
+    p2.font.color.rgb = RGBColor(0xCC, 0xE5, 0xFF)
+    p2.alignment = PP_ALIGN.CENTER
+    p2.font.name = 'Microsoft YaHei'
+    
+    # 信息区
+    tb3 = slide.shapes.add_textbox(Inches(2), Inches(3.8), Inches(6), Inches(1.0))
+    tf3 = tb3.text_frame
+    tf3.word_wrap = True
+    info = [
+        f'分析期间：{period_cur}',
+        f'对比期间：{period_prev}（{comp_mode}）',
+        f'报告生成：{datetime.date.today().strftime("%Y-%m-%d")}'
+    ]
+    for i, txt in enumerate(info):
+        p = tf3.paragraphs[0] if i == 0 else tf3.add_paragraph()
+        p.text = txt
+        p.font.size = Pt(13)
+        p.font.color.rgb = RGBColor(0xDD, 0xEE, 0xFF)
+        p.alignment = PP_ALIGN.CENTER
+        p.space_after = Pt(8)
+        p.font.name = 'Microsoft YaHei'
+
+    # ═══════════ P2: 核心指标 ═══════════
+    slide = _add_slide(prs, '核心指标概览', f'健康评分：{health_score:.0f}/100')
+    
+    # KPI 卡片（简洁设计）
+    kpi_data = [
+        ('GMV', _num(cur_sum.get('支付金额', 0), '¥'), _pct(gmv_g)),
+        ('访客数', _num(cur_sum.get('商品访客数', 0)), _pct(vis_g)),
+        ('转化率', f"{cur_sum.get('支付转化率', 0)*100:.2f}%", _pct(cvr_g)),
+        ('客单价', f"¥{cur_sum.get('客单价', 0):,.0f}", _pct(aov_g)),
+    ]
+    
+    for i, (label, val, chg) in enumerate(kpi_data):
+        x = 0.5 + i * 2.3
+        y = 1.2
+        
+        # 卡片背景
+        card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, 
+                                      Inches(x), Inches(y), 
+                                      Inches(2.0), Inches(1.0))
+        card.fill.solid()
+        card.fill.fore_color.rgb = LIGHT_GRAY
+        card.line.color.rgb = RGBColor(0xDD, 0xDD, 0xDD)
+        card.line.width = Pt(1)
+        card.adjustments[0] = 0.15
+        
+        # 标签
+        _add_text(slide, x + 0.15, y + 0.1, 1.7, 0.3, label, Pt(10), MID_GRAY)
+        
+        # 数值
+        _add_text(slide, x + 0.15, y + 0.35, 1.7, 0.4, val, Pt(20), MIDEA_DARK, True)
+        
+        # 环比
+        chg_color = GREEN if chg and not chg.startswith('-') and chg != '--' else RED
+        _add_text(slide, x + 0.15, y + 0.75, 1.7, 0.2, f'环比：{chg}', Pt(9), chg_color)
+    
+    # 渠道分布（简化表格）
+    ch_rows = []
+    total_gmv = sum(v.get('支付金额', 0) for v in cur_by_channel.values())
+    for ch_key, cv in sorted(cur_by_channel.items(), key=lambda x: x[1].get('支付金额', 0), reverse=True)[:5]:
+        ch_name = ch_key[0] if isinstance(ch_key, tuple) else str(ch_key)
+        gmv = cv.get('支付金额', 0)
+        share = gmv / total_gmv * 100 if total_gmv else 0
+        ch_rows.append([ch_name, _num(gmv, '¥'), f'{share:.1f}%'])
+    
+    if ch_rows:
+        _add_table(slide, 0.5, 2.5, ['渠道', 'GMV', '占比'], ch_rows, [2.0, 2.5, 1.5])
+
+    # ═══════════ P3: 问题分析 ═══════════
+    slide = _add_slide(prs, '问题分析', '人 · 货 · 场')
+    
+    # 问题清单（简化）
+    issues = []
+    if gmv_g and gmv_g < -0.1:
+        issues.append(('GMV下滑', f'环比{gmv_g*100:.1f}%', 'P0'))
+    if cvr_g and cvr_g < -0.05:
+        issues.append(('转化率下降', f'环比{cvr_g*100:.1f}%', 'P1'))
+    if vis_g and vis_g < -0.1:
+        issues.append(('流量下滑', f'环比{vis_g*100:.1f}%', 'P1'))
+    
+    # 显示问题
+    y_pos = 1.2
+    for issue_label, issue_detail, priority in issues[:5]:
+        pri_color = RED if priority == 'P0' else RGBColor(0xFF, 0x88, 0x00)
+        _add_text(slide, 0.5, y_pos, 0.8, 0.4, priority, Pt(12), pri_color, True)
+        _add_text(slide, 1.3, y_pos, 2.0, 0.4, issue_label, Pt(12), DARK_GRAY, True)
+        _add_text(slide, 3.5, y_pos, 2.0, 0.4, issue_detail, Pt(11), MID_GRAY)
+        y_pos += 0.5
+    
+    # 增长亮点
+    if rising_stars:
+        y_pos += 0.3
+        _add_text(slide, 0.5, y_pos, 3.0, 0.3, '▎增长亮点型号', Pt(11), MIDEA_BLUE, True)
+        y_pos += 0.4
+        for star in rising_stars[:3]:
+            model = star.get('型号', '')
+            gmv = star.get('本期GMV', 0)
+            _add_text(slide, 0.7, y_pos, 4.0, 0.3, f'• {model}  ¥{gmv:,.0f}', Pt(10), DARK_GRAY)
+            y_pos += 0.35
+
+    # ═══════════ P4: 优化建议 ═══════════
+    slide = _add_slide(prs, '优化建议', '优先级排序')
+    
+    # 行动清单
+    y_pos = 1.2
+    for i, action in enumerate(actions[:8]):
+        priority = action.get('p', 'P2')
+        desc = action.get('desc', '')
+        recover = action.get('recover', '')
+        
+        # 优先级标签
+        pri_color = RED if priority == 'P0' else (RGBColor(0xFF, 0x88, 0x00) if priority == 'P1' else MID_GRAY)
+        _add_text(slide, 0.5, y_pos, 0.6, 0.4, priority, Pt(11), pri_color, True)
+        
+        # 描述
+        _add_text(slide, 1.2, y_pos, 5.0, 0.4, desc, Pt(10), DARK_GRAY)
+        
+        # 预期挽回
+        if recover:
+            _add_text(slide, 6.5, y_pos, 2.5, 0.4, f'预期挽回：¥{recover:,.0f}', Pt(9), GREEN)
+        
+        y_pos += 0.45
+
+    # ═══════════ P5: 下期目标 ═══════════
+    slide = _add_slide(prs, '下期目标与计划', '关键里程碑')
+    
+    # 目标
+    next_gmv = cur_sum.get('支付金额', 0) * 1.05
+    targets = [
+        f'GMV目标：¥{next_gmv:,.0f}（环比+5%）',
+        f'转化率目标：≥{cur_sum.get("支付转化率", 0)*100*1.03:.2f}%',
+        f'访客数目标：环比+10%',
+    ]
+    
+    _add_text(slide, 0.5, 1.2, 4.0, 0.3, '▎关键目标', Pt(12), MIDEA_BLUE, True)
+    y_pos = 1.6
+    for target in targets:
+        _add_text(slide, 0.7, y_pos, 4.0, 0.3, f'• {target}', Pt(11), DARK_GRAY)
+        y_pos += 0.4
+    
+    # 里程碑
+    milestones = [
+        '第1周：完成P0问题整改',
+        '第2周：核心指标企稳回升',
+        '第3周：优化措施全面落地',
+        '第4周：月度复盘与下月规划',
+    ]
+    
+    _add_text(slide, 5.5, 1.2, 4.0, 0.3, '▎关键里程碑', Pt(12), MIDEA_BLUE, True)
+    y_pos = 1.6
+    for ms in milestones:
+        _add_text(slide, 5.7, y_pos, 4.0, 0.3, f'• {ms}', Pt(11), DARK_GRAY)
+        y_pos += 0.4
+
+    # ═══════════ 保存 ═══════════
+    out = tempfile.NamedTemporaryFile(delete=False, suffix='.pptx')
+    prs.save(out.name)
+    return out.name
+
+
 def _shapley_decompose_gmv(cur_sum, prev_sum):
     """
     Shapley值法分解GMV变化（华为式归因）
@@ -6669,10 +7037,10 @@ with tabs[4]:
         _gen_ppt = st.button('🎯 生成复盘PPT', use_container_width=True, key='gen_mck_ppt')
 
     if _gen_ppt:
-        with st.spinner('正在生成麦肯锡风格复盘PPT...'):
+        with st.spinner('正在生成美的风格复盘PPT...'):
             _period_label_cur = f'{s} ~ {e}'
             _period_label_prev = f'{prev_s} ~ {prev_e}'
-            _ppt_path = _generate_mckinsey_ppt(
+            _ppt_path = _generate_midea_ppt(
                 period_cur=_period_label_cur, period_prev=_period_label_prev,
                 comp_mode=comp_mode, filter_label=_filter_label,
                 health_score=health_score, health_status=hv[0], health_color=hv[1],
@@ -6681,10 +7049,7 @@ with tabs[4]:
                 cur_by_channel=cur_by_channel, prev_by_channel=prev_by_channel,
                 cur_by_cat=cur_by_cat, prev_by_cat=prev_by_cat,
                 cur_by_model=cur_by_model, prev_by_model=prev_by_model,
-                rising_stars=rising_stars, drop_stars=drop_stars,
-                cvr_drop_models=cvr_drop_models, aov_drop_rows=aov_drop_rows,
-                ch_model_issues=ch_model_issues, promo_suggestions=promo_suggestions,
-                actions=actions, WARN_T=WARN_T, DANGER_T=DANGER_T,
+                rising_stars=rising_stars, actions=actions,
                 s=s, e=e,
             )
             if _ppt_path:
@@ -6693,8 +7058,8 @@ with tabs[4]:
                         label=f'📥 下载复盘PPT ({_period_label_cur})',
                         data=f, file_name=f'xiaotunbi_复盘_{s.replace("-","")}_{e.replace("-","")}.pptx',
                         mime='application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                        key='dl_mck_ppt')
-                st.success(f'✅ PPT已生成（{_ppt_path}），点击上方按钮下载')
+                        key='dl_midea_ppt')
+                st.success(f'✅ PPT已生成（美的风格），点击上方按钮下载')
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 5: 透视表分析（单期数据，无对比列）
