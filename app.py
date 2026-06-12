@@ -151,16 +151,10 @@ def _slicer(label, options, key):
         st.caption(f'{label}: 无可用选项')
         return []
     all_opts = list(options)
-    # Clean stale values from session_state if options changed
-    try:
-        if sk in st.session_state:
-            saved = st.session_state[sk]
-            if isinstance(saved, list):
-                valid = [v for v in saved if v in all_opts]
-                if len(valid) != len(saved):
-                    st.session_state[sk] = valid
-    except Exception:
-        pass  # SessionInfo may not be ready yet; will be initialized by multiselect itself
+    # 注意：不再手动清理 session_state 中的无效值。
+    # 原因：'key in st.session_state' 的 __contains__ 操作在 Streamlit 快速重渲染
+    # 或 WebSocket 重连时，可能触发 "SessionInfo not initialized" 错误。
+    # multiselect 组件自己会管理状态，无效值会显示为灰色标签，不会导致崩溃。
     sel = st.multiselect(label, options=all_opts, default=[], key=sk, placeholder='全选')
     return list(sel) if sel else all_opts
 
