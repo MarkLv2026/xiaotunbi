@@ -32,6 +32,15 @@ _REPO_SALES = _REPO_DATA_DIR / 'sales.xlsx'
 _REPO_PROMO = _REPO_DATA_DIR / 'promo.xlsx'
 _REPO_TARGETS = _REPO_DATA_DIR / 'targets.xlsx'
 
+# ── 型号映射配置 ──
+# 目标表中的型号 → 实际数据中需要汇总的型号列表
+# 用于处理目标表合并型号但实际数据分型号的情况
+_MODEL_MERGE_MAP = {
+    '京东小豚': {
+        'XT-X60': ['XT-X60【7W】', 'XT-X60【15W】'],
+    },
+}
+
 
 def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> tuple[bool, str]:
     """
@@ -7710,6 +7719,24 @@ with tabs[6]:
                 daily_by_model_date[key_md]['支付买家数'] += pay_buyers
                 daily_by_model_date[key_md]['商品访客数'] += visitors
 
+            # ── 型号映射汇总：将多个实际型号合并为目标型号 ──
+            for shop_name, shop_map in _MODEL_MERGE_MAP.items():
+                for mapped_model, source_models in shop_map.items():
+                    dates = set()
+                    for sm in source_models:
+                        for key in daily_by_model_date:
+                            if key[0] == shop_name and key[1] == sm:
+                                dates.add(key[2])
+                    for d in dates:
+                        key_mapped = (shop_name, mapped_model, d)
+                        if key_mapped not in daily_by_model_date:
+                            daily_by_model_date[key_mapped] = {'支付金额': 0.0, '支付件数': 0.0, '支付买家数': 0.0, '商品访客数': 0.0}
+                        for sm in source_models:
+                            key_source = (shop_name, sm, d)
+                            if key_source in daily_by_model_date:
+                                for k in daily_by_model_date[key_mapped]:
+                                    daily_by_model_date[key_mapped][k] += daily_by_model_date[key_source].get(k, 0.0)
+
             # ── 预计算推广花费日汇总（按店铺+日期）──
             promo_by_shop_date = {}
             if _raw_promo_target:
@@ -7737,6 +7764,23 @@ with tabs[6]:
                         promo_by_model_date[key_pm] = 0.0
                     promo_by_model_date[key_pm] += p_spend
 
+            # ── 型号映射汇总（推广花费）──
+            for shop_name, shop_map in _MODEL_MERGE_MAP.items():
+                for mapped_model, source_models in shop_map.items():
+                    dates = set()
+                    for sm in source_models:
+                        for key in promo_by_model_date:
+                            if key[0] == shop_name and key[1] == sm:
+                                dates.add(key[2])
+                    for d in dates:
+                        key_mapped = (shop_name, mapped_model, d)
+                        if key_mapped not in promo_by_model_date:
+                            promo_by_model_date[key_mapped] = 0.0
+                        for sm in source_models:
+                            key_source = (shop_name, sm, d)
+                            if key_source in promo_by_model_date:
+                                promo_by_model_date[key_mapped] += promo_by_model_date[key_source]
+
             # ── 预计算推广直接订单金额日汇总（按店铺+日期）──
             promo_direct_by_shop_date = {}
             if _raw_promo_target:
@@ -7763,6 +7807,23 @@ with tabs[6]:
                     if key_pm not in promo_direct_by_model_date:
                         promo_direct_by_model_date[key_pm] = 0.0
                     promo_direct_by_model_date[key_pm] += p_direct
+
+            # ── 型号映射汇总（推广直接订单金额）──
+            for shop_name, shop_map in _MODEL_MERGE_MAP.items():
+                for mapped_model, source_models in shop_map.items():
+                    dates = set()
+                    for sm in source_models:
+                        for key in promo_direct_by_model_date:
+                            if key[0] == shop_name and key[1] == sm:
+                                dates.add(key[2])
+                    for d in dates:
+                        key_mapped = (shop_name, mapped_model, d)
+                        if key_mapped not in promo_direct_by_model_date:
+                            promo_direct_by_model_date[key_mapped] = 0.0
+                        for sm in source_models:
+                            key_source = (shop_name, sm, d)
+                            if key_source in promo_direct_by_model_date:
+                                promo_direct_by_model_date[key_mapped] += promo_direct_by_model_date[key_source]
 
             # ── 预计算去年同期数据（用于结构表同比）──
             _yoy_ym = None
@@ -7820,6 +7881,23 @@ with tabs[6]:
                         _daily_model_ly[key_md] = 0.0
                     _daily_model_ly[key_md] += pay_amt
 
+            # ── 型号映射汇总（去年同期销售）──
+            for shop_name, shop_map in _MODEL_MERGE_MAP.items():
+                for mapped_model, source_models in shop_map.items():
+                    dates = set()
+                    for sm in source_models:
+                        for key in _daily_model_ly:
+                            if key[0] == shop_name and key[1] == sm:
+                                dates.add(key[2])
+                    for d in dates:
+                        key_mapped = (shop_name, mapped_model, d)
+                        if key_mapped not in _daily_model_ly:
+                            _daily_model_ly[key_mapped] = 0.0
+                        for sm in source_models:
+                            key_source = (shop_name, sm, d)
+                            if key_source in _daily_model_ly:
+                                _daily_model_ly[key_mapped] += _daily_model_ly[key_source]
+
             # 去年同期推广花费日汇总（按店铺+日期）- 用于实际同比（同期天数）
             # 注意：去年同期数据必须从全量 _all_promo_raw 提取，不能从 _raw_promo_target（仅当前月份）
             _promo_shop_ly = {}
@@ -7842,6 +7920,23 @@ with tabs[6]:
                             _promo_model_ly[key_pm] = 0.0
                         _promo_model_ly[key_pm] += p_spend
 
+            # ── 型号映射汇总（去年同期推广花费）──
+            for shop_name, shop_map in _MODEL_MERGE_MAP.items():
+                for mapped_model, source_models in shop_map.items():
+                    dates = set()
+                    for sm in source_models:
+                        for key in _promo_model_ly:
+                            if key[0] == shop_name and key[1] == sm:
+                                dates.add(key[2])
+                    for d in dates:
+                        key_mapped = (shop_name, mapped_model, d)
+                        if key_mapped not in _promo_model_ly:
+                            _promo_model_ly[key_mapped] = 0.0
+                        for sm in source_models:
+                            key_source = (shop_name, sm, d)
+                            if key_source in _promo_model_ly:
+                                _promo_model_ly[key_mapped] += _promo_model_ly[key_source]
+
             # ── 去年全月数据（用于目标同比）──
             # 注意：去年同期数据必须从全量 data['daily'] 提取
             _daily_shop_ly_full = {}
@@ -7863,6 +7958,23 @@ with tabs[6]:
                         _daily_model_ly_full[key_md] = 0.0
                     _daily_model_ly_full[key_md] += pay_amt
 
+            # ── 型号映射汇总（去年同期销售全月）──
+            for shop_name, shop_map in _MODEL_MERGE_MAP.items():
+                for mapped_model, source_models in shop_map.items():
+                    dates = set()
+                    for sm in source_models:
+                        for key in _daily_model_ly_full:
+                            if key[0] == shop_name and key[1] == sm:
+                                dates.add(key[2])
+                    for d in dates:
+                        key_mapped = (shop_name, mapped_model, d)
+                        if key_mapped not in _daily_model_ly_full:
+                            _daily_model_ly_full[key_mapped] = 0.0
+                        for sm in source_models:
+                            key_source = (shop_name, sm, d)
+                            if key_source in _daily_model_ly_full:
+                                _daily_model_ly_full[key_mapped] += _daily_model_ly_full[key_source]
+
             # 注意：去年同期推广全月数据也必须从全量 _all_promo_raw 提取
             _promo_shop_ly_full = {}
             _promo_model_ly_full = {}
@@ -7883,6 +7995,23 @@ with tabs[6]:
                         if key_pm not in _promo_model_ly_full:
                             _promo_model_ly_full[key_pm] = 0.0
                         _promo_model_ly_full[key_pm] += p_spend
+
+            # ── 型号映射汇总（去年同期推广花费全月）──
+            for shop_name, shop_map in _MODEL_MERGE_MAP.items():
+                for mapped_model, source_models in shop_map.items():
+                    dates = set()
+                    for sm in source_models:
+                        for key in _promo_model_ly_full:
+                            if key[0] == shop_name and key[1] == sm:
+                                dates.add(key[2])
+                    for d in dates:
+                        key_mapped = (shop_name, mapped_model, d)
+                        if key_mapped not in _promo_model_ly_full:
+                            _promo_model_ly_full[key_mapped] = 0.0
+                        for sm in source_models:
+                            key_source = (shop_name, sm, d)
+                            if key_source in _promo_model_ly_full:
+                                _promo_model_ly_full[key_mapped] += _promo_model_ly_full[key_source]
 
             def _yoy_pct_val(cur, ly):
                 """同比变化率，返回数值（如 0.15 表示 +15%）"""
