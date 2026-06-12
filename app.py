@@ -828,21 +828,34 @@ def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
 targets = {}
 _targets_bytes = None  # 懒加载：不在导入时读取文件
 
+@st.cache_data(show_spinner='正在加载目标数据（首次需要解析 Excel）...', ttl=3600)
+def _load_targets_from_repo():
+    """从 data/targets.xlsx 读取并解析目标数据，带 1 小时缓存"""
+    if not _REPO_TARGETS.exists():
+        return None
+    try:
+        file_bytes = _REPO_TARGETS.read_bytes()
+        return load_targets(file_bytes)
+    except Exception as e:
+        print(f'[targets] 加载失败: {e}')
+        return None
+
+
 # 启动时不读取大文件，避免内存/超时问题
 # _targets_bytes将在_lazy_load_targets()中按需加载
 _targets_available = False  # 延迟检测文件是否存在
 
-
 def _lazy_load_targets():
-    """按需加载目标数据——按月独立文件加载，同月份自动覆盖"""
+    """按需加载目标数据——优先 session_state，其次缓存，最后从 repo 读取"""
     global targets
+    # 已加载则直接返回（跨 rerun 复用）
     if 'targets_loaded' in st.session_state and st.session_state.targets_loaded:
         return st.session_state.get('targets_data', {})
 
     targets = {}
-    _CACHE_TARGETS_DIR = _CACHE_DIR / 'targets'
 
     # 1. 优先：按月缓存目录加载（支持多个月份独立文件）
+    _CACHE_TARGETS_DIR = _CACHE_DIR / 'targets'
     if _CACHE_TARGETS_DIR.exists():
         for month_file in sorted(_CACHE_TARGETS_DIR.glob('targets_*.xlsx')):
             try:
@@ -871,6 +884,10 @@ def _lazy_load_targets():
                 import traceback
                 with st.expander('查看详细错误信息'):
                     st.code(traceback.format_exc(), language='text')
+
+    # 3. 最终回退：从缓存的 repo 文件加载（1小时缓存）
+    if not targets:
+        targets = _load_targets_from_repo() or {}
 
     if targets:
         st.session_state.targets_loaded = True
