@@ -7671,6 +7671,311 @@ with tabs[6]:
         _sel_ym = st.selectbox('选择目标月份', _target_months,
                                index=0, key='target_ym')
 
+        # ── 视图切换 ──
+        _view_mode = st.radio('视图', ['单月详情', '上半年汇总'], horizontal=True, key='target_view')
+
+        # ═══════════════════════════════════════════════
+        # 上半年汇总视图
+        # ═══════════════════════════════════════════════
+        if _view_mode == '上半年汇总':
+            from data.monthly_targets_1_4 import MONTHLY_TARGETS_1_4, H1_MONTHS
+
+            # ── 收集5-6月店铺目标（从targets中提取）──
+            # targets[ym]['shop'] 中找指标='成交金额目标'或'销额目标'的行，取合计值
+            _targets_5_6 = {}  # {shop: {ym: target_amt}}
+            _aliases_target = ['成交金额目标', '销额目标']
+            for ym in ['2026-05', '2026-06']:
+                if ym in targets:
+                    for sr in targets[ym].get('shop', []):
+                        shop = sr['店铺']
+                        if shop == '天猫小豚':
+                            continue
+                        if sr['指标'] in _aliases_target:
+                            if shop not in _targets_5_6:
+                                _targets_5_6[shop] = {}
+                            _targets_5_6[shop][ym] = sr.get('合计', 0.0) or 0.0
+
+            # ── 汇总1-6月目标（1-4月来自配置，5-6月来自targets）──
+            _h1_targets = {}  # {shop: {ym: target_amt}}
+            for shop in ['华为京东自营', '天猫华为官旗', '天猫智选', '京东小豚']:
+                _h1_targets[shop] = {}
+                # 1-4月
+                if shop in MONTHLY_TARGETS_1_4:
+                    for ym in ['2026-01', '2026-02', '2026-03', '2026-04']:
+                        _h1_targets[shop][ym] = MONTHLY_TARGETS_1_4[shop].get(ym, 0.0)
+                # 5-6月
+                for ym in ['2026-05', '2026-06']:
+                    _h1_targets[shop][ym] = _targets_5_6.get(shop, {}).get(ym, 0.0)
+
+            # ── 汇总1-6月实际销售（从 data['monthly'] 按月+店铺聚合）──
+            _h1_actual = {}  # {shop: {ym: actual_amt}}
+            _h1_spend = {}   # {shop: {ym: spend}}
+            for shop in _h1_targets:
+                _h1_actual[shop] = {ym: 0.0 for ym in H1_MONTHS}
+                _h1_spend[shop] = {ym: 0.0 for ym in H1_MONTHS}
+
+            # 从月度汇总取实际销额
+            if 'monthly' in data:
+                for r in data['monthly']:
+                    ym = r.get('月份', '')[:7]
+                    if ym not in H1_MONTHS:
+                        continue
+                    shop = (r.get('店铺', '') or '').strip()
+                    if shop in _h1_actual:
+                        _h1_actual[shop][ym] += float(r.get('支付金额', 0) or 0)
+
+            # 从推广全量取实际推广花费（月度汇总）
+            _local_promo_bytes_h1 = _promo_bytes if _promo_bytes is not None else _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
+            _all_promo_h1 = load_promo_data(_local_promo_bytes_h1) if _local_promo_bytes_h1 else []
+            for r in _all_promo_h1:
+                d = r.get('_date', '')
+                ym = d[:7] if len(d) >= 7 else ''
+                if ym not in H1_MONTHS:
+                    continue
+                shop = (r.get('_店铺', '') or '').strip()
+                if shop in _h1_spend:
+                    _h1_spend[shop][ym] += float(r.get('_花费', 0) or 0)
+
+            # ── 总览卡片 ──
+            _total_target = sum(sum(v.values()) for v in _h1_targets.values())
+            _total_actual = sum(sum(v.values()) for v in _h1_actual.values())
+            _total_spend = sum(sum(v.values()) for v in _h1_spend.values())
+            _total_rate = _total_actual / _total_target * 100 if _total_target > 0 else 0
+            _total_diff = _total_actual - _total_target
+
+            _wan = lambda x: f'{x/10000:.1f}万' if abs(x) >= 10000 else f'{x:,.0f}'
+
+            st.markdown("""<div class="hero" style="padding:16px 28px 10px;margin-bottom:12px;">
+                <div style="font-size:18px;font-weight:700;">🎯 上半年目标达成总览（2026年1-6月）</div>
+            </div>""", unsafe_allow_html=True)
+
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric('全渠道目标销额', _wan(_total_target))
+            with c2:
+                st.metric('全渠道实际销额', _wan(_total_actual),
+                         delta=f'{_total_diff/10000:+.1f}万' if abs(_total_diff) >= 10000 else f'{_total_diff:+,.0f}')
+            with c3:
+                st.metric('销额达成率', f'{_total_rate:.1f}%')
+            with c4:
+                _rate_color = '#22c55e' if _total_rate >= 100 else '#ef4444' if _total_rate < 80 else '#f59e0b'
+                st.markdown(f'<div style="padding:8px 0;"><span style="color:#64748b;font-size:12px;">实际费率</span><br>'
+                           f'<span style="font-size:24px;font-weight:700;color:{_rate_color};">'
+                           f'{_total_spend/_total_actual*100:.1f}%</span></div>' if _total_actual > 0 else '--',
+                           unsafe_allow_html=True)
+
+            st.markdown('---')
+
+            # ── 各店铺月度达成表 ──
+            st.subheader('📊 各店铺月度达成')
+
+            _shop_order = ['华为京东自营', '天猫华为官旗', '天猫智选', '京东小豚']
+            _month_labels = ['1月', '2月', '3月', '4月', '5月', '6月']
+
+            # 构建HTML表格
+            _tbl_rows = []
+            for shop in _shop_order:
+                if shop not in _h1_targets:
+                    continue
+                _row = [f'<b>{shop}</b>']
+                _shop_target = 0.0
+                _shop_actual = 0.0
+                for i, ym in enumerate(H1_MONTHS):
+                    t = _h1_targets[shop].get(ym, 0)
+                    a = _h1_actual[shop].get(ym, 0)
+                    _shop_target += t
+                    _shop_actual += a
+                    rate = a / t * 100 if t > 0 else None
+                    if rate is not None:
+                        rc = '#22c55e' if rate >= 100 else '#ef4444' if rate < 80 else '#f59e0b'
+                        _cell = f'{_wan(t)} / {_wan(a)}<br><span style="color:{rc};font-weight:600;">{rate:.1f}%</span>'
+                    else:
+                        _cell = f'{_wan(t)} / {_wan(a)}<br><span style="color:#94a3b8;">--</span>'
+                    _row.append(_cell)
+                # 合计列
+                _sr = _shop_actual / _shop_target * 100 if _shop_target > 0 else None
+                if _sr is not None:
+                    src = '#22c55e' if _sr >= 100 else '#ef4444' if _sr < 80 else '#f59e0b'
+                    _row.append(f'<b>{_wan(_shop_target)}</b> / <b>{_wan(_shop_actual)}</b><br>'
+                               f'<span style="color:{src};font-weight:700;">{_sr:.1f}%</span>')
+                else:
+                    _row.append(f'<b>{_wan(_shop_target)}</b> / <b>{_wan(_shop_actual)}</b><br>--')
+                _tbl_rows.append(_row)
+
+            # 全渠道合计行
+            _total_row = ['<b>全渠道合计</b>']
+            _all_t = 0.0
+            _all_a = 0.0
+            for ym in H1_MONTHS:
+                t = sum(_h1_targets[s].get(ym, 0) for s in _shop_order if s in _h1_targets)
+                a = sum(_h1_actual[s].get(ym, 0) for s in _shop_order if s in _h1_actual)
+                _all_t += t
+                _all_a += a
+                rate = a / t * 100 if t > 0 else None
+                if rate is not None:
+                    rc = '#22c55e' if rate >= 100 else '#ef4444' if rate < 80 else '#f59e0b'
+                    _total_row.append(f'<b>{_wan(t)} / {_wan(a)}</b><br>'
+                                     f'<span style="color:{rc};font-weight:700;">{rate:.1f}%</span>')
+                else:
+                    _total_row.append(f'<b>{_wan(t)} / {_wan(a)}</b><br>--')
+            _trate = _all_a / _all_t * 100 if _all_t > 0 else None
+            if _trate is not None:
+                trc = '#22c55e' if _trate >= 100 else '#ef4444' if _trate < 80 else '#f59e0b'
+                _total_row.append(f'<b>{_wan(_all_t)} / {_wan(_all_a)}</b><br>'
+                                 f'<span style="color:{trc};font-weight:700;">{_trate:.1f}%</span>')
+            else:
+                _total_row.append(f'<b>{_wan(_all_t)} / {_wan(_all_a)}</b><br>--')
+            _tbl_rows.append(_total_row)
+
+            _tbl_id = 'h1_' + str(hash(tuple(H1_MONTHS)))[:8]
+            _inject_fs_js()
+            _h1_html = f'<div id="{_tbl_id}" class="styled-table-wrap"><table class="styled-table">'
+            _h1_html += '<thead><tr><th style="text-align:left;">店铺</th>'
+            for ml in _month_labels:
+                _h1_html += f'<th style="text-align:center;">{ml}</th>'
+            _h1_html += '<th style="text-align:center;">上半年合计</th></tr></thead><tbody>'
+            for _r in _tbl_rows:
+                _h1_html += '<tr>'
+                for j, cell in enumerate(_r):
+                    align = 'left' if j == 0 else 'center'
+                    _h1_html += f'<td style="text-align:{align};white-space:nowrap;">{cell}</td>'
+                _h1_html += '</tr>'
+            _h1_html += '</tbody></table></div>'
+            st.markdown(_h1_html, unsafe_allow_html=True)
+
+            # ── 月度达成率趋势图 ──
+            st.subheader('📈 月度达成率趋势')
+            _chart_data = []
+            for shop in _shop_order:
+                if shop not in _h1_targets:
+                    continue
+                for i, ym in enumerate(H1_MONTHS):
+                    t = _h1_targets[shop].get(ym, 0)
+                    a = _h1_actual[shop].get(ym, 0)
+                    rate = a / t * 100 if t > 0 else None
+                    _chart_data.append({
+                        '店铺': shop,
+                        '月份': _month_labels[i],
+                        '达成率': rate if rate is not None else 0,
+                    })
+            if _chart_data:
+                import pandas as _pd2
+                _df_chart = _pd2.DataFrame(_chart_data)
+                _fig = px.line(_df_chart, x='月份', y='达成率', color='店铺', markers=True,
+                              color_discrete_sequence=['#1d4ed8', '#e6a817', '#22c55e', '#ef4444'])
+                _fig.add_hline(y=100, line_dash='dash', line_color='#94a3b8', annotation_text='目标线 100%')
+                _fig.update_layout(height=400, margin=dict(l=20, r=20, t=10, b=10),
+                                  hovermode='x unified',
+                                  yaxis=dict(ticksuffix='%', title='达成率'))
+                st.plotly_chart(_fig, use_container_width=True)
+
+            # ── 各店铺累计达成进度条 ──
+            st.subheader('📊 各店铺上半年累计达成')
+            for shop in _shop_order:
+                if shop not in _h1_targets:
+                    continue
+                _st = sum(_h1_targets[shop].values())
+                _sa = sum(_h1_actual[shop].values())
+                _sr = _sa / _st * 100 if _st > 0 else 0
+                _s_color = '#22c55e' if _sr >= 100 else '#ef4444' if _sr < 80 else '#f59e0b'
+                _prog = min(_sr, 100)
+                st.markdown(
+                    f'<div style="display:flex;align-items:center;margin:4px 0;">'
+                    f'<span style="width:120px;font-weight:600;font-size:13px;">{shop}</span>'
+                    f'<div style="flex:1;background:#e5e7eb;border-radius:4px;height:14px;margin:0 10px;">'
+                    f'<div style="width:{_prog:.1f}%;background:{_s_color};height:14px;border-radius:4px;"></div></div>'
+                    f'<span style="font-size:12px;color:{_s_color};font-weight:600;min-width:80px;text-align:right;">'
+                    f'{_wan(_sa)} / {_wan(_st)} ({_sr:.1f}%)</span></div>',
+                    unsafe_allow_html=True
+                )
+
+            # ── 单品汇总（5-6月，因为1-4月无单品数据）──
+            st.markdown('---')
+            st.subheader('📦 单品汇总（5-6月）')
+            st.caption('💡 仅5-6月有单品级目标拆解数据，1-4月仅有店铺级目标')
+
+            # 从5-6月targets中收集单品目标
+            _model_targets = {}  # {(shop, model): {ym: target_amt}}
+            _aliases_mt = ['成交金额目标', '销额目标']
+            for ym in ['2026-05', '2026-06']:
+                if ym not in targets:
+                    continue
+                for mr in targets[ym].get('model', []):
+                    if mr['指标'] in _aliases_mt:
+                        key = (mr['店铺'], mr['型号'])
+                        if key not in _model_targets:
+                            _model_targets[key] = {}
+                        _model_targets[key][ym] = mr.get('合计', 0.0) or 0.0
+
+            # 从5-6月实际数据汇总单品实际销额
+            _model_actual = {}  # {(shop, model): {ym: actual_amt}}
+            if 'monthly' in data:
+                for r in data['monthly']:
+                    ym = r.get('月份', '')[:7]
+                    if ym not in ['2026-05', '2026-06']:
+                        continue
+                    shop = (r.get('店铺', '') or '').strip()
+                    model = (r.get('型号', '') or '').strip()
+                    if not model:
+                        continue
+                    key = (shop, model)
+                    if key not in _model_actual:
+                        _model_actual[key] = {'2026-05': 0.0, '2026-06': 0.0}
+                    _model_actual[key][ym] += float(r.get('支付金额', 0) or 0)
+
+            # 型号映射：汇总XT-X60【7W】+XT-X60【15W】→ XT-X60
+            for shop_name, shop_map in _MODEL_MERGE_MAP.items():
+                for mapped_model, source_models in shop_map.items():
+                    for ym in ['2026-05', '2026-06']:
+                        merged = 0.0
+                        for sm in source_models:
+                            key_src = (shop_name, sm)
+                            merged += _model_actual.get(key_src, {}).get(ym, 0.0)
+                        if merged > 0:
+                            key_mapped = (shop_name, mapped_model)
+                            if key_mapped not in _model_actual:
+                                _model_actual[key_mapped] = {'2026-05': 0.0, '2026-06': 0.0}
+                            _model_actual[key_mapped][ym] += merged
+
+            # 构建单品汇总表
+            _model_summary = []
+            for (shop, model), ym_targets in _model_targets.items():
+                _mt = sum(ym_targets.values())
+                _ma = sum(_model_actual.get((shop, model), {}).values())
+                _mr = _ma / _mt * 100 if _mt > 0 else None
+                _model_summary.append((shop, model, _mt, _ma, _mr))
+
+            # 按目标销额降序
+            _model_summary.sort(key=lambda x: x[2], reverse=True)
+
+            if _model_summary:
+                _mtbl_rows = []
+                for shop, model, mt, ma, mr in _model_summary:
+                    if mr is not None:
+                        rc = '#22c55e' if mr >= 100 else '#ef4444' if mr < 80 else '#f59e0b'
+                        _rate_str = f'<span style="color:{rc};font-weight:600;">{mr:.1f}%</span>'
+                    else:
+                        _rate_str = '<span style="color:#94a3b8;">--</span>'
+                    _mtbl_rows.append([shop, model, f'{mt:,.0f}', f'{ma:,.0f}', _rate_str])
+
+                _mtbl_html = '<div class="styled-table-wrap"><table class="styled-table">'
+                _mtbl_html += '<thead><tr><th>店铺</th><th>型号</th><th>目标销额</th><th>实际销额</th><th>达成率</th></tr></thead><tbody>'
+                for _r in _mtbl_rows:
+                    _mtbl_html += '<tr>'
+                    for j, cell in enumerate(_r):
+                        align = 'left' if j <= 1 else 'right'
+                        _mtbl_html += f'<td style="text-align:{align};white-space:nowrap;">{cell}</td>'
+                    _mtbl_html += '</tr>'
+                _mtbl_html += '</tbody></table></div>'
+                st.markdown(_mtbl_html, unsafe_allow_html=True)
+            else:
+                st.info('5-6月暂无单品目标数据')
+
+            st.stop()  # 上半年汇总视图到此结束
+
+        # ═══════════════════════════════════════════════
+        # 单月详情视图（原有逻辑）
+        # ═══════════════════════════════════════════════
         if _sel_ym and _sel_ym in targets:
             tgt = targets[_sel_ym]
             shop_rows = tgt.get('shop', [])
