@@ -7697,7 +7697,7 @@ with tabs[6]:
 
             # ── 汇总1-6月目标（1-4月来自配置，5-6月来自targets）──
             _h1_targets = {}  # {shop: {ym: target_amt}}
-            for shop in ['华为京东自营', '天猫华为官旗', '天猫智选', '京东小豚']:
+            for shop in ['华为京东自营', '天猫华为官旗', '天猫智选', '京东小豚', '抖音小豚']:
                 _h1_targets[shop] = {}
                 # 1-4月
                 if shop in MONTHLY_TARGETS_1_4:
@@ -7769,7 +7769,7 @@ with tabs[6]:
             # ── 各店铺月度达成表 ──
             st.subheader('📊 各店铺月度达成')
 
-            _shop_order = ['华为京东自营', '天猫华为官旗', '天猫智选', '京东小豚']
+            _shop_order = ['华为京东自营', '天猫华为官旗', '天猫智选', '京东小豚', '抖音小豚']
             _month_labels = ['1月', '2月', '3月', '4月', '5月', '6月']
 
             # 构建HTML表格
