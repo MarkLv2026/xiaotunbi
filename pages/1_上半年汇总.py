@@ -379,6 +379,13 @@ with g4:
     <div style='font-size:22px;font-weight:900;color:#0f172a;'>{_fmt_big(_total_spend)}</div>
     <div style='font-size:10px;color:#94a3b8;'>费率 {_fee_rate:.1f}% | ROI {_total_actual/_total_spend:.1f}</div></div>""", unsafe_allow_html=True)
 
+# 辅助函数：格式化同比
+def _fmt_yoy(v):
+    if v is None:
+        return '<span style="color:#94a3b8;">同比--</span>'
+    c = '#22c55e' if v >= 0 else '#ef4444'
+    return f'<span style="color:{c};">同比{v:+.0f}%</span>'
+
 # ════════════════════════════════════════
 # Layer 3: 各店铺月度达成 + 同比
 # ════════════════════════════════════════
@@ -406,7 +413,7 @@ for shop in _shop_order:
             rc = '#22c55e' if rate >= 100 else '#ef4444' if rate < 80 else '#f59e0b'
         else:
             rc = '#94a3b8'
-        _yoy_str = f'<span style="color:#22c55e;">同比{yoy:+.0f}%</span>' if (yoy or 0) >= 0 else f'<span style="color:#ef4444;">同比{yoy:+.0f}%</span>' if yoy is not None else '<span style="color:#94a3b8;">同比--</span>'
+        _yoy_str = _fmt_yoy(yoy)
         _cell = f'{_wan(t)} / {_wan(a)}<br><span style="color:{rc};font-weight:600;">{rate:.1f}%</span> {_yoy_str}' if rate is not None else f'{_wan(t)} / {_wan(a)}<br>-- {_yoy_str}'
         _row_cells.append(_cell)
     # 合计
@@ -416,8 +423,8 @@ for shop in _shop_order:
         src = '#22c55e' if _sr >= 100 else '#ef4444' if _sr < 80 else '#f59e0b'
     else:
         src = '#94a3b8'
-    
-    _syoy_str = f'<span style="color:#22c55e;">同比{_sy:+.0f}%</span>' if (_sy or 0) >= 0 else f'<span style="color:#ef4444;">同比{_sy:+.0f}%</span>' if _sy is not None else '--'
+
+    _syoy_str = _fmt_yoy(_sy)
     _fee = _ssp / _sa * 100 if _sa > 0 else 0
     _row_cells.append(f'<b>{_wan(_st)} / {_wan(_sa)}</b><br><span style="color:{src};font-weight:700;">{_sr:.1f}%</span> {_syoy_str}')
     _tbl_rows.append(_row_cells)
@@ -435,12 +442,12 @@ for i, ym in enumerate(H1_MONTHS):
     rate = a / t * 100 if t > 0 else None
     yoy = (a - al) / al * 100 if al > 0 else None
     rc = '#22c55e' if (rate or 0) >= 100 else '#ef4444' if (rate or 0) < 80 else '#f59e0b' if rate is not None else '#94a3b8'
-    _yoy_str = f'<span style="color:#22c55e;">同比{yoy:+.0f}%</span>' if (yoy or 0) >= 0 else f'<span style="color:#ef4444;">同比{yoy:+.0f}%</span>' if yoy is not None else '--'
+    _yoy_str = _fmt_yoy(yoy)
     _total_row.append(f'<b>{_wan(t)} / {_wan(a)}</b><br><span style="color:{rc};font-weight:700;">{rate:.1f}%</span> {_yoy_str}' if rate is not None else f'<b>{_wan(t)} / {_wan(a)}</b><br>-- {_yoy_str}')
 _tr = _aa / _at * 100 if _at > 0 else None
 _ty = (_aa - _aal) / _aal * 100 if _aal > 0 else None
 _trc = '#22c55e' if (_tr or 0) >= 100 else '#ef4444' if (_tr or 0) < 80 else '#f59e0b'
-_tyoy_str = f'<span style="color:#22c55e;">同比{_ty:+.0f}%</span>' if (_ty or 0) >= 0 else f'<span style="color:#ef4444;">同比{_ty:+.0f}%</span>' if _ty is not None else '--'
+_tyoy_str = _fmt_yoy(_ty)
 _total_row.append(f'<b>{_wan(_at)} / {_wan(_aa)}</b><br><span style="color:{_trc};font-weight:700;">{_tr:.1f}%</span> {_tyoy_str}')
 _tbl_rows.append(_total_row)
 

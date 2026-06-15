@@ -194,3 +194,215 @@ def parse_sales_workbook(src) -> Dict[str,Any]:
 def rows_to_csv(rows: List[Dict[str,Any]], cols: List[str]) -> bytes:
     out=io.StringIO(); w=csv.DictWriter(out, fieldnames=cols, extrasaction='ignore'); w.writeheader(); w.writerows(rows)
     return ('\ufeff'+out.getvalue()).encode('utf-8-sig')
+
+
+def load_targets(file_bytes: bytes):
+    """解析目标 Excel，返回 {月份: {'shop': [...], 'model': [...]}}"""
+    import io, re
+    import openpyxl as _xl
+    from datetime import datetime as _dt, timedelta as _td
+
+    wb = _xl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    targets = {}
+    _excel_epoch = _dt(1899, 12, 30)
+
+    for ws_name in wb.sheetnames:
+        m = re.search(r'(\d+)年(\d+)月', ws_name)
+        if not m:
+            continue
+        year = int('20' + m.group(1))
+        month = int(m.group(2))
+        ym = f'{year}-{month:02d}'
+        ws = wb[ws_name]
+        max_row = ws.max_row
+        max_col = min(ws.max_column, 60)
+
+        # ── 1. 找日期行 ──
+        header_row = 0
+        for r in range(1, min(20, max_row + 1)):
+            c3 = ws.cell(r, 3).value
+            c4 = ws.cell(r, 4).value
+            if c3 == '店铺' and c4 == '指标':
+                header_row = r
+                break
+        if header_row < 1:
+            continue
+
+        date_cols = []
+        for candidate_row in (header_row - 1, header_row, header_row + 1):
+            if candidate_row < 1:
+                continue
+            for c in range(7, max_col + 1):
+                v = ws.cell(candidate_row, c).value
+                dt = None
+                if isinstance(v, (int, float)) and 40000 < v < 50000:
+                    dt = _excel_epoch + _td(days=int(v))
+                elif hasattr(v, 'strftime'):
+                    dt = v
+                if dt:
+                    date_cols.append((c, dt.strftime('%Y-%m-%d')))
+            if date_cols:
+                break
+
+        if not date_cols:
+            continue
+
+        shop_rows = []
+        model_rows = []
+        in_model_section = False
+        current_shop = ''
+        current_model = ''
+
+        data_start = header_row + 1
+        while data_start <= max_row:
+            c3 = ws.cell(data_start, 3).value
+            c4 = ws.cell(data_start, 4).value
+            if c3 or c4:
+                break
+            data_start += 1
+        for r in range(data_start, max_row + 1):
+            c3 = ws.cell(r, 3).value
+            c4 = ws.cell(r, 4).value
+            c5 = ws.cell(r, 5).value
+
+            if c3 and str(c3).strip() == '销售目标拆解':
+                in_model_section = True
+                continue
+            if in_model_section and c3 and str(c3).strip() == '店铺' and c4 and str(c4).strip() == '型号':
+                continue
+            if not in_model_section:
+                if not c3 and not c4:
+                    continue
+            else:
+                if not c4 and not c5:
+                    if c3 and str(c3).strip():
+                        current_shop = str(c3).strip()
+                    continue
+
+            if not in_model_section:
+                if c3 and str(c3).strip() == '合计':
+                    current_shop = ''
+                    continue
+                if c3:
+                    current_shop = str(c3).strip()
+                if c4 and current_shop:
+                    indicator = str(c4).strip()
+                    row_data = {'店铺': current_shop, '指标': indicator}
+                    for col_idx, date_str in date_cols:
+                        v = ws.cell(r, col_idx).value
+                        row_data[date_str] = float(v) if isinstance(v, (int, float)) else 0.0
+                    e_val = ws.cell(r, 5).value
+                    row_data['合计'] = float(e_val) if isinstance(e_val, (int, float)) else 0.0
+                    shop_rows.append(row_data)
+            else:
+                if c3 and str(c3).strip():
+                    shop_val = str(c3).strip()
+                    if any(kw in shop_val for kw in ['推广', '小计', '合计', '总计']):
+                        continue
+                    current_shop = shop_val
+                if c4 and str(c4).strip():
+                    model_val = str(c4).strip()
+                    if any(kw in model_val for kw in ['推广', '小计', '合计', '总计']):
+                        continue
+                    current_model = model_val
+                if c5 and str(c5).strip():
+                    indicator = str(c5).strip()
+                    if indicator in ('小计', '合计', '总计'):
+                        continue
+                    if any(kw in indicator for kw in ['小计', '合计', '总计', '推广型号']):
+                        continue
+                    row_data = {'店铺': current_shop, '型号': current_model, '指标': indicator}
+                    for col_idx, date_str in date_cols:
+                        v = ws.cell(r, col_idx).value
+                        row_data[date_str] = float(v) if isinstance(v, (int, float)) else 0.0
+                    e_val = ws.cell(r, 5).value
+                    excel_total = float(e_val) if isinstance(e_val, (int, float)) else 0.0
+                    calc_total = sum(row_data[d] for d in [d for _, d in date_cols])
+                    row_data['合计'] = calc_total if calc_total else excel_total
+                    model_rows.append(row_data)
+
+        targets[ym] = {
+            'shop': shop_rows,
+            'model': model_rows,
+            'dates': [d for _, d in date_cols],
+        }
+
+    return targets
+
+
+def load_promo_data(file_bytes: bytes):
+    """Parse 京东推广数据源 + 天猫推广数据源 sheets"""
+    import io
+    wb = None
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    except Exception:
+        try:
+            import xlrd
+            wb = xlrd.open_workbook(file_name=None, file_contents=file_bytes)
+        except Exception:
+            return []
+    rows = []
+    for sheet_name in ['京东推广数据源', '天猫推广数据源']:
+        try:
+            if sheet_name not in wb.sheetnames:
+                continue
+            ws = wb[sheet_name]
+        except Exception:
+            continue
+        if hasattr(ws, 'iter_rows'):
+            all_rows = list(ws.iter_rows(values_only=True))
+        else:
+            all_rows = [ws.row_values(i) for i in range(ws.nrows)]
+        if not all_rows:
+            continue
+        header = [str(c).strip() if c is not None else '' for c in all_rows[0]]
+        for raw in all_rows[1:]:
+            r = {}
+            for i, h in enumerate(header):
+                if i >= len(raw):
+                    r[h] = ''
+                else:
+                    v = raw[i]
+                    r[h] = v if v is not None else ''
+            date_val = r.get('日期', '')
+            if hasattr(date_val, 'strftime'):
+                date_str = date_val.strftime('%Y-%m-%d')
+            else:
+                date_str = str(date_val)[:10]
+            r['_date'] = date_str
+            r['_店铺'] = r.get('店铺', '')
+            r['_渠道'] = r.get('渠道', '')
+            r['_品类'] = r.get('品类', '')
+            r['_型号'] = r.get('型号', '')
+            _scene = r.get('营销场景') or r.get('推广场景') or r.get('场景') or r.get('营销渠道') or ''
+            r['_营销场景'] = str(_scene).strip() if _scene else r['_渠道']
+            spend = r.get('花费', None) or r.get('花费', 0)
+            r['_花费'] = float(spend) if spend not in (None, '') else 0.0
+            impress = r.get('展现数', None) or r.get('展现数', 0)
+            r['_展现数'] = float(impress) if impress not in (None, '') else 0.0
+            clicks = r.get('点击数', None) or r.get('点击数', 0)
+            r['_点击数'] = float(clicks) if clicks not in (None, '') else 0.0
+            direct_amt = r.get('直接订单金额', None) or r.get('直接订单金额', 0)
+            indirect_amt = r.get('间接订单金额', None) or r.get('间接订单金额', 0)
+            total_amt = r.get('总订单金额', None) or r.get('总订单金额', 0)
+            r['_直接订单金额'] = float(direct_amt) if direct_amt not in (None, '') else 0.0
+            r['_间接订单金额'] = float(indirect_amt) if indirect_amt not in (None, '') else 0.0
+            r['_总订单金额'] = float(total_amt) if total_amt not in (None, '') else 0.0
+            r['_总加购数'] = float(r.get('总加购数', 0) or 0)
+            cust = (r.get('成交客户数', None) or r.get('成交客户', None) or
+                    r.get('订单客户数', None) or r.get('支付买家数', None) or
+                    r.get('成交买家数', None) or 0)
+            r['_成交客户数'] = float(cust) if cust not in (None, '') else 0.0
+            total_orders = (r.get('总订单行', None) or r.get('订单行', None) or
+                           r.get('成交订单数', None) or r.get('订单数', None) or
+                           r.get('总成交订单数', None) or r.get('总订单数', None) or 0)
+            r['_总成交订单量'] = float(total_orders) if total_orders not in (None, '') else 0.0
+            direct_orders = (r.get('直接订单行', None) or r.get('直接成交订单数', None) or
+                            r.get('直接订单数', None) or r.get('直接成交订单量', None) or 0)
+            r['_直接订单量'] = float(direct_orders) if direct_orders not in (None, '') else 0.0
+            roi = r.get('投产比', None) or r.get('投产比', 0)
+            r['_投产比'] = float(roi) if roi not in (None, '') else 0.0
+            rows.append(r)
+    return rows
