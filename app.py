@@ -7675,14 +7675,19 @@ with tabs[6]:
         _view_mode = st.radio('视图', ['单月详情', '上半年汇总'], horizontal=True, key='target_view')
 
         # ═══════════════════════════════════════════════
-        # 上半年汇总视图
+        # 上半年汇总视图（华为三GAP方法论）
         # ═══════════════════════════════════════════════
         if _view_mode == '上半年汇总':
             from data.monthly_targets_1_4 import MONTHLY_TARGETS_1_4, H1_MONTHS
 
-            # ── 收集5-6月店铺目标（从targets中提取）──
-            # targets[ym]['shop'] 中找指标='成交金额目标'或'销额目标'的行，取合计值
-            _targets_5_6 = {}  # {shop: {ym: target_amt}}
+            # ── 数据准备 ──
+            _shop_order = ['华为京东自营', '天猫华为官旗', '天猫智选', '京东小豚', '抖音小豚']
+            _month_labels = ['1月', '2月', '3月', '4月', '5月', '6月']
+            _wan = lambda x: f'{x/10000:.1f}万' if abs(x) >= 10000 else f'{x:,.0f}'
+            _fmt_big = lambda x: f'{x/10000:,.1f}万' if abs(x) >= 10000 else f'{x:,.0f}'
+
+            # ── 目标数据（1-4月配置 + 5-6月 targets）──
+            _targets_5_6 = {}
             _aliases_target = ['成交金额目标', '销额目标']
             for ym in ['2026-05', '2026-06']:
                 if ym in targets:
@@ -7691,140 +7696,202 @@ with tabs[6]:
                         if shop == '天猫小豚':
                             continue
                         if sr['指标'] in _aliases_target:
-                            if shop not in _targets_5_6:
-                                _targets_5_6[shop] = {}
-                            _targets_5_6[shop][ym] = sr.get('合计', 0.0) or 0.0
+                            _targets_5_6.setdefault(shop, {})[ym] = sr.get('合计', 0.0) or 0.0
 
-            # ── 汇总1-6月目标（1-4月来自配置，5-6月来自targets）──
-            _h1_targets = {}  # {shop: {ym: target_amt}}
-            for shop in ['华为京东自营', '天猫华为官旗', '天猫智选', '京东小豚', '抖音小豚']:
+            _h1_targets = {}
+            for shop in _shop_order:
                 _h1_targets[shop] = {}
-                # 1-4月
                 if shop in MONTHLY_TARGETS_1_4:
                     for ym in ['2026-01', '2026-02', '2026-03', '2026-04']:
                         _h1_targets[shop][ym] = MONTHLY_TARGETS_1_4[shop].get(ym, 0.0)
-                # 5-6月
                 for ym in ['2026-05', '2026-06']:
                     _h1_targets[shop][ym] = _targets_5_6.get(shop, {}).get(ym, 0.0)
 
-            # ── 汇总1-6月实际销售（从 data['monthly'] 按月+店铺聚合）──
-            _h1_actual = {}  # {shop: {ym: actual_amt}}
-            _h1_spend = {}   # {shop: {ym: spend}}
-            for shop in _h1_targets:
-                _h1_actual[shop] = {ym: 0.0 for ym in H1_MONTHS}
-                _h1_spend[shop] = {ym: 0.0 for ym in H1_MONTHS}
+            # ── 实际数据（今年 + 去年同比）──
+            _h1_actual = {shop: {ym: 0.0 for ym in H1_MONTHS} for shop in _shop_order}
+            _h1_spend = {shop: {ym: 0.0 for ym in H1_MONTHS} for shop in _shop_order}
+            _h1_visitors = {shop: {ym: 0.0 for ym in H1_MONTHS} for shop in _shop_order}
+            _h1_buyers = {shop: {ym: 0.0 for ym in H1_MONTHS} for shop in _shop_order}
+            # 去年同期
+            _yoy_months = ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06']
+            _h1_actual_ly = {shop: {ym: 0.0 for ym in _yoy_months} for shop in _shop_order}
+            _h1_spend_ly = {shop: {ym: 0.0 for ym in _yoy_months} for shop in _shop_order}
 
-            # 从月度汇总取实际销额
             if 'monthly' in data:
                 for r in data['monthly']:
                     ym = r.get('月份', '')[:7]
-                    if ym not in H1_MONTHS:
-                        continue
                     shop = (r.get('店铺', '') or '').strip()
-                    if shop in _h1_actual:
-                        _h1_actual[shop][ym] += float(r.get('支付金额', 0) or 0)
+                    amt = float(r.get('支付金额', 0) or 0)
+                    vis = float(r.get('商品访客数', 0) or 0)
+                    buy = float(r.get('支付买家数', 0) or 0)
+                    if ym in H1_MONTHS and shop in _h1_actual:
+                        _h1_actual[shop][ym] += amt
+                        _h1_visitors[shop][ym] += vis
+                        _h1_buyers[shop][ym] += buy
+                    elif ym in _yoy_months and shop in _h1_actual_ly:
+                        _h1_actual_ly[shop][ym] += amt
 
-            # 从推广全量取实际推广花费（月度汇总）
             _local_promo_bytes_h1 = _promo_bytes if _promo_bytes is not None else _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
             _all_promo_h1 = load_promo_data(_local_promo_bytes_h1) if _local_promo_bytes_h1 else []
             for r in _all_promo_h1:
                 d = r.get('_date', '')
                 ym = d[:7] if len(d) >= 7 else ''
-                if ym not in H1_MONTHS:
-                    continue
                 shop = (r.get('_店铺', '') or '').strip()
-                if shop in _h1_spend:
-                    _h1_spend[shop][ym] += float(r.get('_花费', 0) or 0)
+                spend = float(r.get('_花费', 0) or 0)
+                if ym in H1_MONTHS and shop in _h1_spend:
+                    _h1_spend[shop][ym] += spend
+                elif ym in _yoy_months and shop in _h1_spend_ly:
+                    _h1_spend_ly[shop][ym] += spend
 
-            # ── 总览卡片 ──
+            # ── 汇总计算 ──
             _total_target = sum(sum(v.values()) for v in _h1_targets.values())
             _total_actual = sum(sum(v.values()) for v in _h1_actual.values())
             _total_spend = sum(sum(v.values()) for v in _h1_spend.values())
-            _total_rate = _total_actual / _total_target * 100 if _total_target > 0 else 0
-            _total_diff = _total_actual - _total_target
+            _total_actual_ly = sum(sum(v.values()) for v in _h1_actual_ly.values())
+            _total_spend_ly = sum(sum(v.values()) for v in _h1_spend_ly.values())
 
-            _wan = lambda x: f'{x/10000:.1f}万' if abs(x) >= 10000 else f'{x:,.0f}'
+            # GAP1: 目标达成
+            _gap1 = (_total_actual - _total_target) / _total_target if _total_target > 0 else None
+            # GAP2: 同比（销额）
+            _gap2 = (_total_actual - _total_actual_ly) / _total_actual_ly if _total_actual_ly > 0 else None
+            # 费率
+            _fee_rate = _total_spend / _total_actual * 100 if _total_actual > 0 else 0
+            _fee_rate_ly = _total_spend_ly / _total_actual_ly * 100 if _total_actual_ly > 0 else 0
+            _fee_gap = _fee_rate - _fee_rate_ly
 
-            st.markdown("""<div class="hero" style="padding:16px 28px 10px;margin-bottom:12px;">
-                <div style="font-size:18px;font-weight:700;">🎯 上半年目标达成总览（2026年1-6月）</div>
-            </div>""", unsafe_allow_html=True)
+            # ── 健康评分 ──
+            _score_parts = []
+            if _gap1 is not None:
+                _s1 = max(0, min(100, 100 + _gap1 * 200))
+                _score_parts.append(_s1)
+            if _gap2 is not None:
+                _s2 = max(0, min(100, 100 + _gap2 * 200))
+                _score_parts.append(_s2)
+            _health_score = sum(_score_parts) / len(_score_parts) if _score_parts else 50
+            if _health_score >= 90:   _status, _st_color, _st_msg = '🟢 健康', '#22c55e', '上半年各项核心指标表现良好，目标与同比均达成预期。'
+            elif _health_score >= 70: _status, _st_color, _st_msg = '🟡 关注', '#f59e0b', f'部分指标存在差距（综合评分{_health_score:.0f}/100），建议关注标红项。'
+            elif _health_score >= 50: _status, _st_color, _st_msg = '🔴 风险', '#ef4444', f'多项指标偏离目标（综合评分{_health_score:.0f}/100），需立即采取行动。'
+            else:                     _status, _st_color, _st_msg = '⚠️ 告警', '#dc2626', f'上半年经营状况堪忧（综合评分{_health_score:.0f}/100），请优先处理P0任务。'
 
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.metric('全渠道目标销额', _wan(_total_target))
-            with c2:
-                st.metric('全渠道实际销额', _wan(_total_actual),
-                         delta=f'{_total_diff/10000:+.1f}万' if abs(_total_diff) >= 10000 else f'{_total_diff:+,.0f}')
-            with c3:
-                st.metric('销额达成率', f'{_total_rate:.1f}%')
-            with c4:
-                _rate_color = '#22c55e' if _total_rate >= 100 else '#ef4444' if _total_rate < 80 else '#f59e0b'
-                st.markdown(f'<div style="padding:8px 0;"><span style="color:#64748b;font-size:12px;">实际费率</span><br>'
-                           f'<span style="font-size:24px;font-weight:700;color:{_rate_color};">'
-                           f'{_total_spend/_total_actual*100:.1f}%</span></div>' if _total_actual > 0 else '--',
-                           unsafe_allow_html=True)
+            # ════════════════════════════════════════
+            # Layer 1: 标题 + 一句话总结
+            # ════════════════════════════════════════
+            _one_liner = f"上半年全渠道GMV {_fmt_big(_total_actual)}"
+            if _gap1 is not None:
+                _one_liner += f"，目标达成率 {_total_actual/_total_target*100:.1f}%（{'超额' if _gap1 >= 0 else '缺口'}{abs(_gap1)*100:.1f}%）"
+            if _gap2 is not None:
+                _one_liner += f"，同比 {'增长' if _gap2 >= 0 else '下滑'}{abs(_gap2)*100:.1f}%"
+            _one_liner += f"，实际费率 {_fee_rate:.1f}%"
 
+            st.markdown(f"""
+            <div style='background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);border-radius:16px;padding:20px 28px;margin:4px 0 16px 0;color:#fff;'>
+            <div style='font-size:13px;color:#94a3b8;margin-bottom:4px;'>🎯 上半年经营复盘（2026年1-6月）</div>
+            <div style='font-size:20px;font-weight:800;line-height:1.5;'>{_one_liner}</div>
+            <div style='display:flex;gap:12px;margin-top:10px;'>
+            <span style='background:{_st_color}20;color:{_st_color};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;'>{_status} · 综合评分 {_health_score:.0f}/100</span>
+            </div></div>""", unsafe_allow_html=True)
+
+            # ════════════════════════════════════════
+            # Layer 2: 三GAP速览卡片
+            # ════════════════════════════════════════
+            st.markdown("<div style='font-size:13px;color:#475569;font-weight:700;margin:4px 0 2px 0;'>📊 三GAP速览</div>", unsafe_allow_html=True)
+            st.caption('GAP1=目标达成 | GAP2=同比变化 | GAP3=费率变化')
+
+            g1, g2, g3, g4 = st.columns(4)
+
+            with g1:
+                _c = '#22c55e' if (_gap1 or 0) >= 0 else '#ef4444' if (_gap1 or 0) < -0.1 else '#f59e0b'
+                _icon = '✅' if (_gap1 or 0) >= 0 else '🔴'
+                st.markdown(f"""<div style='background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;text-align:center;'>
+                <div style='font-size:11px;color:#64748b;font-weight:700;'>🎯 GAP1: 目标达成</div>
+                <div style='font-size:22px;font-weight:900;color:{_c};'>{_icon} {_gap1*100:+.1f}%</div>
+                <div style='font-size:10px;color:#94a3b8;'>实际 {_fmt_big(_total_actual)} / 目标 {_fmt_big(_total_target)}</div></div>""", unsafe_allow_html=True)
+
+            with g2:
+                _c = '#22c55e' if (_gap2 or 0) >= 0 else '#ef4444' if (_gap2 or 0) < -0.1 else '#f59e0b'
+                _icon = '📈' if (_gap2 or 0) >= 0 else '📉'
+                st.markdown(f"""<div style='background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;text-align:center;'>
+                <div style='font-size:11px;color:#64748b;font-weight:700;'>📅 GAP2: 同比变化</div>
+                <div style='font-size:22px;font-weight:900;color:{_c};'>{_icon} {_gap2*100:+.1f}%</div>
+                <div style='font-size:10px;color:#94a3b8;'>今年 {_fmt_big(_total_actual)} / 去年 {_fmt_big(_total_actual_ly)}</div></div>""", unsafe_allow_html=True)
+
+            with g3:
+                _c = '#22c55e' if _fee_gap <= 0 else '#ef4444' if _fee_gap > 2 else '#f59e0b'
+                _icon = '✅' if _fee_gap <= 0 else '⚠️'
+                st.markdown(f"""<div style='background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;text-align:center;'>
+                <div style='font-size:11px;color:#64748b;font-weight:700;'>💰 GAP3: 费率变化</div>
+                <div style='font-size:22px;font-weight:900;color:{_c};'>{_icon} {_fee_gap:+.1f}pp</div>
+                <div style='font-size:10px;color:#94a3b8;'>今年 {_fee_rate:.1f}% / 去年 {_fee_rate_ly:.1f}%</div></div>""", unsafe_allow_html=True)
+
+            with g4:
+                _c = '#22c55e' if _fee_rate <= 15 else '#ef4444' if _fee_rate > 25 else '#f59e0b'
+                st.markdown(f"""<div style='background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;text-align:center;'>
+                <div style='font-size:11px;color:#64748b;font-weight:700;'>📊 总推广花费</div>
+                <div style='font-size:22px;font-weight:900;color:#0f172a;'>{_fmt_big(_total_spend)}</div>
+                <div style='font-size:10px;color:#94a3b8;'>费率 {_fee_rate:.1f}% | ROI {_total_actual/_total_spend:.1f}' if _total_spend > 0 else '--</div></div>""" + "</div>", unsafe_allow_html=True)
+
+            # ════════════════════════════════════════
+            # Layer 3: 各店铺月度达成 + 同比
+            # ════════════════════════════════════════
             st.markdown('---')
+            st.subheader('📊 各店铺月度达成 & 同比')
 
-            # ── 各店铺月度达成表 ──
-            st.subheader('📊 各店铺月度达成')
-
-            _shop_order = ['华为京东自营', '天猫华为官旗', '天猫智选', '京东小豚', '抖音小豚']
-            _month_labels = ['1月', '2月', '3月', '4月', '5月', '6月']
-
-            # 构建HTML表格
             _tbl_rows = []
             for shop in _shop_order:
                 if shop not in _h1_targets:
                     continue
-                _row = [f'<b>{shop}</b>']
-                _shop_target = 0.0
-                _shop_actual = 0.0
+                _row_cells = [f'<b>{shop}</b>']
+                _st = 0.0; _sa = 0.0; _sal = 0.0; _ssp = 0.0
                 for i, ym in enumerate(H1_MONTHS):
                     t = _h1_targets[shop].get(ym, 0)
                     a = _h1_actual[shop].get(ym, 0)
-                    _shop_target += t
-                    _shop_actual += a
+                    _st += t; _sa += a
+                    ly_ym = _yoy_months[i]
+                    al = _h1_actual_ly[shop].get(ly_ym, 0)
+                    _sal += al
+                    sp = _h1_spend[shop].get(ym, 0)
+                    _ssp += sp
                     rate = a / t * 100 if t > 0 else None
+                    yoy = (a - al) / al * 100 if al > 0 else None
                     if rate is not None:
                         rc = '#22c55e' if rate >= 100 else '#ef4444' if rate < 80 else '#f59e0b'
-                        _cell = f'{_wan(t)} / {_wan(a)}<br><span style="color:{rc};font-weight:600;">{rate:.1f}%</span>'
                     else:
-                        _cell = f'{_wan(t)} / {_wan(a)}<br><span style="color:#94a3b8;">--</span>'
-                    _row.append(_cell)
-                # 合计列
-                _sr = _shop_actual / _shop_target * 100 if _shop_target > 0 else None
+                        rc = '#94a3b8'
+                    _yoy_str = f'<span style="color:#22c55e;">同比{yoy:+.0f}%</span>' if (yoy or 0) >= 0 else f'<span style="color:#ef4444;">同比{yoy:+.0f}%</span>' if yoy is not None else '<span style="color:#94a3b8;">同比--</span>'
+                    _cell = f'{_wan(t)} / {_wan(a)}<br><span style="color:{rc};font-weight:600;">{rate:.1f}%</span> {_yoy_str}' if rate is not None else f'{_wan(t)} / {_wan(a)}<br>-- {_yoy_str}'
+                    _row_cells.append(_cell)
+                # 合计
+                _sr = _sa / _st * 100 if _st > 0 else None
+                _sy = (_sa - _sal) / _sal * 100 if _sal > 0 else None
                 if _sr is not None:
                     src = '#22c55e' if _sr >= 100 else '#ef4444' if _sr < 80 else '#f59e0b'
-                    _row.append(f'<b>{_wan(_shop_target)}</b> / <b>{_wan(_shop_actual)}</b><br>'
-                               f'<span style="color:{src};font-weight:700;">{_sr:.1f}%</span>')
                 else:
-                    _row.append(f'<b>{_wan(_shop_target)}</b> / <b>{_wan(_shop_actual)}</b><br>--')
-                _tbl_rows.append(_row)
+                    src = '#94a3b8'
+                _syoy_str = f'<span style="color:#22c55e;">同比{_sy:+.0f}%</span>' if (_sy or 0) >= 0 else f'<span style="color:#ef4444;">同比{_sy:+.0f}%</span>' if _sy is not None else '--'
+                _fee = _ssp / _sa * 100 if _sa > 0 else 0
+                _row_cells.append(f'<b>{_wan(_st)} / {_wan(_sa)}</b><br><span style="color:{src};font-weight:700;">{_sr:.1f}%</span> {_syoy_str}')
+                _tbl_rows.append(_row_cells)
 
-            # 全渠道合计行
+            # 全渠道合计
             _total_row = ['<b>全渠道合计</b>']
-            _all_t = 0.0
-            _all_a = 0.0
-            for ym in H1_MONTHS:
+            _at = 0.0; _aa = 0.0; _aal = 0.0; _asp = 0.0
+            for i, ym in enumerate(H1_MONTHS):
                 t = sum(_h1_targets[s].get(ym, 0) for s in _shop_order if s in _h1_targets)
-                a = sum(_h1_actual[s].get(ym, 0) for s in _shop_order if s in _h1_actual)
-                _all_t += t
-                _all_a += a
+                a = sum(_h1_actual[s].get(ym, 0) for s in _shop_order)
+                _at += t; _aa += a
+                ly_ym = _yoy_months[i]
+                al = sum(_h1_actual_ly[s].get(ly_ym, 0) for s in _shop_order)
+                _aal += al
                 rate = a / t * 100 if t > 0 else None
-                if rate is not None:
-                    rc = '#22c55e' if rate >= 100 else '#ef4444' if rate < 80 else '#f59e0b'
-                    _total_row.append(f'<b>{_wan(t)} / {_wan(a)}</b><br>'
-                                     f'<span style="color:{rc};font-weight:700;">{rate:.1f}%</span>')
-                else:
-                    _total_row.append(f'<b>{_wan(t)} / {_wan(a)}</b><br>--')
-            _trate = _all_a / _all_t * 100 if _all_t > 0 else None
-            if _trate is not None:
-                trc = '#22c55e' if _trate >= 100 else '#ef4444' if _trate < 80 else '#f59e0b'
-                _total_row.append(f'<b>{_wan(_all_t)} / {_wan(_all_a)}</b><br>'
-                                 f'<span style="color:{trc};font-weight:700;">{_trate:.1f}%</span>')
-            else:
-                _total_row.append(f'<b>{_wan(_all_t)} / {_wan(_all_a)}</b><br>--')
+                yoy = (a - al) / al * 100 if al > 0 else None
+                rc = '#22c55e' if (rate or 0) >= 100 else '#ef4444' if (rate or 0) < 80 else '#f59e0b' if rate is not None else '#94a3b8'
+                _yoy_str = f'<span style="color:#22c55e;">同比{yoy:+.0f}%</span>' if (yoy or 0) >= 0 else f'<span style="color:#ef4444;">同比{yoy:+.0f}%</span>' if yoy is not None else '--'
+                _total_row.append(f'<b>{_wan(t)} / {_wan(a)}</b><br><span style="color:{rc};font-weight:700;">{rate:.1f}%</span> {_yoy_str}' if rate is not None else f'<b>{_wan(t)} / {_wan(a)}</b><br>-- {_yoy_str}')
+            _tr = _aa / _at * 100 if _at > 0 else None
+            _ty = (_aa - _aal) / _aal * 100 if _aal > 0 else None
+            _trc = '#22c55e' if (_tr or 0) >= 100 else '#ef4444' if (_tr or 0) < 80 else '#f59e0b'
+            _tyoy_str = f'<span style="color:#22c55e;">同比{_ty:+.0f}%</span>' if (_ty or 0) >= 0 else f'<span style="color:#ef4444;">同比{_ty:+.0f}%</span>' if _ty is not None else '--'
+            _total_row.append(f'<b>{_wan(_at)} / {_wan(_aa)}</b><br><span style="color:{_trc};font-weight:700;">{_tr:.1f}%</span> {_tyoy_str}')
             _tbl_rows.append(_total_row)
 
             _tbl_id = 'h1_' + str(hash(tuple(H1_MONTHS)))[:8]
@@ -7832,83 +7899,113 @@ with tabs[6]:
             _h1_html = f'<div id="{_tbl_id}" class="styled-table-wrap"><table class="styled-table">'
             _h1_html += '<thead><tr><th style="text-align:left;">店铺</th>'
             for ml in _month_labels:
-                _h1_html += f'<th style="text-align:center;">{ml}</th>'
+                _h1_html += f'<th style="text-align:center;font-size:11px;">{ml}<br><span style="font-weight:400;color:#94a3b8;">目标/实际</span></th>'
             _h1_html += '<th style="text-align:center;">上半年合计</th></tr></thead><tbody>'
             for _r in _tbl_rows:
                 _h1_html += '<tr>'
                 for j, cell in enumerate(_r):
                     align = 'left' if j == 0 else 'center'
-                    _h1_html += f'<td style="text-align:{align};white-space:nowrap;">{cell}</td>'
+                    _h1_html += f'<td style="text-align:{align};white-space:nowrap;font-size:12px;">{cell}</td>'
                 _h1_html += '</tr>'
             _h1_html += '</tbody></table></div>'
             st.markdown(_h1_html, unsafe_allow_html=True)
 
-            # ── 月度达成率趋势图 ──
-            st.subheader('📈 月度达成率趋势')
-            _chart_data = []
-            for shop in _shop_order:
-                if shop not in _h1_targets:
-                    continue
-                for i, ym in enumerate(H1_MONTHS):
-                    t = _h1_targets[shop].get(ym, 0)
-                    a = _h1_actual[shop].get(ym, 0)
-                    rate = a / t * 100 if t > 0 else None
-                    _chart_data.append({
-                        '店铺': shop,
-                        '月份': _month_labels[i],
-                        '达成率': rate if rate is not None else 0,
-                    })
-            if _chart_data:
-                import pandas as _pd2
-                _df_chart = _pd2.DataFrame(_chart_data)
-                _fig = px.line(_df_chart, x='月份', y='达成率', color='店铺', markers=True,
-                              color_discrete_sequence=['#1d4ed8', '#e6a817', '#22c55e', '#ef4444'])
-                _fig.add_hline(y=100, line_dash='dash', line_color='#94a3b8', annotation_text='目标线 100%')
-                _fig.update_layout(height=400, margin=dict(l=20, r=20, t=10, b=10),
-                                  hovermode='x unified',
-                                  yaxis=dict(ticksuffix='%', title='达成率'))
-                st.plotly_chart(_fig, use_container_width=True)
+            # ════════════════════════════════════════
+            # Layer 4: 图表 — 达成率趋势 + 同比
+            # ════════════════════════════════════════
+            c_left, c_right = st.columns(2)
 
-            # ── 各店铺累计达成进度条 ──
-            st.subheader('📊 各店铺上半年累计达成')
+            with c_left:
+                st.markdown('<div style="font-weight:700;font-size:13px;">📈 月度达成率趋势</div>', unsafe_allow_html=True)
+                _chart_data = []
+                for shop in _shop_order:
+                    if shop not in _h1_targets:
+                        continue
+                    for i, ym in enumerate(H1_MONTHS):
+                        t = _h1_targets[shop].get(ym, 0)
+                        a = _h1_actual[shop].get(ym, 0)
+                        rate = a / t * 100 if t > 0 else None
+                        _chart_data.append({'店铺': shop, '月份': _month_labels[i], '达成率': rate if rate is not None else 0})
+                if _chart_data:
+                    import pandas as _pd2
+                    _df_chart = _pd2.DataFrame(_chart_data)
+                    _fig = px.line(_df_chart, x='月份', y='达成率', color='店铺', markers=True,
+                                  color_discrete_sequence=['#1d4ed8', '#e6a817', '#22c55e', '#ef4444', '#8b5cf6'])
+                    _fig.add_hline(y=100, line_dash='dash', line_color='#94a3b8', annotation_text='100%')
+                    _fig.update_layout(height=340, margin=dict(l=20, r=20, t=10, b=10),
+                                      hovermode='x unified', yaxis=dict(ticksuffix='%'))
+                    st.plotly_chart(_fig, use_container_width=True)
+
+            with c_right:
+                st.markdown('<div style="font-weight:700;font-size:13px;">📊 月度GMV同比变化</div>', unsafe_allow_html=True)
+                _yoy_chart = []
+                for i, ym in enumerate(H1_MONTHS):
+                    a = sum(_h1_actual[s].get(ym, 0) for s in _shop_order)
+                    ly_ym = _yoy_months[i]
+                    al = sum(_h1_actual_ly[s].get(ly_ym, 0) for s in _shop_order)
+                    yoy = (a - al) / al * 100 if al > 0 else 0
+                    _yoy_chart.append({'月份': _month_labels[i], 'GMV(万)': a/10000, '同比': yoy})
+                if _yoy_chart:
+                    _df_yoy = _pd2.DataFrame(_yoy_chart)
+                    _fig2 = make_subplots(specs=[[{"secondary_y": True}]])
+                    _fig2.add_trace(go.Bar(x=_df_yoy['月份'], y=_df_yoy['GMV(万)'], name='GMV(万)',
+                                          marker_color='#1d4ed8', yaxis='y1'), secondary_y=False)
+                    _fig2.add_trace(go.Scatter(x=_df_yoy['月份'], y=_df_yoy['同比'], name='同比%',
+                                              mode='lines+markers', marker_color='#ef4444',
+                                              line=dict(width=3)), secondary_y=True)
+                    _fig2.add_hline(y=0, line_dash='dash', line_color='#94a3b8', secondary_y=True)
+                    _fig2.update_layout(height=340, margin=dict(l=20, r=20, t=10, b=10),
+                                       hovermode='x unified', legend=dict(orientation='h', y=1.12))
+                    _fig2.update_yaxes(title_text='GMV(万)', secondary_y=False)
+                    _fig2.update_yaxes(title_text='同比%', ticksuffix='%', secondary_y=True)
+                    st.plotly_chart(_fig2, use_container_width=True)
+
+            # ════════════════════════════════════════
+            # Layer 5: 各店铺累计达成进度条 + 费率
+            # ════════════════════════════════════════
+            st.markdown('---')
+            st.subheader('📊 各店铺累计达成 & 费率')
             for shop in _shop_order:
                 if shop not in _h1_targets:
                     continue
-                _st = sum(_h1_targets[shop].values())
-                _sa = sum(_h1_actual[shop].values())
-                _sr = _sa / _st * 100 if _st > 0 else 0
-                _s_color = '#22c55e' if _sr >= 100 else '#ef4444' if _sr < 80 else '#f59e0b'
-                _prog = min(_sr, 100)
+                _s_tgt = sum(_h1_targets[shop].values())
+                _s_act = sum(_h1_actual[shop].values())
+                _s_spd = sum(_h1_spend[shop].values())
+                _s_rate = _s_act / _s_tgt * 100 if _s_tgt > 0 else 0
+                _s_fee = _s_spd / _s_act * 100 if _s_act > 0 else 0
+                _s_act_ly = sum(_h1_actual_ly[shop].values())
+                _s_yoy = (_s_act - _s_act_ly) / _s_act_ly * 100 if _s_act_ly > 0 else None
+                _sc = '#22c55e' if _s_rate >= 100 else '#ef4444' if _s_rate < 80 else '#f59e0b'
+                _prog = min(_s_rate, 100)
+                _yoy_shop = f' | 同比 {_s_yoy:+.1f}%' if _s_yoy is not None else ''
                 st.markdown(
-                    f'<div style="display:flex;align-items:center;margin:4px 0;">'
-                    f'<span style="width:120px;font-weight:600;font-size:13px;">{shop}</span>'
-                    f'<div style="flex:1;background:#e5e7eb;border-radius:4px;height:14px;margin:0 10px;">'
-                    f'<div style="width:{_prog:.1f}%;background:{_s_color};height:14px;border-radius:4px;"></div></div>'
-                    f'<span style="font-size:12px;color:{_s_color};font-weight:600;min-width:80px;text-align:right;">'
-                    f'{_wan(_sa)} / {_wan(_st)} ({_sr:.1f}%)</span></div>',
+                    f'<div style="display:flex;align-items:center;margin:4px 0;gap:8px;">'
+                    f'<span style="width:110px;font-weight:600;font-size:12px;">{shop}</span>'
+                    f'<div style="flex:1;background:#e5e7eb;border-radius:4px;height:12px;">'
+                    f'<div style="width:{_prog:.1f}%;background:{_sc};height:12px;border-radius:4px;"></div></div>'
+                    f'<span style="font-size:11px;color:{_sc};font-weight:600;min-width:70px;text-align:right;">{_s_rate:.1f}%{_yoy_shop}</span>'
+                    f'<span style="font-size:11px;color:#64748b;min-width:80px;text-align:right;">费率 {_s_fee:.1f}%</span>'
+                    f'<span style="font-size:10px;color:#94a3b8;min-width:90px;text-align:right;">{_wan(_s_act)} / {_wan(_s_tgt)}</span></div>',
                     unsafe_allow_html=True
                 )
 
-            # ── 单品汇总（5-6月，因为1-4月无单品数据）──
+            # ════════════════════════════════════════
+            # Layer 6: 单品汇总（5-6月）
+            # ════════════════════════════════════════
             st.markdown('---')
             st.subheader('📦 单品汇总（5-6月）')
-            st.caption('💡 仅5-6月有单品级目标拆解数据，1-4月仅有店铺级目标')
+            st.caption('仅5-6月有单品级目标拆解数据')
 
-            # 从5-6月targets中收集单品目标
-            _model_targets = {}  # {(shop, model): {ym: target_amt}}
-            _aliases_mt = ['成交金额目标', '销额目标']
+            _model_targets = {}
             for ym in ['2026-05', '2026-06']:
                 if ym not in targets:
                     continue
                 for mr in targets[ym].get('model', []):
-                    if mr['指标'] in _aliases_mt:
+                    if mr['指标'] in _aliases_target:
                         key = (mr['店铺'], mr['型号'])
-                        if key not in _model_targets:
-                            _model_targets[key] = {}
-                        _model_targets[key][ym] = mr.get('合计', 0.0) or 0.0
+                        _model_targets.setdefault(key, {})[ym] = mr.get('合计', 0.0) or 0.0
 
-            # 从5-6月实际数据汇总单品实际销额
-            _model_actual = {}  # {(shop, model): {ym: actual_amt}}
+            _model_actual = {}
             if 'monthly' in data:
                 for r in data['monthly']:
                     ym = r.get('月份', '')[:7]
@@ -7919,25 +8016,15 @@ with tabs[6]:
                     if not model:
                         continue
                     key = (shop, model)
-                    if key not in _model_actual:
-                        _model_actual[key] = {'2026-05': 0.0, '2026-06': 0.0}
-                    _model_actual[key][ym] += float(r.get('支付金额', 0) or 0)
+                    _model_actual.setdefault(key, {'2026-05': 0.0, '2026-06': 0.0})[ym] += float(r.get('支付金额', 0) or 0)
 
-            # 型号映射：汇总XT-X60【7W】+XT-X60【15W】→ XT-X60
             for shop_name, shop_map in _MODEL_MERGE_MAP.items():
                 for mapped_model, source_models in shop_map.items():
                     for ym in ['2026-05', '2026-06']:
-                        merged = 0.0
-                        for sm in source_models:
-                            key_src = (shop_name, sm)
-                            merged += _model_actual.get(key_src, {}).get(ym, 0.0)
+                        merged = sum(_model_actual.get((shop_name, sm), {}).get(ym, 0) for sm in source_models)
                         if merged > 0:
-                            key_mapped = (shop_name, mapped_model)
-                            if key_mapped not in _model_actual:
-                                _model_actual[key_mapped] = {'2026-05': 0.0, '2026-06': 0.0}
-                            _model_actual[key_mapped][ym] += merged
+                            _model_actual.setdefault((shop_name, mapped_model), {'2026-05': 0.0, '2026-06': 0.0})[ym] += merged
 
-            # 构建单品汇总表
             _model_summary = []
             for (shop, model), ym_targets in _model_targets.items():
                 _mt = sum(ym_targets.values())
@@ -7945,7 +8032,6 @@ with tabs[6]:
                 _mr = _ma / _mt * 100 if _mt > 0 else None
                 _model_summary.append((shop, model, _mt, _ma, _mr))
 
-            # 按目标销额降序
             _model_summary.sort(key=lambda x: x[2], reverse=True)
 
             if _model_summary:
@@ -7955,9 +8041,8 @@ with tabs[6]:
                         rc = '#22c55e' if mr >= 100 else '#ef4444' if mr < 80 else '#f59e0b'
                         _rate_str = f'<span style="color:{rc};font-weight:600;">{mr:.1f}%</span>'
                     else:
-                        _rate_str = '<span style="color:#94a3b8;">--</span>'
+                        _rate_str = '--'
                     _mtbl_rows.append([shop, model, f'{mt:,.0f}', f'{ma:,.0f}', _rate_str])
-
                 _mtbl_html = '<div class="styled-table-wrap"><table class="styled-table">'
                 _mtbl_html += '<thead><tr><th>店铺</th><th>型号</th><th>目标销额</th><th>实际销额</th><th>达成率</th></tr></thead><tbody>'
                 for _r in _mtbl_rows:
@@ -7982,15 +8067,150 @@ with tabs[6]:
             model_rows = tgt.get('model', [])
             date_list = tgt.get('dates', [])
 
-            # 目标达成模块不受全局筛选影响，只受目标月份选择影响
-            # 从原始销售数据中筛选目标月份的日期
+            # ── 月度/年累达成指标卡片（华为三GAP）──
+            # 预计算该月全渠道目标销额（从shop_rows中提取）
+            _mo_target = 0.0
+            _aliases_tgt = ['成交金额目标', '销额目标']
+            for sr in shop_rows:
+                if sr.get('店铺') == '天猫小豚':
+                    continue
+                if sr.get('指标') in _aliases_tgt:
+                    _mo_target += sr.get('合计', 0.0) or 0.0
+
+            # 月度实际销额
+            _mo_actual = 0.0
+            _mo_spend = 0.0
+            _mo_visitors = 0.0
+            _mo_buyers = 0.0
             _cur_ym_prefix = _sel_ym + '-'
             _raw_daily_target = [r for r in data['daily'] if r.get('日期', '').startswith(_cur_ym_prefix)]
-            # 推广数据同样不受全局筛选影响
-            # 确保 _promo_bytes 已加载（用户可能直接跳转到目标达成模块，未经过tabs[0]）
+            for r in _raw_daily_target:
+                shop = (r.get('店铺', '') or '').strip()
+                if shop == '天猫小豚':
+                    continue
+                _mo_actual += float(r.get('支付金额', 0) or 0)
+                _mo_visitors += float(r.get('商品访客数', 0) or 0)
+                _mo_buyers += float(r.get('支付买家数', 0) or 0)
+
             _local_promo_bytes = _promo_bytes if _promo_bytes is not None else _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
             _all_promo_raw = load_promo_data(_local_promo_bytes) if _local_promo_bytes else []
             _raw_promo_target = [r for r in _all_promo_raw if r.get('_date', '').startswith(_cur_ym_prefix)]
+            for r in _raw_promo_target:
+                shop = (r.get('_店铺', '') or '').strip()
+                if shop == '天猫小豚':
+                    continue
+                _mo_spend += float(r.get('_花费', 0) or 0)
+
+            # 年累目标（从1月到当前月）
+            _ytd_target = 0.0
+            _ytd_actual = 0.0
+            _ytd_spend = 0.0
+            _cur_month_num = int(_sel_ym.split('-')[1])
+            _ytd_months = [f'2026-{m:02d}' for m in range(1, _cur_month_num + 1)]
+
+            # 年累目标：1-4月从配置，5+从targets
+            from data.monthly_targets_1_4 import MONTHLY_TARGETS_1_4, H1_MONTHS
+            for ym in _ytd_months:
+                if ym in ['2026-01', '2026-02', '2026-03', '2026-04']:
+                    for shop in MONTHLY_TARGETS_1_4:
+                        _ytd_target += MONTHLY_TARGETS_1_4[shop].get(ym, 0.0)
+                elif ym in targets:
+                    for sr in targets[ym].get('shop', []):
+                        if sr.get('店铺') == '天猫小豚':
+                            continue
+                        if sr.get('指标') in _aliases_tgt:
+                            _ytd_target += sr.get('合计', 0.0) or 0.0
+
+            # 年累实际（从data['monthly']聚合）
+            if 'monthly' in data:
+                for r in data['monthly']:
+                    ym = r.get('月份', '')[:7]
+                    if ym in _ytd_months:
+                        shop = (r.get('店铺', '') or '').strip()
+                        if shop == '天猫小豚':
+                            continue
+                        _ytd_actual += float(r.get('支付金额', 0) or 0)
+
+            # 年累推广花费
+            _all_promo_full = load_promo_data(_local_promo_bytes) if _local_promo_bytes else []
+            for r in _all_promo_full:
+                d = r.get('_date', '')
+                ym = d[:7] if len(d) >= 7 else ''
+                if ym in _ytd_months:
+                    shop = (r.get('_店铺', '') or '').strip()
+                    if shop == '天猫小豚':
+                        continue
+                    _ytd_spend += float(r.get('_花费', 0) or 0)
+
+            # 同比（去年同期该月）
+            _ly_ym = f'{int(_sel_ym[:4])-1}-{_sel_ym[5:]}'
+            _ly_actual = 0.0
+            _ly_spend = 0.0
+            _ly_ytd_actual = 0.0
+            _ly_ytd_months = [f'{int(_sel_ym[:4])-1}-{m:02d}' for m in range(1, _cur_month_num + 1)]
+            if 'monthly' in data:
+                for r in data['monthly']:
+                    ym = r.get('月份', '')[:7]
+                    shop = (r.get('店铺', '') or '').strip()
+                    if shop == '天猫小豚':
+                        continue
+                    amt = float(r.get('支付金额', 0) or 0)
+                    if ym == _ly_ym:
+                        _ly_actual += amt
+                    if ym in _ly_ytd_months:
+                        _ly_ytd_actual += amt
+            for r in _all_promo_full:
+                d = r.get('_date', '')
+                ym = d[:7] if len(d) >= 7 else ''
+                shop = (r.get('_店铺', '') or '').strip()
+                if shop == '天猫小豚':
+                    continue
+                spend = float(r.get('_花费', 0) or 0)
+                if ym == _ly_ym:
+                    _ly_spend += spend
+
+            # 计算指标
+            _mo_rate = _mo_actual / _mo_target * 100 if _mo_target > 0 else None
+            _ytd_rate = _ytd_actual / _ytd_target * 100 if _ytd_target > 0 else None
+            _mo_yoy = (_mo_actual - _ly_actual) / _ly_actual * 100 if _ly_actual > 0 else None
+            _ytd_yoy = (_ytd_actual - _ly_ytd_actual) / _ly_ytd_actual * 100 if _ly_ytd_actual > 0 else None
+            _mo_fee = _mo_spend / _mo_actual * 100 if _mo_actual > 0 else 0
+            _ytd_fee = _ytd_spend / _ytd_actual * 100 if _ytd_actual > 0 else 0
+            _ly_fee = _ly_spend / _ly_actual * 100 if _ly_actual > 0 else 0
+
+            _fmt_w = lambda x: f'{x/10000:.1f}万' if abs(x) >= 10000 else f'{x:,.0f}'
+
+            # 渲染指标卡片
+            st.markdown("""<div style='font-size:13px;color:#475569;font-weight:700;margin:4px 0 2px 0;'>📊 月度 & 年累达成指标</div>""", unsafe_allow_html=True)
+            st.caption(f'目标月份：{_sel_ym} | 年累：1-{_cur_month_num}月 | 同比：vs {_ly_ym}')
+
+            c1, c2, c3, c4, c5 = st.columns(5)
+            with c1:
+                _c = '#22c55e' if (_mo_rate or 0) >= 100 else '#ef4444' if (_mo_rate or 0) < 80 else '#f59e0b'
+                st.metric('月度达成率', f'{_mo_rate:.1f}%' if _mo_rate else '--',
+                         delta=f'{_mo_actual - _mo_target:+,.0f}' if _mo_target > 0 else None)
+            with c2:
+                _c2 = '#22c55e' if (_ytd_rate or 0) >= 100 else '#ef4444' if (_ytd_rate or 0) < 80 else '#f59e0b'
+                st.metric('年累达成率', f'{_ytd_rate:.1f}%' if _ytd_rate else '--',
+                         delta=f'{_ytd_actual - _ytd_target:+,.0f}' if _ytd_target > 0 else None)
+            with c3:
+                _c3 = '#22c55e' if (_mo_yoy or 0) >= 0 else '#ef4444'
+                st.metric('月度同比', f'{_mo_yoy:+.1f}%' if _mo_yoy is not None else '--',
+                         delta=f'去年{_fmt_w(_ly_actual)}' if _ly_actual > 0 else None)
+            with c4:
+                _c4 = '#22c55e' if (_ytd_yoy or 0) >= 0 else '#ef4444'
+                st.metric('年累同比', f'{_ytd_yoy:+.1f}%' if _ytd_yoy is not None else '--',
+                         delta=f'去年{_fmt_w(_ly_ytd_actual)}' if _ly_ytd_actual > 0 else None)
+            with c5:
+                _c5 = '#22c55e' if _mo_fee <= 15 else '#ef4444' if _mo_fee > 25 else '#f59e0b'
+                _fee_delta = _mo_fee - _ly_fee if _ly_actual > 0 else None
+                st.metric('实际费率', f'{_mo_fee:.1f}%',
+                         delta=f'{_fee_delta:+.1f}pp' if _fee_delta is not None else None)
+
+            st.markdown('---')
+
+            # ── 继续原有逻辑（数据已预计算，跳过重复加载）──
+            # 注意：_raw_daily_target, _raw_promo_target, _all_promo_raw, _local_promo_bytes 已在上面定义
 
             if not _raw_daily_target:
                 st.warning('请先上传销售数据，才能自动计算达成率')
