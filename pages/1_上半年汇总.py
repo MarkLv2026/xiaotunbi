@@ -77,7 +77,6 @@ st.set_page_config(
 # ── CSS 样式（简化版）──
 CSS = '''
 <style>
-<style>
 .stApp {background: #f8fafc;}
 .hero {background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-radius: 16px; padding: 20px 28px; margin: 4px 0 16px 0; color: #fff;}
 .hero-title {font-size: 24px; font-weight: 900; margin: 4px 0 4px 0;}
