@@ -577,7 +577,12 @@ def load_promo_data(file_bytes: bytes):
 
 @st.cache_data(show_spinner=False)
 def load_targets(file_bytes: bytes):
-    """解析目标 Excel，返回 {月份: {'shop': [...], 'model': [...]}}"""
+    """解析目标 Excel，返回 {月份: {'shop': [...], 'model': [...]}}
+    
+    兼容两种格式：
+    1. 按月拆分详细表（旧格式）：Sheet名含'26年5月'，有'店铺'+'指标'表头，每日数据列
+    2. 月度汇总表（新格式）：Sheet名如'Sheet1'，只有'店铺'表头，月份列（2026-01等）
+    """
     import io, re
     import openpyxl as _xl
     from datetime import datetime as _dt, timedelta as _td
@@ -587,145 +592,190 @@ def load_targets(file_bytes: bytes):
     _excel_epoch = _dt(1899, 12, 30)
 
     for ws_name in wb.sheetnames:
-        m = re.search(r'(\d+)年(\d+)月', ws_name)
-        if not m:
-            continue
-        year = int('20' + m.group(1))
-        month = int(m.group(2))
-        ym = f'{year}-{month:02d}'
         ws = wb[ws_name]
         max_row = ws.max_row
         max_col = min(ws.max_column, 60)
-
-        # ── 1. 找日期行 ──
-        # 策略：找 C="店铺" D="指标" 的行，然后尝试多行检测日期
-        # 兼容多种布局：日期可能在上一行 / 同一行 / 下一行
-        header_row = 0
-        for r in range(1, min(20, max_row + 1)):
-            c3 = ws.cell(r, 3).value
-            c4 = ws.cell(r, 4).value
-            if c3 == '店铺' and c4 == '指标':
-                header_row = r
-                break
-        if header_row < 1:
-            continue
-
-        date_cols = []  # [(col_idx, 'YYYY-MM-DD'), ...]
-        # 按优先级尝试：上一行 → 当前行 → 下一行
-        for candidate_row in (header_row - 1, header_row, header_row + 1):
-            if candidate_row < 1:
+        
+        # ── 判断格式类型 ──
+        # 旧格式：Sheet名含'26年5月'等
+        m = re.search(r'(\d+)年(\d+)月', ws_name)
+        if m:
+            # ── 旧格式：按月拆分的详细目标表 ──
+            year = int('20' + m.group(1))
+            month = int(m.group(2))
+            ym = f'{year}-{month:02d}'
+            
+            # 找日期行（找 C="店铺" D="指标" 的行）
+            header_row = 0
+            for r in range(1, min(20, max_row + 1)):
+                c3 = ws.cell(r, 3).value
+                c4 = ws.cell(r, 4).value
+                if c3 == '店铺' and c4 == '指标':
+                    header_row = r
+                    break
+            if header_row < 1:
                 continue
-            for c in range(7, max_col + 1):
-                v = ws.cell(candidate_row, c).value
-                dt = None
+
+            date_cols = []
+            for candidate_row in (header_row - 1, header_row, header_row + 1):
+                if candidate_row < 1:
+                    continue
+                for c in range(7, max_col + 1):
+                    v = ws.cell(candidate_row, c).value
+                    dt = None
+                    if isinstance(v, (int, float)) and 40000 < v < 50000:
+                        dt = _excel_epoch + _td(days=int(v))
+                    elif hasattr(v, 'strftime'):
+                        dt = v
+                    if dt:
+                        date_cols.append((c, dt.strftime('%Y-%m-%d')))
+                if date_cols:
+                    break
+
+            if not date_cols:
+                continue
+
+            shop_rows = []
+            model_rows = []
+            in_model_section = False
+            current_shop = ''
+            current_model = ''
+
+            data_start = header_row + 1
+            while data_start <= max_row:
+                c3 = ws.cell(data_start, 3).value
+                c4 = ws.cell(data_start, 4).value
+                if c3 or c4:
+                    break
+                data_start += 1
+                
+            for r in range(data_start, max_row + 1):
+                c3 = ws.cell(r, 3).value
+                c4 = ws.cell(r, 4).value
+                c5 = ws.cell(r, 5).value
+
+                if c3 and str(c3).strip() == '销售目标拆解':
+                    in_model_section = True
+                    continue
+                if in_model_section and c3 and str(c3).strip() == '店铺' and c4 and str(c4).strip() == '型号':
+                    continue
+                if not in_model_section:
+                    if not c3 and not c4:
+                        continue
+                else:
+                    if not c4 and not c5:
+                        if c3 and str(c3).strip():
+                            current_shop = str(c3).strip()
+                        continue
+
+                if not in_model_section:
+                    if c3 and str(c3).strip() == '合计':
+                        current_shop = ''
+                        continue
+                    if c3:
+                        current_shop = str(c3).strip()
+                    if c4 and current_shop:
+                        indicator = str(c4).strip()
+                        row_data = {'店铺': current_shop, '指标': indicator}
+                        for col_idx, date_str in date_cols:
+                            v = ws.cell(r, col_idx).value
+                            row_data[date_str] = float(v) if isinstance(v, (int, float)) else 0.0
+                        e_val = ws.cell(r, 5).value
+                        row_data['合计'] = float(e_val) if isinstance(e_val, (int, float)) else 0.0
+                        shop_rows.append(row_data)
+                else:
+                    if c3 and str(c3).strip():
+                        shop_val = str(c3).strip()
+                        if any(kw in shop_val for kw in ['推广', '小计', '合计', '总计']):
+                            continue
+                        current_shop = shop_val
+                    if c4 and str(c4).strip():
+                        model_val = str(c4).strip()
+                        if any(kw in model_val for kw in ['推广', '小计', '合计', '总计']):
+                            continue
+                        current_model = model_val
+                    if c5 and str(c5).strip():
+                        indicator = str(c5).strip()
+                        if indicator in ('小计', '合计', '总计') or any(kw in indicator for kw in ['小计', '合计', '总计', '推广型号']):
+                            continue
+                        row_data = {'店铺': current_shop, '型号': current_model, '指标': indicator}
+                        for col_idx, date_str in date_cols:
+                            v = ws.cell(r, col_idx).value
+                            row_data[date_str] = float(v) if isinstance(v, (int, float)) else 0.0
+                        e_val = ws.cell(r, 5).value
+                        excel_total = float(e_val) if isinstance(e_val, (int, float)) else 0.0
+                        calc_total = sum(row_data[d] for d in [d for _, d in date_cols])
+                        row_data['合计'] = calc_total if calc_total else excel_total
+                        model_rows.append(row_data)
+
+            targets[ym] = {
+                'shop': shop_rows,
+                'model': model_rows,
+                'dates': [d for _, d in date_cols],
+            }
+            
+        else:
+            # ── 新格式：月度汇总表 ──
+            # 检测表头：第一行应该是"店铺" + 月份列
+            header_row = 1
+            c1 = ws.cell(header_row, 1).value
+            if c1 != '店铺':
+                continue  # 不是目标表格式
+                
+            # 读取月份列
+            month_cols = []  # [(col_idx, 'YYYY-MM'), ...]
+            for c in range(2, max_col + 1):
+                v = ws.cell(header_row, c).value
                 if isinstance(v, (int, float)) and 40000 < v < 50000:
                     dt = _excel_epoch + _td(days=int(v))
-                elif hasattr(v, 'strftime'):  # datetime/date 对象（公式计算的日期）
-                    dt = v
-                if dt:
-                    date_cols.append((c, dt.strftime('%Y-%m-%d')))
-            if date_cols:
-                break  # 找到日期就停止
-
-        if not date_cols:
-            continue
-
-        shop_rows = []
-        model_rows = []
-        in_model_section = False
-        current_shop = ''
-        current_model = ''
-
-        # 数据起始行：表头行的下一行（header_row + 1）
-        # 注意：某些Sheet可能有额外的分隔/标题行，用 while 跳过空行
-        data_start = header_row + 1
-        while data_start <= max_row:
-            c3 = ws.cell(data_start, 3).value
-            c4 = ws.cell(data_start, 4).value
-            if c3 or c4:
-                break
-            data_start += 1
-        for r in range(data_start, max_row + 1):
-            c3 = ws.cell(r, 3).value
-            c4 = ws.cell(r, 4).value
-            c5 = ws.cell(r, 5).value
-
-            # 检测单品区开始
-            if c3 and str(c3).strip() == '销售目标拆解':
-                in_model_section = True
+                    month_cols.append((c, f'{dt.year}-{dt.month:02d}'))
+                elif isinstance(v, str) and re.match(r'\d{4}-\d{2}', v):
+                    month_cols.append((c, v))
+                    
+            if not month_cols:
                 continue
-            # 单品区的标题行
-            if in_model_section and c3 and str(c3).strip() == '店铺' and c4 and str(c4).strip() == '型号':
-                continue
-            # 跳过空行（单品区：至少 c4（型号）或 c5（指标）有值才不算空行）
-            if not in_model_section:
-                if not c3 and not c4:
+                
+            # 读取数据行
+            import calendar
+            for r in range(2, max_row + 1):
+                shop_name = ws.cell(r, 1).value
+                if not shop_name:
                     continue
-            else:
-                if not c4 and not c5:
-                    # c3 有值但 c4/c5 都没值，可能是空行或分隔行
-                    if c3 and str(c3).strip():
-                        current_shop = str(c3).strip()
-                    continue
-
-            if not in_model_section:
-                # ── 店铺目标区 ──
-                if c3 and str(c3).strip() == '合计':
-                    # 店铺区结束，继续往下找单品区（不 break）
-                    current_shop = ''
-                    continue
-                if c3:
-                    current_shop = str(c3).strip()
-                if c4 and current_shop:
-                    indicator = str(c4).strip()
-                    # 保留所有指标行（目标/实际/费率），渲染时分类处理
-                    row_data = {'店铺': current_shop, '指标': indicator}
-                    for col_idx, date_str in date_cols:
-                        v = ws.cell(r, col_idx).value
-                        row_data[date_str] = float(v) if isinstance(v, (int, float)) else 0.0
-                    # 合计列(E)
-                    e_val = ws.cell(r, 5).value
-                    row_data['合计'] = float(e_val) if isinstance(e_val, (int, float)) else 0.0
-                    shop_rows.append(row_data)
-            else:
-                # ── 单品目标区 ──
-                if c3 and str(c3).strip():
-                    shop_val = str(c3).strip()
-                    # 跳过汇总行：C列是"推广"、"推广型号"等
-                    if any(kw in shop_val for kw in ['推广', '小计', '合计', '总计']):
-                        continue
-                    current_shop = shop_val
-                if c4 and str(c4).strip():
-                    model_val = str(c4).strip()
-                    # 跳过汇总行：D列是"推广"、"小计"等
-                    if any(kw in model_val for kw in ['推广', '小计', '合计', '总计']):
-                        continue
-                    current_model = model_val
-                if c5 and str(c5).strip():
-                    indicator = str(c5).strip()
-                    # 跳过小计/合计等汇总行
-                    if indicator in ('小计', '合计', '总计'):
-                        continue
-                    # 跳过包含汇总关键字的指标（带空格、全角等变体）
-                    if any(kw in indicator for kw in ['小计', '合计', '总计', '推广型号']):
-                        continue
-                    # 保留所有指标行（目标/实际/费率），渲染时分类处理
-                    row_data = {'店铺': current_shop, '型号': current_model, '指标': indicator}
-                    for col_idx, date_str in date_cols:
-                        v = ws.cell(r, col_idx).value
-                        row_data[date_str] = float(v) if isinstance(v, (int, float)) else 0.0
-                    # 单品区合计列可能不在E列，由日期值自动求和
-                    e_val = ws.cell(r, 5).value
-                    excel_total = float(e_val) if isinstance(e_val, (int, float)) else 0.0
-                    calc_total = sum(row_data[d] for d in [d for _, d in date_cols])
-                    row_data['合计'] = calc_total if calc_total else excel_total
-                    model_rows.append(row_data)
-
-        targets[ym] = {
-            'shop': shop_rows,
-            'model': model_rows,
-            'dates': [d for _, d in date_cols],
-        }
+                    
+                shop_name = str(shop_name).strip()
+                
+                for col_idx, ym in month_cols:
+                    v = ws.cell(r, col_idx).value
+                    target_val = float(v) if isinstance(v, (int, float)) else 0.0
+                    
+                    if ym not in targets:
+                        targets[ym] = {'shop': [], 'model': [], 'dates': []}
+                    
+                    # 获取该月天数，将月度目标均匀分配到每日
+                    year, month = map(int, ym.split('-'))
+                    _, days_in_month = calendar.monthrange(year, month)
+                    daily_target = target_val / days_in_month if days_in_month > 0 else 0
+                    
+                    # 创建一行"成交金额目标"数据，包含每日目标
+                    row_data = {
+                        '店铺': shop_name,
+                        '指标': '成交金额目标',
+                        '合计': target_val,
+                    }
+                    
+                    # 生成该月所有日期，并均匀分配目标
+                    dates_list = []
+                    for day in range(1, days_in_month + 1):
+                        date_str = f'{ym}-{day:02d}'
+                        dates_list.append(date_str)
+                        row_data[date_str] = daily_target
+                    
+                    targets[ym]['shop'].append(row_data)
+                    # 更新dates列表（合并所有日期）
+                    for d in dates_list:
+                        if d not in targets[ym]['dates']:
+                            targets[ym]['dates'].append(d)
+                    targets[ym]['dates'].sort()
 
     return targets
 
