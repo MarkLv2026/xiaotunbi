@@ -1700,10 +1700,70 @@ def build_daily_trend(rows, all_rows, limit=30):
             r['支付转化率_同比'] = None
     return result
 
+def build_weekly_trend(rows, all_rows, limit=12):
+    """按周聚合趋势数据，返回最近 limit 周"""
+    import datetime
+    d = {}
+    for r in rows:
+        dt = r.get('日期', '')
+        if not dt:
+            continue
+        try:
+            dt_obj = datetime.datetime.strptime(dt, '%Y-%m-%d').date()
+            # ISO 周: YYYY-WNN
+            year, week, _ = dt_obj.isocalendar()
+            wk = f"{year}-W{week:02d}"
+        except Exception:
+            continue
+        d.setdefault(wk, {k: 0.0 for k in METRICS})
+        for k in METRICS:
+            d[wk][k] += float(r.get(k, 0) or 0)
+    out = []
+    for wk, v in d.items():
+        v['日期'] = wk
+        v['客单价'] = v['支付金额'] / v['支付买家数'] if v['支付买家数'] else 0
+        v['支付转化率'] = v['支付买家数'] / v['商品访客数'] if v['商品访客数'] else 0
+        out.append(v)
+    out = sorted(out, key=lambda x: x['日期'])
+    result = out[-limit:] if len(out) > limit else out
+    # 同比：去年同期同一周（从 all_rows 查询）
+    for r in result:
+        wk = r['日期']
+        try:
+            year, week = int(wk[:4]), int(wk[6:8])
+            # 去年同一周
+            ly_year = year - 1
+            ly_wk = f"{ly_year}-W{week:02d}"
+        except Exception:
+            continue
+        ly_rows = []
+        for x in all_rows:
+            xdt = x.get('日期', '')
+            if not xdt:
+                continue
+            try:
+                xdt_obj = datetime.datetime.strptime(xdt, '%Y-%m-%d').date()
+                xy, xw, _ = xdt_obj.isocalendar()
+                if f"{xy}-W{xw:02d}" == ly_wk:
+                    ly_rows.append(x)
+            except Exception:
+                continue
+        if ly_rows:
+            ly_sum = summarize(ly_rows)
+            r['支付金额_同比'] = (r['支付金额'] - ly_sum['支付金额']) / ly_sum['支付金额'] if ly_sum['支付金额'] else None
+            r['商品访客数_同比'] = (r['商品访客数'] - ly_sum['商品访客数']) / ly_sum['商品访客数'] if ly_sum['商品访客数'] else None
+            r['支付转化率_同比'] = (r['支付转化率'] - ly_sum['支付转化率']) / ly_sum['支付转化率'] if ly_sum['支付转化率'] else None
+        else:
+            r['支付金额_同比'] = None
+            r['商品访客数_同比'] = None
+            r['支付转化率_同比'] = None
+    return result
+
 filtered_monthly = build_monthly(daily)
 mm_f = {r['月份']: r for r in filtered_monthly}
 unique_days = len(set(r['日期'] for r in daily))
 daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
+weekly_trend = build_weekly_trend(daily, daily_all_filtered, 12)
 
 # ─────────────────────────────────────────────────────────────
 # 新PPT生成函数 - 7页简约大气风格
@@ -2360,10 +2420,41 @@ with tabs[0]:
         k15.metric('推广成交占比', f"{_prs:.2f}%", _prs_d)
 
     # ── 日趋势（最近30天）──
-    st.markdown('<div class="section-title">日趋势（最近30天）</div>', unsafe_allow_html=True)
-    if daily_trend:
+    st.markdown('<div class="section-title">趋势分析</div>', unsafe_allow_html=True)
+    
+    # 粒度切换按钮
+    _ov_gran = st.radio('粒度', ['日度', '周度', '月度'], horizontal=True, key='overview_gran')
+    
+    # 根据粒度选择数据
+    if _ov_gran == '日度':
+        _trend_data = daily_trend
+        _x_key = '日期'
+        _limit_label = '最近30天'
+    elif _ov_gran == '周度':
+        _trend_data = weekly_trend
+        _x_key = '日期'
+        _limit_label = '最近12周'
+    else:
+        # 月度：使用 filtered_monthly，但需要转换为和 daily_trend 相同的格式
+        _trend_data = []
+        for r in filtered_monthly:
+            _trend_data.append({
+                '日期': r['月份'],
+                '支付金额': r['支付金额'],
+                '商品访客数': r['商品访客数'],
+                '支付转化率': r['支付转化率'],
+                '支付件数': r['支付件数'],
+                '客单价': r['客单价'],
+                '支付金额_同比': None,
+                '商品访客数_同比': None,
+                '支付转化率_同比': None,
+            })
+        _x_key = '日期'
+        _limit_label = '全部月份'
+    
+    if _trend_data:
         # 自适应单位
-        max_amt = max(r['支付金额'] for r in daily_trend)
+        max_amt = max(r['支付金额'] for r in _trend_data)
         use_wan = max_amt >= 10000
         def _amt_label(v):
             return f"{v/10000:.1f}万" if use_wan else f"{v:,.0f}"
@@ -2373,67 +2464,67 @@ with tabs[0]:
 
         # 1) 支付金额趋势
         bar_texts = []
-        for r in daily_trend:
+        for r in _trend_data:
             t = _amt_label(r['支付金额'])
             if r['支付金额_同比'] is not None:
                 sign = '+' if r['支付金额_同比'] >= 0 else ''
                 t += f"<br><span style='font-size:10px'>{sign}{r['支付金额_同比']*100:.1f}%</span>"
             bar_texts.append(t)
         fig_a = go.Figure(go.Bar(
-            x=[r['日期'] for r in daily_trend],
-            y=[_amt_y(r['支付金额']) for r in daily_trend],
+            x=[r[_x_key] for r in _trend_data],
+            y=[_amt_y(r['支付金额']) for r in _trend_data],
             text=bar_texts, textposition='outside',
             marker_color='#3b82f6'))
         fig_a.update_layout(
-            title='支付金额趋势', height=340, template='plotly_white',
+            title=f'支付金额趋势（{_ov_gran}）', height=340, template='plotly_white',
             margin=dict(l=20, r=20, t=45, b=20),
             yaxis_title=f'支付金额({amt_unit})', showlegend=False)
         st.plotly_chart(fig_a, width="stretch")
 
         # 2) 访客数趋势
         vis_texts = []
-        for r in daily_trend:
+        for r in _trend_data:
             t = f"{int(r['商品访客数']):,}"
             if r['商品访客数_同比'] is not None:
                 sign = '+' if r['商品访客数_同比'] >= 0 else ''
                 t += f"<br><span style='font-size:10px'>{sign}{r['商品访客数_同比']*100:.1f}%</span>"
             vis_texts.append(t)
         fig_b = go.Figure(go.Scatter(
-            x=[r['日期'] for r in daily_trend],
-            y=[r['商品访客数'] for r in daily_trend],
+            x=[r[_x_key] for r in _trend_data],
+            y=[r['商品访客数'] for r in _trend_data],
             text=vis_texts, textposition='top center', mode='lines+markers+text',
             line=dict(color='#06b6d4', width=2),
             marker=dict(size=5)))
         fig_b.update_layout(
-            title='访客数趋势', height=340, template='plotly_white',
+            title=f'访客数趋势（{_ov_gran}）', height=340, template='plotly_white',
             margin=dict(l=20, r=20, t=45, b=20),
             yaxis_title='访客数', showlegend=False)
         st.plotly_chart(fig_b, width="stretch")
 
         # 3) 转化率趋势
         cvr_texts = []
-        for r in daily_trend:
+        for r in _trend_data:
             t = f"{r['支付转化率']*100:.2f}%"
             if r['支付转化率_同比'] is not None:
                 sign = '+' if r['支付转化率_同比'] >= 0 else ''
                 t += f"<br><span style='font-size:10px'>{sign}{r['支付转化率_同比']*100:.1f}%</span>"
             cvr_texts.append(t)
         fig_c = go.Figure(go.Scatter(
-            x=[r['日期'] for r in daily_trend],
-            y=[r['支付转化率']*100 for r in daily_trend],
+            x=[r[_x_key] for r in _trend_data],
+            y=[r['支付转化率']*100 for r in _trend_data],
             text=cvr_texts, textposition='top center', mode='lines+markers+text',
             line=dict(color='#f59e0b', width=2),
             fill='tozeroy', fillcolor='rgba(245,158,11,0.15)',
             marker=dict(size=5)))
         fig_c.update_layout(
-            title='支付转化率趋势', height=340, template='plotly_white',
+            title=f'支付转化率趋势（{_ov_gran}）', height=340, template='plotly_white',
             margin=dict(l=20, r=20, t=45, b=20),
             yaxis_title='转化率(%)', showlegend=False)
         st.plotly_chart(fig_c, width="stretch")
         # 图表数据下载
-        _render_download_panel(daily_trend, ['日期', '支付金额', '商品访客数', '支付转化率', '支付件数', '客单价'], 'overview_daily_trend.csv')
+        _render_download_panel(_trend_data, [_x_key, '支付金额', '商品访客数', '支付转化率', '支付件数', '客单价'], f'overview_{_ov_gran}_trend.csv')
     else:
-        st.info('当前筛选条件下，最近30天无日趋势数据')
+        st.info(f'当前筛选条件下，{_limit_label}无趋势数据')
 
     st.markdown('<div class="section-title">全域趋势与结构</div>', unsafe_allow_html=True)
     trend = [{'月份': r['月份'], '支付金额': r['支付金额'], '访客数': r['商品访客数'],
