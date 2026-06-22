@@ -2419,7 +2419,7 @@ with tabs[0]:
         k14.metric('订单成本', f"¥{promo_order_cost:.2f}" if totals['支付买家数'] else '--', _poc_d)
         k15.metric('推广成交占比', f"{_prs:.2f}%", _prs_d)
 
-    # ── 日趋势（最近30天）──
+    # ── 趋势分析（支持日/周/月粒度切换）──
     st.markdown('<div class="section-title">趋势分析</div>', unsafe_allow_html=True)
     
     # 粒度切换按钮
@@ -2427,7 +2427,8 @@ with tabs[0]:
     
     # 根据粒度选择数据
     if _ov_gran == '日度':
-        _trend_data = daily_trend
+        # 日度只显示最近30天，避免数据过多
+        _trend_data = daily_trend[-30:] if len(daily_trend) > 30 else daily_trend
         _x_key = '日期'
         _limit_label = '最近30天'
     elif _ov_gran == '周度':
