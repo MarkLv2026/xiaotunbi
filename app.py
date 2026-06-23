@@ -1561,19 +1561,19 @@ promo_prev_ctr = promo_prev_clicks / promo_prev_impress if promo_prev_impress el
 promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
 promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals['支付买家数'] else 0
 
-# 兼容性别名（供 tabs[0]/tabs[1] 使用）
-promo_yoy = promo_prev
-promo_yoy_fc = promo_prev_fc
-promo_yoy_amt = promo_prev_amt
-promo_yoy_direct = promo_prev_direct
-promo_yoy_impress = promo_prev_impress
-promo_yoy_clicks = promo_prev_clicks
-promo_yoy_roi = promo_prev_roi
-promo_yoy_droi = promo_prev_droi
-promo_yoy_cpc = promo_prev_cpc
-promo_yoy_ctr = promo_prev_ctr
-promo_yoy_rate = promo_prev_rate
-promo_yoy_order_cost = promo_prev_order_cost
+# ── 推广同比数据（真正去年同期同天数）──
+promo_yoy = _promo_yoy_rows(yoy_s, yoy_e)
+promo_yoy_fc = sum(r.get('_花费', 0) for r in promo_yoy)
+promo_yoy_amt = sum(r.get('_总订单金额', 0) for r in promo_yoy)
+promo_yoy_direct = sum(r.get('_直接订单金额', 0) for r in promo_yoy)
+promo_yoy_impress = sum(r.get('_展现数', 0) for r in promo_yoy)
+promo_yoy_clicks = sum(r.get('_点击数', 0) for r in promo_yoy)
+promo_yoy_roi = promo_yoy_amt / promo_yoy_fc if promo_yoy_fc else 0
+promo_yoy_droi = promo_yoy_direct / promo_yoy_fc if promo_yoy_fc else 0
+promo_yoy_cpc = promo_yoy_fc / promo_yoy_clicks if promo_yoy_clicks else 0
+promo_yoy_ctr = promo_yoy_clicks / promo_yoy_impress if promo_yoy_impress else 0
+promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
+promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
 
 # YoY 聚合辅助
 def _promo_agg(rows, key_field):
