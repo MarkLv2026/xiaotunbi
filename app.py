@@ -1574,6 +1574,9 @@ promo_yoy_cpc = promo_yoy_fc / promo_yoy_clicks if promo_yoy_clicks else 0
 promo_yoy_ctr = promo_yoy_clicks / promo_yoy_impress if promo_yoy_impress else 0
 promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
 promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+# 推广转化率（成交客户数/点击数）的同比
+promo_yoy_cust = sum(r.get('_成交客户数', 0) for r in promo_yoy)
+promo_yoy_cv = promo_yoy_cust / promo_yoy_clicks * 100 if promo_yoy_clicks else 0
 
 # YoY 聚合辅助
 def _promo_agg(rows, key_field):
@@ -1617,6 +1620,9 @@ promo_mom_cpc = promo_prev_cpc
 promo_mom_ctr = promo_prev_ctr
 promo_mom_rate = promo_prev_rate
 promo_mom_order_cost = promo_prev_order_cost
+# 推广转化率（成交客户数/点击数）的环比
+promo_mom_cust = sum(r.get('_成交客户数', 0) for r in promo_prev)
+promo_mom_cv = promo_mom_cust / promo_mom_clicks * 100 if promo_mom_clicks else 0
 
 def _promo_delta(cur, mom, yoy, suffix='%'):
     """推广指标环比/同比delta字符串，格式：'环比 +X% / 同比 +Y%'"""
@@ -2407,7 +2413,10 @@ with tabs[0]:
         _pdroi_d = _promo_delta(promo_direct_roi, promo_mom_droi, promo_yoy_droi, '%')
         _pctr_d = _promo_delta(promo_ctr*100, promo_mom_ctr*100, promo_yoy_ctr*100, '%')
         _pcpc_d = _promo_delta(promo_cpc, promo_mom_cpc, promo_yoy_cpc, '%')
-        _poc_d = _promo_delta(promo_order_cost, promo_mom_order_cost, promo_yoy_order_cost, '%')
+        # 推广转化率 = 成交客户数 / 点击数 * 100
+        _p_cust = sum(r.get('_成交客户数', 0) for r in promo_filtered)
+        _p_cv = _p_cust / promo_clicks * 100 if promo_clicks else 0
+        _pcv_d = _promo_delta(_p_cv, promo_mom_cv, promo_yoy_cv, '%')
         _prs = promo_order_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
         _prs_m = promo_mom_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
         _prs_y = promo_yoy_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
@@ -2416,7 +2425,7 @@ with tabs[0]:
         k11.metric('直接ROI', f"{promo_direct_roi:.2f}" if promo_direct_roi else '--', _pdroi_d)
         k12.metric('点击率', f"{promo_ctr*100:.2f}%" if promo_impress else '--', _pctr_d)
         k13.metric('点击成本', f"¥{promo_cpc:.2f}" if promo_clicks else '--', _pcpc_d)
-        k14.metric('订单成本', f"¥{promo_order_cost:.2f}" if totals['支付买家数'] else '--', _poc_d)
+        k14.metric('推广转化率', f"{_p_cv:.2f}%", _pcv_d)
         k15.metric('推广成交占比', f"{_prs:.2f}%", _prs_d)
 
     # ── 趋势分析（支持日/周/月粒度切换）──
@@ -2664,23 +2673,22 @@ with tabs[1]:
         _ctr = _clk / _imp if _imp else 0
         _cpc = _ps / _clk if _clk else 0
         _da = sum(r.get('_总订单金额', 0) for r in promo_filtered)
-        _porders = sum(1 for r in promo_filtered if r.get('_总订单金额', 0) > 0) or totals['支付买家数']
-        _p_order_cost = _ps / _porders if _porders else 0
-        _poc_m = promo_mom_fc / _porders if _porders else 0
-        _poc_y = promo_yoy_fc / _porders if _porders else 0
+        # 推广转化率 = 成交客户数 / 点击数 * 100
+        _cust = sum(r.get('_成交客户数', 0) for r in promo_filtered)
+        _cv = _cust / _clk * 100 if _clk else 0
         pfc_d = _promo_delta(_ps, promo_mom_fc, promo_yoy_fc, '%')
         proi_d = _promo_delta(_ro, promo_mom_roi, promo_yoy_roi, '%')
         pctr_d = _promo_delta(_ctr*100, promo_mom_ctr*100, promo_yoy_ctr*100, '%')
         cpc_d = _promo_delta(_cpc, promo_mom_cpc, promo_yoy_cpc, '%')
         pda_d = _promo_delta(_da, promo_mom_amt, promo_yoy_amt, '%')
-        poc_d_text = _promo_delta(_p_order_cost, _poc_m, _poc_y, '')
+        pcv_d = _promo_delta(_cv, promo_mom_cv, promo_yoy_cv, '%')
         pk1, pk2, pk3, pk4, pk5, pk6 = st.columns(6)
         pk1.metric('推广花费', f"¥{_wan(_ps)}万" if _ps >= 10000 else f"¥{_ps:,.0f}", pfc_d)
         pk2.metric('ROI', f"{_ro:.2f}" if _ro else '--', proi_d)
         pk3.metric('点击率', f"{_ctr*100:.2f}%" if _imp else '--', pctr_d)
         pk4.metric('平均点击成本', f"¥{_cpc:.2f}" if _clk else '--', cpc_d)
         pk5.metric('总成交金额', f"¥{_wan(_da)}万" if _da >= 10000 else f"¥{_da:,.0f}", pda_d)
-        pk6.metric('订单成本', f"¥{_p_order_cost:.2f}", poc_d_text)
+        pk6.metric('推广转化率', f"{_cv:.2f}%", pcv_d)
 
         # ── 推广费趋势（日/月）──
         st.markdown('<div class="section-title">推广费 & 成交金额趋势</div>', unsafe_allow_html=True)
