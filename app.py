@@ -898,32 +898,32 @@ def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
 
 # ── 筛选选项缓存（避免每次 rerun 遍历 3.3万行数据）──
 @st.cache_data(show_spinner=False, ttl=600)
-def _get_filter_options_channel(all_rows_json: str):
-    """渠道筛选选项缓存"""
+def _get_filter_options_channel(values_json: str):
+    """渠道筛选选项缓存（入参已是值列表的 JSON）"""
     import json
-    all_rows = json.loads(all_rows_json)
-    return sorted({r.get('渠道', '') for r in all_rows if r.get('渠道')})
+    values = json.loads(values_json)
+    return sorted({v for v in values if v})
 
 @st.cache_data(show_spinner=False, ttl=300)
-def _get_filter_options_store(all_rows_json: str):
-    """店铺筛选选项缓存"""
+def _get_filter_options_store(values_json: str):
+    """店铺筛选选项缓存（入参已是值列表的 JSON）"""
     import json
-    all_rows = json.loads(all_rows_json)
-    return sorted({r.get('店铺', '') for r in all_rows if r.get('店铺')})
+    values = json.loads(values_json)
+    return sorted({v for v in values if v})
 
 @st.cache_data(show_spinner=False, ttl=300)
-def _get_filter_options_category(all_rows_json: str):
-    """品类筛选选项缓存"""
+def _get_filter_options_category(values_json: str):
+    """品类筛选选项缓存（入参已是值列表的 JSON）"""
     import json
-    all_rows = json.loads(all_rows_json)
-    return sorted({r.get('品类', '') for r in all_rows if r.get('品类')})
+    values = json.loads(values_json)
+    return sorted({v for v in values if v})
 
 @st.cache_data(show_spinner=False, ttl=300)
-def _get_filter_options_model(all_rows_json: str):
-    """型号筛选选项缓存"""
+def _get_filter_options_model(values_json: str):
+    """型号筛选选项缓存（入参已是值列表的 JSON）"""
     import json
-    all_rows = json.loads(all_rows_json)
-    return sorted({r.get('型号', '') for r in all_rows if r.get('型号')})
+    values = json.loads(values_json)
+    return sorted({v for v in values if v})
 
 def _cached_filter_opts(all_rows, key, channel_filter=None, store_filter=None, cat_filter=None):
     """缓存友好的筛选选项提取器。
