@@ -896,6 +896,83 @@ def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
         st.error(f'{"销售" if cache_key == "sales" else "推广"}数据解析失败：{e}')
         return (_sales_empty if cache_key == 'sales' else []), False
 
+# ── 筛选选项缓存（避免每次 rerun 遍历 3.3万行数据）──
+@st.cache_data(show_spinner=False, ttl=600)
+def _get_filter_options_channel(all_rows_json: str):
+    """渠道筛选选项缓存"""
+    import json
+    all_rows = json.loads(all_rows_json)
+    return sorted({r.get('渠道', '') for r in all_rows if r.get('渠道')})
+
+@st.cache_data(show_spinner=False, ttl=300)
+def _get_filter_options_store(all_rows_json: str):
+    """店铺筛选选项缓存"""
+    import json
+    all_rows = json.loads(all_rows_json)
+    return sorted({r.get('店铺', '') for r in all_rows if r.get('店铺')})
+
+@st.cache_data(show_spinner=False, ttl=300)
+def _get_filter_options_category(all_rows_json: str):
+    """品类筛选选项缓存"""
+    import json
+    all_rows = json.loads(all_rows_json)
+    return sorted({r.get('品类', '') for r in all_rows if r.get('品类')})
+
+@st.cache_data(show_spinner=False, ttl=300)
+def _get_filter_options_model(all_rows_json: str):
+    """型号筛选选项缓存"""
+    import json
+    all_rows = json.loads(all_rows_json)
+    return sorted({r.get('型号', '') for r in all_rows if r.get('型号')})
+
+def _cached_filter_opts(all_rows, key, channel_filter=None, store_filter=None, cat_filter=None):
+    """缓存友好的筛选选项提取器。
+    只传 key 列的数据做 JSON 序列化（而非全部 18 个字段），大幅减少序列化开销。
+    """
+    import json
+    if key == '渠道':
+        data_str = json.dumps([r.get('渠道', '') for r in all_rows if r.get('渠道')], ensure_ascii=False)
+        return _get_filter_options_channel(data_str)
+    elif key == '店铺' and channel_filter is not None:
+        filtered = [r.get('店铺', '') for r in all_rows if r.get('渠道', '') in channel_filter and r.get('店铺')]
+        data_str = json.dumps(filtered, ensure_ascii=False)
+        return _get_filter_options_store(data_str)
+    elif key == '品类' and store_filter is not None:
+        filtered = [r.get('品类', '') for r in all_rows if r.get('店铺', '') in store_filter and r.get('品类')]
+        data_str = json.dumps(filtered, ensure_ascii=False)
+        return _get_filter_options_category(data_str)
+    elif key == '型号' and cat_filter is not None:
+        filtered = [r.get('型号', '') for r in all_rows if r.get('品类', '') in cat_filter and r.get('型号')]
+        data_str = json.dumps(filtered, ensure_ascii=False)
+        return _get_filter_options_model(data_str)
+    else:
+        return []
+
+# ── 对比期计算缓存（避免每次 rerun 重新计算）──
+@st.cache_data(show_spinner=False, ttl=300)
+def _compute_compare_periods(start_str: str, end_str: str):
+    """缓存计算环比和同比日期，避免模块顶层每次 rerun 重算"""
+    _start = datetime.date.fromisoformat(start_str)
+    _end = datetime.date.fromisoformat(end_str)
+    _cur_days = max((_end - _start).days + 1, 1)
+    _b_end = _start - datetime.timedelta(days=1)
+    _b_start = _b_end - datetime.timedelta(days=_cur_days - 1)
+    prev_s = str(_b_start)
+    prev_e = str(_b_end)
+
+    try:
+        _y_start = _start.replace(year=_start.year - 1)
+    except ValueError:
+        _y_start = _start.replace(year=_start.year - 1, day=28)
+    try:
+        _y_end = _end.replace(year=_end.year - 1)
+    except ValueError:
+        _y_end = _end.replace(year=_end.year - 1, day=28)
+    yoy_s = str(_y_start)
+    yoy_e = str(_y_end)
+
+    return prev_s, prev_e, yoy_s, yoy_e
+
 # 目标数据加载 —— 改为按需懒加载，避免启动时因大文件解析导致崩溃
 targets = {}
 _targets_bytes = None  # 懒加载：不在导入时读取文件
@@ -989,25 +1066,19 @@ with fc:
     with c2:
         end = st.date_input('结束日期', value=_default_end, key='_gf_end')
 
-    # 联动筛选：渠道 → 店铺 → 品类 → 型号
+    # 联动筛选：渠道 → 店铺 → 品类 → 型号（使用缓存加速）
     all_rows = data['daily']
     with c3:
-        ch_opts = sorted({r.get('渠道', '') for r in all_rows if r.get('渠道')})
+        ch_opts = _cached_filter_opts(all_rows, '渠道')
         channel = _slicer('渠道', ch_opts, 'ch') if ch_opts else []
-    filtered_ch = [r for r in all_rows if r.get('渠道', '') in channel] if ch_opts else []
-
     with c4:
-        st_opts = sorted({r.get('店铺', '') for r in filtered_ch if r.get('店铺')}) if ch_opts else []
+        st_opts = _cached_filter_opts(all_rows, '店铺', channel_filter=channel) if ch_opts else []
         store = _slicer('店铺', st_opts, 'st') if st_opts else []
-    filtered_st = [r for r in filtered_ch if r.get('店铺', '') in store] if st_opts else []
-
     with c5:
-        cat_opts = sorted({r.get('品类', '') for r in filtered_st if r.get('品类')}) if st_opts else []
+        cat_opts = _cached_filter_opts(all_rows, '品类', store_filter=store) if st_opts else []
         category = _slicer('品类', cat_opts, 'cat') if cat_opts else []
-    filtered_cat = [r for r in filtered_st if r.get('品类', '') in category] if cat_opts else []
-
     with c6:
-        mdl_opts = sorted({r.get('型号', '') for r in filtered_cat if r.get('型号')}) if cat_opts else []
+        mdl_opts = _cached_filter_opts(all_rows, '型号', cat_filter=category) if cat_opts else []
         model = _slicer('型号', mdl_opts, 'mdl') if mdl_opts else []
 
 s = str(start)
@@ -1015,27 +1086,10 @@ e = str(end)
 today_s = s
 today_e = e
 
-# 全局对比期（环比和同比固定计算，供 tabs[1] 推广分析和 tabs[4] 智能诊断使用）
-# tabs[2] 有自己的对比模式控件，独立控制其对比期
-_cur_days = max((end - start).days + 1, 1)
-_b_end = start - datetime.timedelta(days=1)
-_b_start = _b_end - datetime.timedelta(days=_cur_days - 1)
-prev_s = str(_b_start)
-prev_e = str(_b_end)
+# 全局对比期（使用缓存计算，避免每次 rerun 重算）
+prev_s, prev_e, yoy_s, yoy_e = _compute_compare_periods(s, e)
 label_a = f'本期 {today_s} ~ {today_e}'
 label_b = f'上期 {prev_s} ~ {prev_e}'
-
-# 同比（供 tabs[4] 智能诊断使用）
-try:
-    _y_start = start.replace(year=start.year - 1)
-except ValueError:
-    _y_start = start.replace(year=start.year - 1, day=28)
-try:
-    _y_end = end.replace(year=end.year - 1)
-except ValueError:
-    _y_end = end.replace(year=end.year - 1, day=28)
-yoy_s = str(_y_start)
-yoy_e = str(_y_end)
 
 METRICS = ['商品访客数', '商品浏览量', '商品加购人数', '商品加购件数', '支付买家数', '支付件数', '支付金额', '成功退款金额']
 
