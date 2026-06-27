@@ -25,12 +25,14 @@ _CACHE_PROMO = _CACHE_DIR / 'last_promo.xlsx'
 _CACHE_SALES_PKL = _CACHE_DIR / 'last_sales.pkl'
 _CACHE_PROMO_PKL = _CACHE_DIR / 'last_promo.pkl'
 _CACHE_TARGETS = _CACHE_DIR / 'last_targets.xlsx'
+_CACHE_SKU_COST = _CACHE_DIR / 'last_sku_cost.xlsx'
 
 # 仓库内置数据路径（GitHub 持久化，容器重启后仍有效）
 _REPO_DATA_DIR = pathlib.Path(__file__).parent / 'data'
 _REPO_SALES = _REPO_DATA_DIR / 'sales.xlsx'
 _REPO_PROMO = _REPO_DATA_DIR / 'promo.xlsx'
 _REPO_TARGETS = _REPO_DATA_DIR / 'targets.xlsx'
+_REPO_SKU_COST = _REPO_DATA_DIR / 'sku_cost.xlsx'
 
 # ── 型号映射配置 ──
 # 目标表中的型号 → 实际数据中需要汇总的型号列表
@@ -298,7 +300,7 @@ with st.sidebar:
     
     if st.session_state.role == 'admin':
         st.header('数据源更新')
-        data_type = st.radio('数据类型', ['销售数据', '推广数据', '销售目标', '流量渠道（预留）'], horizontal=True)
+        data_type = st.radio('数据类型', ['销售数据', '推广数据', '销售目标', 'SKU成本表', '流量渠道（预留）'], horizontal=True)
         if data_type == '销售数据':
             uploaded_sales = st.file_uploader('上传销售 Excel 数据源', type=['xlsx'], key='sales_up')
             if uploaded_sales is not None:
@@ -463,9 +465,42 @@ with st.sidebar:
                         st.error(f'同步失败：{_msg}')
             else:
                 st.caption('💡 上传数据后可同步到云端，使所有账号持久可见')
+        elif data_type == 'SKU成本表':
+            uploaded_sku = st.file_uploader('上传 SKU成本匹配表及店铺费用结构 Excel', type=['xlsx'], key='sku_up')
+            if uploaded_sku is not None:
+                _CACHE_SKU_COST.write_bytes(uploaded_sku.getvalue())
+                # 清除缓存
+                for key in ['cached_sku_cost']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.caption('✅ SKU成本表已保存（本次会话）')
+            elif _CACHE_SKU_COST.exists():
+                mtime = datetime.datetime.fromtimestamp(_CACHE_SKU_COST.stat().st_mtime)
+                st.caption(f'📂 SKU成本表：{mtime.strftime("%Y-%m-%d %H:%M")}')
+            elif _REPO_SKU_COST.exists():
+                mtime = datetime.datetime.fromtimestamp(_REPO_SKU_COST.stat().st_mtime)
+                st.caption(f'☁️ SKU成本表（云端）：{mtime.strftime("%Y-%m-%d %H:%M")}')
+            else:
+                st.caption('请上传 SKU成本匹配表（含全渠道SKU匹配 + 店铺成本结构两个Sheet）')
+            # 同步按钮
+            _sku_ready = _CACHE_SKU_COST.exists()
+            if _sku_ready:
+                if st.button('📤 同步SKU成本表到云端', use_container_width=True, key='sync_sku'):
+                    with st.spinner('正在同步 SKU成本表到 GitHub...'):
+                        _ok, _msg = _push_xlsx_to_github(
+                            _CACHE_SKU_COST.read_bytes(),
+                            'data/sku_cost.xlsx',
+                            f'数据更新：SKU成本表 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}'
+                        )
+                    if _ok:
+                        st.success(_msg + '\n\n所有账号刷新后即可看到最新数据（约1分钟部署）')
+                    else:
+                        st.error(f'同步失败：{_msg}')
+            else:
+                st.caption('💡 上传数据后可同步到云端，使所有账号持久可见')
         else:
             st.info('🚧 入口已预留，后续开放')
-        if data_type in ('销售数据', '推广数据', '销售目标'):
+        if data_type in ('销售数据', '推广数据', '销售目标', 'SKU成本表'):
             st.divider()
             st.markdown('**核心口径**')
             st.caption('转化率=支付买家数/商品访客数；客单价=支付金额/支付买家数；ROI=总订单金额/花费')
@@ -787,6 +822,59 @@ _sales_bytes = None  # 懒加载：在Tab中按需读取
 # 优先用本次会话上传的缓存，其次用仓库内置持久化文件（data/promo.xlsx）
 _promo_bytes = None  # 懒加载：在Tab中按需读取
 
+# Load SKU cost data
+_sku_cost_bytes = None  # 懒加载：在Tab中按需读取
+
+def load_sku_cost_data(file_bytes: bytes):
+    """解析 SKU成本匹配表 + 店铺费用结构，返回 (sku_cost_dict, shop_fee_dict)"""
+    import io
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    
+    # ── Sheet 1: 全渠道SKU匹配 ──
+    # 列: A=ID, B=SKU, C=渠道, D=店铺, E=主型号, F=型号, G=款式, Q=电商成本(idx 16)
+    sku_cost = {}  # key: (店铺, 型号, 款式) → value: 成本
+    model_cost_map = {}  # key: (店铺, 型号) → list of costs (用于回退)
+    
+    ws1 = wb['全渠道SKU匹配']
+    for row in ws1.iter_rows(values_only=True):
+        store = str(row[3]).strip() if row[3] else ''
+        model = str(row[5]).strip() if row[5] else ''  # F列=型号
+        style = str(row[6]).strip() if row[6] else ''
+        cost_raw = row[16] if len(row) > 16 else None  # Q列=电商成本
+        
+        if store == '天猫小豚':
+            continue  # 忽略天猫小豚
+        if not model:
+            continue
+        
+        cost = None
+        if cost_raw is not None and str(cost_raw).strip():
+            try:
+                cost = float(cost_raw)
+            except (ValueError, TypeError):
+                cost = None
+        
+        if cost is not None:
+            key3 = (store, model, style)
+            sku_cost[key3] = cost
+            key2 = (store, model)
+            model_cost_map.setdefault(key2, []).append(cost)
+    
+    # ── Sheet 2: 店铺成本结构 ──
+    # R2: 华为京东自营: 平台扣点13% + 仓储物流0.5% + 人工2% = 15.5%
+    # R4: 天猫智选: 服务费5.5% + 财务费1% + CPS1.2% + 物流2.7% = 10.4%
+    shop_fee = {}
+    ws2 = wb['店铺成本结构']
+    for row in ws2.iter_rows(values_only=True):
+        store = str(row[0]).strip() if row[0] else ''
+        if store == '华为京东自营':
+            shop_fee[store] = {'rate': 0.155, 'detail': '平台扣点13%+仓储物流0.5%+人工2%'}
+        elif store == '天猫智选':
+            shop_fee[store] = {'rate': 0.104, 'detail': '服务费5.5%+财务费1%+CPS1.2%+物流2.7%'}
+    
+    wb.close()
+    return {'sku_cost': sku_cost, 'model_cost_map': model_cost_map, 'shop_fee': shop_fee}
+
 def _get_file_bytes(cache_path, repo_path):
     """懒加载文件字节数据，优先用缓存，其次用仓库内置文件"""
     if cache_path.exists():
@@ -1042,6 +1130,153 @@ def _lazy_load_targets():
         st.session_state.targets_loaded = True
         st.session_state.targets_data = targets
     return targets
+
+# ── SKU 成本数据懒加载 ──
+_sku_cost_data = None  # 全局缓存
+
+def _lazy_load_sku_cost():
+    """按需加载 SKU 成本数据"""
+    global _sku_cost_data
+    if _sku_cost_data is not None:
+        return _sku_cost_data
+    if 'cached_sku_cost' in st.session_state:
+        _sku_cost_data = st.session_state.cached_sku_cost
+        return _sku_cost_data
+    _bytes = _get_file_bytes(_CACHE_SKU_COST, _REPO_SKU_COST)
+    if _bytes:
+        _sku_cost_data = load_sku_cost_data(_bytes)
+        st.session_state.cached_sku_cost = _sku_cost_data
+    else:
+        _sku_cost_data = {'sku_cost': {}, 'model_cost_map': {}, 'shop_fee': {}}
+    return _sku_cost_data
+
+def _get_cost(sku_data, store, model, style):
+    """获取单品成本：精确匹配(店铺+型号+款式) → 回退(店铺+型号均值) → None"""
+    key3 = (store, model, style)
+    if key3 in sku_data['sku_cost']:
+        return sku_data['sku_cost'][key3]
+    key2 = (store, model)
+    costs = sku_data['model_cost_map'].get(key2, [])
+    if costs:
+        return sum(costs) / len(costs)
+    return None
+
+@st.cache_data(show_spinner=False, ttl=300)
+def _compute_profit(_s_key, _e_key, _ch_key, _st_key, _cat_key, _mdl_key):
+    """计算经营利润：按店铺和单品（型号+款式）汇总"""
+    from collections import defaultdict
+    
+    # 加载 SKU 成本数据
+    sku_data = _lazy_load_sku_cost()
+    
+    # 筛选销售数据
+    _raw = data['daily']
+    _sales = [r for r in _raw if _s_key <= r.get('日期', '') <= _e_key]
+    if _ch_key:
+        _sales = [r for r in _sales if r.get('渠道', '') in _ch_key]
+    if _st_key:
+        _sales = [r for r in _sales if r.get('店铺', '') in _st_key]
+    if _cat_key:
+        _sales = [r for r in _sales if r.get('品类', '') in _cat_key]
+    if _mdl_key:
+        _sales = [r for r in _sales if r.get('型号', '') in _mdl_key]
+    
+    # 排除天猫小豚
+    _sales = [r for r in _sales if (r.get('店铺', '') or '').strip() != '天猫小豚']
+    
+    # 加载推广数据
+    _pbytes = _promo_bytes if _promo_bytes is not None else _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
+    _promo_all = load_promo_data(_pbytes) if _pbytes else []
+    _promo = [r for r in _promo_all if _s_key <= r.get('_date', '') <= _e_key]
+    if _st_key:
+        _promo = [r for r in _promo if r.get('_店铺', '') in _st_key]
+    if _mdl_key:
+        _promo = [r for r in _promo if r.get('_型号', '') in _mdl_key]
+    
+    # ── 推广花费按型号聚合 ──
+    promo_by_model = defaultdict(float)
+    promo_by_store = defaultdict(float)
+    for r in _promo:
+        m = r.get('_型号', '') or ''
+        s = r.get('_店铺', '') or ''
+        spend = float(r.get('_花费', 0) or 0)
+        promo_by_model[m] += spend
+        promo_by_store[s] += spend
+    
+    # ── 单品利润计算 ──
+    shop_profit = defaultdict(lambda: {'收入': 0, '成本': 0, '毛利': 0, '推广费': 0, '费用': 0, '利润': 0, '件数': 0})
+    item_profit = []  # list of dicts
+    
+    # 按(店铺, 型号, 款式)聚合销售
+    item_sales = defaultdict(lambda: {'收入': 0, '件数': 0})
+    for r in _sales:
+        store = (r.get('店铺', '') or '').strip()
+        model = (r.get('型号', '') or '').strip()
+        style = (r.get('款式', '') or '').strip()
+        if not model:
+            continue
+        amt = float(r.get('支付金额', 0) or 0)
+        qty = float(r.get('支付件数', 0) or 0)
+        key = (store, model, style)
+        item_sales[key]['收入'] += amt
+        item_sales[key]['件数'] += qty
+    
+    for (store, model, style), sd in item_sales.items():
+        revenue = sd['收入']
+        qty = sd['件数']
+        
+        # 成本
+        unit_cost = _get_cost(sku_data, store, model, style)
+        total_cost = unit_cost * qty if unit_cost else 0
+        
+        # 毛利
+        gross = revenue - total_cost
+        
+        # 推广费（按型号）
+        promo_spend = promo_by_model.get(model, 0)
+        # 如果按型号没匹配到，用店铺总推广费按收入比例分摊
+        if promo_spend == 0:
+            store_total_rev = sum(v['收入'] for (s, m, st), v in item_sales.items() if s == store)
+            store_promo = promo_by_store.get(store, 0)
+            promo_spend = (revenue / store_total_rev * store_promo) if store_total_rev else 0
+        
+        # 店铺费用
+        fee_rate = sku_data['shop_fee'].get(store, {}).get('rate', 0)
+        shop_fee = revenue * fee_rate
+        
+        profit = gross - promo_spend - shop_fee
+        gross_rate = (gross / revenue * 100) if revenue else 0
+        profit_rate = (profit / revenue * 100) if revenue else 0
+        
+        item_profit.append({
+            '店铺': store, '型号': model, '款式': style,
+            '收入': revenue, '成本': total_cost, '毛利': gross,
+            '推广费': promo_spend, '费用': shop_fee, '利润': profit,
+            '毛利率': gross_rate, '利润率': profit_rate,
+            '件数': int(qty), '单位成本': unit_cost or 0,
+        })
+        
+        # 店铺汇总
+        sp = shop_profit[store]
+        sp['收入'] += revenue
+        sp['成本'] += total_cost
+        sp['毛利'] += gross
+        sp['推广费'] += promo_spend
+        sp['费用'] += shop_fee
+        sp['利润'] += profit
+        sp['件数'] += int(qty)
+    
+    # 店铺利润率
+    for store, sp in shop_profit.items():
+        sp['毛利率'] = (sp['毛利'] / sp['收入'] * 100) if sp['收入'] else 0
+        sp['利润率'] = (sp['利润'] / sp['收入'] * 100) if sp['收入'] else 0
+        sp['费用率'] = sku_data['shop_fee'].get(store, {}).get('rate', 0) * 100
+    
+    return {
+        'shop': dict(shop_profit),
+        'items': sorted(item_profit, key=lambda x: x['收入'], reverse=True),
+        'sku_loaded': bool(sku_data.get('sku_cost')),
+    }
 
 # ── 数据完整性检测（已移至 tabs[0] 内部，避免模块级Streamlit调用崩溃）──
 
@@ -2423,7 +2658,7 @@ if not promo_rows:
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
 # ─────────────────────────────────────────────────────────────
-tabs = st.tabs(['经营总览', '📢 推广分析', '时间段对比', '趋势分析', '🔍 智能诊断', '📊 透视表分析', '🎯 目标达成'])
+tabs = st.tabs(['经营总览', '📢 推广分析', '时间段对比', '趋势分析', '🔍 智能诊断', '📊 透视表分析', '🎯 目标达成', '💰 经营利润'])
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 1: 经营总览
@@ -9447,3 +9682,143 @@ with tabs[6]:
                             _render_target_table(header_cols, f'{shop_name} · {model_name}', table_data)
             else:
                 st.info('该月份无单品目标数据')
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 8: 经营利润
+# ═══════════════════════════════════════════════════════════════
+with tabs[7]:
+    st.markdown("""<div class="hero" style="padding:20px 28px 10px;"><div><span class="badge">💰</span><span class="badge">经营利润</span></div>
+        <div class="hero-sub">店铺 / 单品经营利润分析 · 收入 - 商品成本 - 推广花费 - 店铺费用</div></div>""", unsafe_allow_html=True)
+
+    # 加载 SKU 成本数据
+    sku_data = _lazy_load_sku_cost()
+    sku_loaded = bool(sku_data.get('sku_cost'))
+
+    if not sku_loaded:
+        st.warning('⚠️ SKU成本表未加载，请在左侧「数据源更新」中选择「SKU成本表」上传 Excel，然后点击同步到云端。')
+        st.info('💡 需要包含「全渠道SKU匹配」和「店铺成本结构」两个Sheet的 Excel 文件。')
+    elif not _sales_loaded:
+        st.warning('⚠️ 销售数据未加载，请在左侧选择【销售数据】并上传销售 Excel。')
+    else:
+        # ── 计算利润 ──
+        profit_data = _compute_profit(
+            str(start), str(end),
+            tuple(channel) if channel else (),
+            tuple(store) if store else (),
+            tuple(category) if category else (),
+            tuple(model) if model else (),
+        )
+
+        shop_data = profit_data['shop']
+        item_data = profit_data['items']
+
+        # ── 概览卡片 ──
+        total_rev = sum(s['收入'] for s in shop_data.values())
+        total_cost = sum(s['成本'] for s in shop_data.values())
+        total_gross = sum(s['毛利'] for s in shop_data.values())
+        total_promo = sum(s['推广费'] for s in shop_data.values())
+        total_fee = sum(s['费用'] for s in shop_data.values())
+        total_profit = sum(s['利润'] for s in shop_data.values())
+        total_gross_rate = (total_gross / total_rev * 100) if total_rev else 0
+        total_profit_rate = (total_profit / total_rev * 100) if total_rev else 0
+
+        card_cols = st.columns(6)
+        _color_green = '#22c55e'
+        _color_red = '#ef4444'
+        _color_gray = '#94a3b8'
+
+        def _profit_color(v):
+            return _color_green if v >= 0 else _color_red
+
+        cards = [
+            ('总收入', f'¥{total_rev/10000:.1f}万', _color_gray),
+            ('总成本', f'¥{total_cost/10000:.1f}万', _color_gray),
+            ('总毛利', f'¥{total_gross/10000:.1f}万', _profit_color(total_gross)),
+            ('总推广费', f'¥{total_promo/10000:.1f}万', _color_gray),
+            ('总利润', f'¥{total_profit/10000:.1f}万', _profit_color(total_profit)),
+            ('利润率', f'{total_profit_rate:.1f}%', _profit_color(total_profit_rate)),
+        ]
+        for i, (label, value, color) in enumerate(cards):
+            with card_cols[i]:
+                st.markdown(f"""
+                <div style="text-align:center;padding:12px 8px;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;">
+                    <div style="font-size:12px;color:#64748b;margin-bottom:4px;">{label}</div>
+                    <div style="font-size:18px;font-weight:700;color:{color};">{value}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # ── 子 Tab ──
+        profit_tabs = st.tabs(['🏪 店铺利润', '📦 单品利润'])
+
+        # ── 店铺利润 ──
+        with profit_tabs[0]:
+            if not shop_data:
+                st.info('当前筛选条件下无店铺利润数据')
+            else:
+                shop_rows = []
+                for sname in sorted(shop_data.keys()):
+                    s = shop_data[sname]
+                    shop_rows.append({
+                        '店铺': sname,
+                        '收入': f'¥{s["收入"]/10000:.2f}万',
+                        '商品成本': f'¥{s["成本"]/10000:.2f}万',
+                        '毛利': f'¥{s["毛利"]/10000:.2f}万',
+                        '毛利率': f'{s["毛利率"]:.1f}%',
+                        '推广费': f'¥{s["推广费"]/10000:.2f}万',
+                        '费用构成': sku_data['shop_fee'].get(sname, {}).get('detail', '—'),
+                        '费用率': f'{s["费用率"]:.1f}%' if s['费用率'] > 0 else '—',
+                        '费用金额': f'¥{s["费用"]/10000:.2f}万',
+                        '利润': f'¥{s["利润"]/10000:.2f}万',
+                        '利润率': f'{s["利润率"]:.1f}%',
+                    })
+
+                shop_headers = ['店铺', '收入', '商品成本', '毛利', '毛利率', '推广费', '费用构成', '费用率', '费用金额', '利润', '利润率']
+                shop_keys = ['店铺', '收入', '商品成本', '毛利', '毛利率', '推广费', '费用构成', '费用率', '费用金额', '利润', '利润率']
+
+                _render_html_table(shop_rows, shop_headers, shop_keys, title='店铺利润汇总')
+                _render_download_panel(shop_rows, shop_headers, '店铺经营利润.csv', '📥 下载店铺利润表')
+
+        # ── 单品利润 ──
+        with profit_tabs[1]:
+            if not item_data:
+                st.info('当前筛选条件下无单品利润数据')
+            else:
+                item_rows = []
+                for it in item_data:
+                    item_rows.append({
+                        '店铺': it['店铺'], '型号': it['型号'], '款式': it['款式'],
+                        '收入': f'¥{it["收入"]/10000:.2f}万',
+                        '单位成本': f'¥{it["单位成本"]:.2f}',
+                        '总成本': f'¥{it["成本"]/10000:.2f}万',
+                        '毛利': f'¥{it["毛利"]/10000:.2f}万',
+                        '毛利率': f'{it["毛利率"]:.1f}%',
+                        '推广费': f'¥{it["推广费"]/10000:.2f}万',
+                        '费用': f'¥{it["费用"]/10000:.2f}万',
+                        '利润': f'¥{it["利润"]/10000:.2f}万',
+                        '利润率': f'{it["利润率"]:.1f}%',
+                    })
+
+                item_headers = ['店铺', '型号', '款式', '收入', '单位成本', '总成本', '毛利', '毛利率', '推广费', '费用', '利润', '利润率']
+                item_keys = ['店铺', '型号', '款式', '收入', '单位成本', '总成本', '毛利', '毛利率', '推广费', '费用', '利润', '利润率']
+
+                _render_html_table(item_rows, item_headers, item_keys, title='单品利润明细')
+                _render_download_panel(item_rows, item_headers, '单品经营利润.csv', '📥 下载单品利润表')
+
+        # ── 数据说明 ──
+        with st.expander('📋 计算口径说明'):
+            st.markdown("""
+            **利润公式：** `利润 = 收入 - 商品成本 - 推广花费 - 店铺费用`
+            
+            **各指标来源：**
+            - **收入**：销售数据「支付金额」
+            - **商品成本**：SKU成本匹配表「电商成本」× 支付件数
+            - **推广花费**：推广数据「花费」，按型号匹配
+            - **店铺费用**：收入 × 店铺费用率（从店铺成本结构表读取）
+            
+            **费用率（当前已配置）：**
+            - 华为京东自营：15.5%（平台扣点13% + 仓储物流0.5% + 人工2%）
+            - 天猫智选：10.4%（服务费5.5% + 财务费1% + CPS1.2% + 物流2.7%）
+            - 其他店铺：暂未配置费用结构，费用率为0
+            
+            **匹配规则：** 按「店铺 + 型号 + 款式」精确匹配成本 → 回退到「店铺 + 型号」均值
+            """)
