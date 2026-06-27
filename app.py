@@ -827,7 +827,7 @@ _sku_cost_bytes = None  # 懒加载：在Tab中按需读取
 
 def load_sku_cost_data(file_bytes: bytes):
     """解析 SKU成本匹配表 + 店铺费用结构，返回 (sku_cost_dict, shop_fee_dict)"""
-    import io
+    import io, openpyxl
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     
     # ── Sheet 1: 全渠道SKU匹配 ──
