@@ -2510,24 +2510,23 @@ with tabs[0]:
     k3.metric('支付买家', f"{totals['支付买家数']:,.0f}", period_delta_text('支付买家数'))
     k4.metric('访客数', f"{totals['商品访客数']:,.0f}", period_delta_text('商品访客数'))
     k5.metric('支付转化率', f"{totals['支付转化率']*100:.2f}%", period_delta_text('支付转化率'))
-    # Row 2: 客单价 + 件单价 + 加购率 + 推广核心指标
-    k6, k7, k8, k9, k10, k11 = st.columns(6)
+    # Row 2: 客单价 + 加购率 + 推广核心指标
+    k6, k7, k8, k9, k10 = st.columns(5)
     k6.metric('客单价', f"¥{totals['客单价']:,.0f}", period_delta_text('客单价'))
-    k7.metric('件单价', f"¥{totals['件单价']:,.0f}", period_delta_text('件单价'))
-    k8.metric('加购率', f"{totals['加购率']*100:.2f}%", period_delta_text('加购率'))
+    k7.metric('加购率', f"{totals['加购率']*100:.2f}%", period_delta_text('加购率'))
     _ps_wan = round(promo_spend / 10000, 1) if promo_spend else 0
     # 推广指标环比/同比
     if promo_rows:
         _pfc_d = _promo_delta(promo_spend, promo_mom_fc, promo_yoy_fc, '%')
         _proi_d = _promo_delta(promo_roi, promo_mom_roi, promo_yoy_roi, '%')
         _prate_d = _promo_delta(promo_rate, promo_mom_rate, promo_yoy_rate, '%')
-        k9.metric('推广费', f"¥{_ps_wan}万" if promo_spend >= 10000 else f"¥{promo_spend:,.0f}", _pfc_d)
-        k10.metric('ROI', f"{promo_roi:.2f}" if promo_roi else '--', _proi_d)
-        k11.metric('费率', f"{promo_rate:.2f}%", _prate_d)
+        k8.metric('推广费', f"¥{_ps_wan}万" if promo_spend >= 10000 else f"¥{promo_spend:,.0f}", _pfc_d)
+        k9.metric('ROI', f"{promo_roi:.2f}" if promo_roi else '--', _proi_d)
+        k10.metric('费率', f"{promo_rate:.2f}%", _prate_d)
     else:
-        k9.metric('推广费', f"¥{_ps_wan}万" if promo_spend >= 10000 else f"¥{promo_spend:,.0f}")
-        k10.metric('ROI', f"{promo_roi:.2f}" if promo_roi else '--')
-        k11.metric('费率', f"{promo_rate:.2f}%" if promo_rate else '--')
+        k8.metric('推广费', f"¥{_ps_wan}万" if promo_spend >= 10000 else f"¥{promo_spend:,.0f}")
+        k9.metric('ROI', f"{promo_roi:.2f}" if promo_roi else '--')
+        k10.metric('费率', f"{promo_rate:.2f}%" if promo_rate else '--')
     # Row 3: 推广效率指标
     if promo_rows:
         _pdroi_d = _promo_delta(promo_direct_roi, promo_mom_droi, promo_yoy_droi, '%')
@@ -2575,7 +2574,6 @@ with tabs[0]:
                 '支付转化率': r['支付转化率'],
                 '支付件数': r['支付件数'],
                 '客单价': r['客单价'],
-                '件单价': r.get('件单价', 0),
                 '支付金额_同比': None,
                 '商品访客数_同比': None,
                 '支付转化率_同比': None,
@@ -2653,7 +2651,7 @@ with tabs[0]:
             yaxis_title='转化率(%)', showlegend=False)
         st.plotly_chart(fig_c, width="stretch")
         # 图表数据下载
-        _render_download_panel(_trend_data, [_x_key, '支付金额', '商品访客数', '支付转化率', '支付件数', '客单价', '件单价'], f'overview_{_ov_gran}_trend.csv')
+        _render_download_panel(_trend_data, [_x_key, '支付金额', '商品访客数', '支付转化率', '支付件数', '客单价'], f'overview_{_ov_gran}_trend.csv')
     else:
         st.info(f'当前筛选条件下，{_limit_label}无趋势数据')
 
@@ -2705,7 +2703,7 @@ with tabs[0]:
                           yaxis=dict(categoryorder='total ascending'),
                           xaxis=dict(title='支付金额(万)', showgrid=True))
         st.plotly_chart(fig, width="stretch")
-        _render_download_panel(sr, ['店铺', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价', '件单价'], 'store_ranking.csv', '📥 店铺排行')
+        _render_download_panel(sr, ['店铺', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价'], 'store_ranking.csv', '📥 店铺排行')
     with d_col:
         # 品类销售排行 → 柱状图
         cr = cat_rows[:12]
@@ -2721,7 +2719,7 @@ with tabs[0]:
                           yaxis=dict(categoryorder='total ascending'),
                           xaxis=dict(title='支付金额(万)', showgrid=True))
         st.plotly_chart(fig, width="stretch")
-        _render_download_panel(cr, ['品类', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价', '件单价'], 'category_ranking.csv', '📥 品类排行')
+        _render_download_panel(cr, ['品类', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价'], 'category_ranking.csv', '📥 品类排行')
     with e_col:
         # TOP10单品 → 横向条形图
         model_rows = group(daily, '型号')[:10]
@@ -2737,7 +2735,7 @@ with tabs[0]:
                           yaxis=dict(categoryorder='total ascending'),
                           xaxis=dict(title='支付金额(万)', showgrid=True))
         st.plotly_chart(fig, width="stretch")
-        _render_download_panel(model_rows, ['型号', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价', '件单价'], 'top10_models.csv', '📥 TOP10单品')
+        _render_download_panel(model_rows, ['型号', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价'], 'top10_models.csv', '📥 TOP10单品')
 
     st.markdown('<div class="section-title">导出与留档</div>', unsafe_allow_html=True)
     d1, d2 = st.columns(2)
@@ -2754,7 +2752,7 @@ with tabs[0]:
             })
         _render_download_panel(comp, ['月份', '支付金额(万)', '支付件数', '访客数', '转化率', '金额环比', '金额同比'], 'monthly_yoy_mom.csv', '📥 月度同比环比')
     with d2:
-        _render_download_panel(daily, ['日期', '渠道', '店铺', '品类', '型号', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价', '件单价', '退款率'], 'filtered_daily_summary.csv', '📥 日汇总明细')
+        _render_download_panel(daily, ['日期', '渠道', '店铺', '品类', '型号', '支付金额', '支付件数', '商品访客数', '支付转化率', '客单价', '退款率'], 'filtered_daily_summary.csv', '📥 日汇总明细')
 
 
 # ═════════════════════════════════════════════════════════════
@@ -3388,10 +3386,9 @@ with tabs[2]:
         ('访客数', '商品访客数', '', False),
         ('转化率', '支付转化率', '', True),
         ('客单价', '客单价', '¥', False),
-        ('件单价', '件单价', '¥', False),
         ('加购率', '加购率', '', True),
     ]
-    kpi_cols = st.columns(8)
+    kpi_cols = st.columns(7)
     for idx, (k_name, k_key, prefix, is_pct) in enumerate(comp_kpis):
         cur_v = cur_sum.get(k_key, 0)
         prev_v = prev_sum.get(k_key, 0)
@@ -3635,7 +3632,6 @@ with tabs[2]:
         ('访客数',  '商品访客数', lambda v: f"{v:,.0f}",     '#dcfce7'),  # green
         ('转化率',  '支付转化率', lambda v: f"{v*100:.2f}%", '#f3e8ff'),  # purple
         ('客单价',  '客单价',     lambda v: f"¥{v:,.2f}",    '#ccfbf1'),  # teal
-        ('件单价',  '件单价',     lambda v: f"¥{v:,.2f}",    '#fef9c3'),  # yellow
     ]
 
     # 计算本期总销售额（用于占比）
@@ -3697,9 +3693,6 @@ with tabs[2]:
             elif _ml == '客单价':
                 _cur_sum = _tot_cur_amt / _tot_cur_buyers if _tot_cur_buyers else 0
                 _prev_sum = _tot_prev_amt / _tot_prev_buyers if _tot_prev_buyers else 0
-            elif _ml == '件单价':
-                _cur_sum = _tot_cur_amt / _tot_cur_qty if _tot_cur_qty else 0
-                _prev_sum = _tot_prev_amt / _tot_prev_qty if _tot_prev_qty else 0
             else:
                 _cur_sum = sum(r.get(_mf, 0) or 0 for r in cur_dim)
                 _prev_sum = sum(r.get(_mf, 0) or 0 for r in prev_dim)
@@ -4250,6 +4243,7 @@ with tabs[3]:
                 '加购人数': f"{int(v['商品加购人数']):,}",
                 '加购率': f"{v['商品加购人数']/vis*100:.2f}%" if vis else "0.00%",
                 '客单价': round(amt/v['支付买家数'], 1) if v['支付买家数'] else 0,
+                '件单价': round(amt/v['支付件数'], 1) if v['支付件数'] else 0,
                 'UV价值': round(amt/vis, 1) if vis else 0,
                 '费率': f"{spend/amt*100:.2f}%" if amt else '--',
                 '推广成交占比': f"{prs*100:.2f}%",
@@ -4291,6 +4285,7 @@ with tabs[3]:
             '加购人数': f"{int(_dim_total_cart):,}",
             '加购率': f"{_dim_total_cart/_dim_total_vis*100:.2f}%" if _dim_total_vis else "0.00%",
             '客单价': round(_dim_total_amt/_dim_total_buyers, 1) if _dim_total_buyers else 0,
+            '件单价': round(_dim_total_amt/_dim_total_qty, 1) if _dim_total_qty else 0,
             'UV价值': round(_dim_total_amt/_dim_total_vis, 1) if _dim_total_vis else 0,
             '费率': f"{_dim_total_spend/_dim_total_amt*100:.2f}%" if _dim_total_amt else '--',
             '推广成交占比': f"{_dim_prs*100:.2f}%",
@@ -4302,7 +4297,7 @@ with tabs[3]:
             f'推广成交占比{_s_cmp_suffix}': f"{_dim_prs_yoy*100:+.2f}%" if _dim_prs_yoy is not None else '--',
         })
         # 排序控件
-        _ds_sort_cols = ['维度','访客数','买家数','支付件数','成交金额(万)','转化率','客单价','加购人数','加购率','UV价值','费率','推广成交占比']
+        _ds_sort_cols = ['维度','访客数','买家数','支付件数','成交金额(万)','转化率','客单价','件单价','加购人数','加购率','UV价值','费率','推广成交占比']
         _dsc1, _dsc2 = st.columns([2, 1])
         with _dsc1:
             _ds_sort_by = st.selectbox('排序字段', _ds_sort_cols, index=4, key='dim_sort_col')
@@ -4314,7 +4309,7 @@ with tabs[3]:
             _dim_data_rows.sort(key=lambda r: r.get('维度', ''), reverse=(_ds_sort_desc == '降序'))
         else:
             _dim_data_rows.sort(key=lambda r: _parse_num(r.get(_ds_sort_by, 0)), reverse=(_ds_sort_desc == '降序'))
-        _dim_headers = ['维度','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','推广成交占比',
+        _dim_headers = ['维度','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','件单价','加购人数','加购率','UV价值','费率','推广成交占比',
                         f'销额{_s_cmp_suffix}',f'访客{_s_cmp_suffix}',f'转化率{_s_cmp_suffix}',f'客单价{_s_cmp_suffix}',f'费率{_s_cmp_suffix}',f'推广成交占比{_s_cmp_suffix}']
         _render_html_table(_dim_data_rows + _dim_total_rows, _dim_headers, _dim_headers, title=f'📦 销售{_sales_dim}汇总')
         _render_download_panel(_dim_data_rows + _dim_total_rows, _dim_headers, 'sales_dim_summary.csv', '📥 下载维度汇总')
@@ -4395,6 +4390,7 @@ with tabs[3]:
                     '加购人数': f"{int(v['商品加购人数']):,}",
                     '加购率': f"{v['商品加购人数']/vis*100:.2f}%" if vis else "0.00%",
                     '客单价': round(amt/v['支付买家数'], 1) if v['支付买家数'] else 0,
+                    '件单价': round(amt/v['支付件数'], 1) if v['支付件数'] else 0,
                     'UV价值': round(amt/vis, 1) if vis else 0,
                     '费率': f"{day_spend/amt*100:.2f}%" if amt else '--',
                     '推广成交占比': f"{day_prs*100:.2f}%",
@@ -4452,6 +4448,7 @@ with tabs[3]:
                     '加购人数': f"{int(total_cart):,}",
                     '加购率': f"{total_cart/total_vis*100:.2f}%" if total_vis else "0.00%",
                     '客单价': round(total_amt/total_buyers, 1) if total_buyers else 0,
+                    '件单价': round(total_amt/_total_qty, 1) if _total_qty else 0,
                     'UV价值': round(total_amt/total_vis, 1) if total_vis else 0,
                     '费率': f"{_total_rate_d:.2f}%" if _total_rate_d is not None else '--',
                     '推广成交占比': f"{_total_prs_d*100:.2f}%",
@@ -4466,7 +4463,7 @@ with tabs[3]:
                     total_row['维度'] = '合计'
                 daily_tbl.append(total_row)
             # 排序控件
-            _daily_sort_cols = ['日期','访客数','买家数','支付件数','成交金额(万)','转化率','客单价','加购人数','加购率','UV价值','费率','推广成交占比']
+            _daily_sort_cols = ['日期','访客数','买家数','支付件数','成交金额(万)','转化率','客单价','件单价','加购人数','加购率','UV价值','费率','推广成交占比']
             if _s_dim_field:
                 _daily_sort_cols = ['维度'] + _daily_sort_cols
             _dsc1, _dsc2 = st.columns([2, 1])
@@ -4483,7 +4480,7 @@ with tabs[3]:
             else:
                 _daily_data_rows.sort(key=lambda r: _parse_num(r.get(_daily_sort_by, 0)), reverse=(_daily_sort_desc == '降序'))
             _daily_tbl_sorted = _daily_data_rows + _daily_total_row
-            _daily_headers = ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','推广成交占比',
+            _daily_headers = ['日期','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','件单价','加购人数','加购率','UV价值','费率','推广成交占比',
                               f'销额{_s_cmp_suffix}',f'访客{_s_cmp_suffix}',f'转化率{_s_cmp_suffix}',f'客单价{_s_cmp_suffix}',f'费率{_s_cmp_suffix}',f'推广成交占比{_s_cmp_suffix}']
             if _s_dim_field:
                 _daily_headers = ['维度'] + _daily_headers
@@ -4557,6 +4554,7 @@ with tabs[3]:
                     '加购人数': f"{int(v['商品加购人数']):,}",
                     '加购率': f"{v['商品加购人数']/vis*100:.2f}%" if vis else "0.00%",
                     '客单价': round(amt/v['支付买家数'], 1) if v['支付买家数'] else 0,
+                    '件单价': round(amt/v['支付件数'], 1) if v['支付件数'] else 0,
                     'UV价值': round(amt/vis, 1) if vis else 0,
                     '费率': f"{month_spend/amt*100:.2f}%" if amt else '--',
                     '推广成交占比': f"{month_prs*100:.2f}%",
@@ -4613,6 +4611,7 @@ with tabs[3]:
                     '加购人数': f"{int(total_cart_m):,}",
                     '加购率': f"{total_cart_m/total_vis_m*100:.2f}%" if total_vis_m else "0.00%",
                     '客单价': round(total_amt_m/total_buyers_m, 1) if total_buyers_m else 0,
+                    '件单价': round(total_amt_m/_mm_total_qty, 1) if _mm_total_qty else 0,
                     'UV价值': round(total_amt_m/total_vis_m, 1) if total_vis_m else 0,
                     '费率': f"{_total_rate_m:.2f}%" if _total_rate_m is not None else '--',
                     '推广成交占比': f"{_total_prs_m*100:.2f}%",
@@ -4627,7 +4626,7 @@ with tabs[3]:
                     total_row['维度'] = '合计'
                 monthly_tbl.append(total_row)
                 # 排序控件
-                _mm_sort_cols = ['月份','访客数','买家数','支付件数','成交金额(万)','转化率','客单价','加购人数','加购率','UV价值','费率','推广成交占比']
+                _mm_sort_cols = ['月份','访客数','买家数','支付件数','成交金额(万)','转化率','客单价','件单价','加购人数','加购率','UV价值','费率','推广成交占比']
                 if _s_dim_field:
                     _mm_sort_cols = ['维度'] + _mm_sort_cols
                 _mmc1, _mmc2 = st.columns([2, 1])
@@ -4648,7 +4647,7 @@ with tabs[3]:
                 else:
                     _mm_data_rows.sort(key=lambda r: _parse_num_m(r.get(_mm_sort_by, 0)), reverse=(_mm_sort_desc == '降序'))
                 _mm_sorted = _mm_data_rows + _mm_total_row
-                _mm_headers = ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','加购人数','加购率','UV价值','费率','推广成交占比',
+                _mm_headers = ['月份','访客数','访客占比','买家数','支付件数','成交金额(万)','成交占比','转化率','客单价','件单价','加购人数','加购率','UV价值','费率','推广成交占比',
                                f'销额{_s_cmp_suffix}',f'访客{_s_cmp_suffix}',f'转化率{_s_cmp_suffix}',f'客单价{_s_cmp_suffix}',f'费率{_s_cmp_suffix}',f'推广成交占比{_s_cmp_suffix}']
                 if _s_dim_field:
                     _mm_headers = ['维度'] + _mm_headers
