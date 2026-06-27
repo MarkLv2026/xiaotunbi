@@ -1204,29 +1204,29 @@ def _compute_profit(_s_key, _e_key, _ch_key, _st_key, _cat_key, _mdl_key):
         promo_by_store[s] += spend
     
     # ── 单品利润计算 ──
+    # 注：销售数据无"款式"字段，按(店铺, 型号)聚合，成本取型号均价
     shop_profit = defaultdict(lambda: {'收入': 0, '成本': 0, '毛利': 0, '推广费': 0, '费用': 0, '利润': 0, '件数': 0})
     item_profit = []  # list of dicts
     
-    # 按(店铺, 型号, 款式)聚合销售
+    # 按(店铺, 型号)聚合销售
     item_sales = defaultdict(lambda: {'收入': 0, '件数': 0})
     for r in _sales:
         store = (r.get('店铺', '') or '').strip()
         model = (r.get('型号', '') or '').strip()
-        style = (r.get('款式', '') or '').strip()
         if not model:
             continue
         amt = float(r.get('支付金额', 0) or 0)
         qty = float(r.get('支付件数', 0) or 0)
-        key = (store, model, style)
+        key = (store, model)
         item_sales[key]['收入'] += amt
         item_sales[key]['件数'] += qty
     
-    for (store, model, style), sd in item_sales.items():
+    for (store, model), sd in item_sales.items():
         revenue = sd['收入']
         qty = sd['件数']
         
-        # 成本
-        unit_cost = _get_cost(sku_data, store, model, style)
+        # 成本：取型号均价（SKU表中该店铺+型号所有款式的均值）
+        unit_cost = _get_cost(sku_data, store, model, '')  # 空款式 → 自动回退均值
         total_cost = unit_cost * qty if unit_cost else 0
         
         # 毛利
@@ -1236,7 +1236,7 @@ def _compute_profit(_s_key, _e_key, _ch_key, _st_key, _cat_key, _mdl_key):
         promo_spend = promo_by_model.get(model, 0)
         # 如果按型号没匹配到，用店铺总推广费按收入比例分摊
         if promo_spend == 0:
-            store_total_rev = sum(v['收入'] for (s, m, st), v in item_sales.items() if s == store)
+            store_total_rev = sum(v['收入'] for (s, m), v in item_sales.items() if s == store)
             store_promo = promo_by_store.get(store, 0)
             promo_spend = (revenue / store_total_rev * store_promo) if store_total_rev else 0
         
@@ -1249,11 +1249,11 @@ def _compute_profit(_s_key, _e_key, _ch_key, _st_key, _cat_key, _mdl_key):
         profit_rate = (profit / revenue * 100) if revenue else 0
         
         item_profit.append({
-            '店铺': store, '型号': model, '款式': style,
+            '店铺': store, '型号': model,
             '收入': revenue, '成本': total_cost, '毛利': gross,
             '推广费': promo_spend, '费用': shop_fee, '利润': profit,
             '毛利率': gross_rate, '利润率': profit_rate,
-            '件数': int(qty), '单位成本': unit_cost or 0,
+            '件数': int(qty), '型号均价': unit_cost or 0,
         })
         
         # 店铺汇总
@@ -9786,9 +9786,9 @@ with tabs[7]:
                 item_rows = []
                 for it in item_data:
                     item_rows.append({
-                        '店铺': it['店铺'], '型号': it['型号'], '款式': it['款式'],
+                        '店铺': it['店铺'], '型号': it['型号'],
                         '收入': f'¥{it["收入"]/10000:.2f}万',
-                        '单位成本': f'¥{it["单位成本"]:.2f}',
+                        '型号均价': f'¥{it["型号均价"]:.2f}',
                         '总成本': f'¥{it["成本"]/10000:.2f}万',
                         '毛利': f'¥{it["毛利"]/10000:.2f}万',
                         '毛利率': f'{it["毛利率"]:.1f}%',
@@ -9798,8 +9798,8 @@ with tabs[7]:
                         '利润率': f'{it["利润率"]:.1f}%',
                     })
 
-                item_headers = ['店铺', '型号', '款式', '收入', '单位成本', '总成本', '毛利', '毛利率', '推广费', '费用', '利润', '利润率']
-                item_keys = ['店铺', '型号', '款式', '收入', '单位成本', '总成本', '毛利', '毛利率', '推广费', '费用', '利润', '利润率']
+                item_headers = ['店铺', '型号', '收入', '型号均价', '总成本', '毛利', '毛利率', '推广费', '费用', '利润', '利润率']
+                item_keys = ['店铺', '型号', '收入', '型号均价', '总成本', '毛利', '毛利率', '推广费', '费用', '利润', '利润率']
 
                 _render_html_table(item_rows, item_headers, item_keys, title='单品利润明细')
                 _render_download_panel(item_rows, item_headers, '单品经营利润.csv', '📥 下载单品利润表')
@@ -9820,5 +9820,5 @@ with tabs[7]:
             - 天猫智选：10.4%（服务费5.5% + 财务费1% + CPS1.2% + 物流2.7%）
             - 其他店铺：暂未配置费用结构，费用率为0
             
-            **匹配规则：** 按「店铺 + 型号 + 款式」精确匹配成本 → 回退到「店铺 + 型号」均值
+            **匹配规则：** 按「店铺 + 型号」取 SKU 成本表中该型号所有款式的平均成本（因销售数据无款式字段）
             """)
