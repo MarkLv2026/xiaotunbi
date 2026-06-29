@@ -1708,9 +1708,8 @@ monthly_raw = data.get('monthly', [])
 all_months = data.get('all_months', [])
 mm = {r['月份']: r for r in all_months}
 
-ch_rows = group(daily, '渠道')
-cat_rows = group(daily, '品类')
-store_rows = group(daily, '店铺')
+# NOTE: ch_rows/cat_rows/store_rows 依赖 daily，已移至 _compute_totals_and_promo() 调用之后
+# 原位置：第1711-1713行
 
 # Build monthly/daily trend from filtered daily data
 def build_monthly(rows):
@@ -1833,11 +1832,8 @@ def build_weekly_trend(rows, all_rows, limit=12):
             r['支付转化率_同比'] = None
     return result
 
-filtered_monthly = build_monthly(daily)
-mm_f = {r['月份']: r for r in filtered_monthly}
-unique_days = len(set(r['日期'] for r in daily))
-daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
-weekly_trend = build_weekly_trend(daily, daily_all_filtered, 12)
+# NOTE: filtered_monthly/mm_f/unique_days/daily_trend/weekly_trend 依赖 daily，已移至 _compute_totals_and_promo() 调用之后
+# 原位置：第1835-1839行
 
 # ─────────────────────────────────────────────────────────────
 # 新PPT生成函数 - 7页简约大气风格
@@ -2433,6 +2429,16 @@ promo_mom_cust = _pcmp['prev_cust']
 promo_mom_cv = _pcmp['prev_cv']
 promo_mom_torders = _pcmp['prev_torders']
 promo_mom_tcvr = _pcmp['prev_tcvr']
+
+# ── 依赖 daily / daily_all_filtered 的变量（必须在 _compute_totals_and_promo 之后）──
+ch_rows = group(daily, '渠道')
+cat_rows = group(daily, '品类')
+store_rows = group(daily, '店铺')
+filtered_monthly = build_monthly(daily)
+mm_f = {r['月份']: r for r in filtered_monthly}
+unique_days = len(set(r['日期'] for r in daily))
+daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
+weekly_trend = build_weekly_trend(daily, daily_all_filtered, 12)
 
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
