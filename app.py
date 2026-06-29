@@ -1583,24 +1583,11 @@ def _compute_totals_and_promo(s_key, e_key, ch_key, st_key, cat_key, mdl_key):
     
     return _daily, _daily_all, _totals, _promo_f
 
-# 调用缓存函数获取 totals 和 promo_filtered
+# 筛选器 cache key 准备（实际调用在数据加载之后，第2427行之后）
 _ch_key = tuple(sorted(channel)) if channel else ()
 _st_key = tuple(sorted(store)) if store else ()
 _cat_key = tuple(sorted(category)) if category else ()
 _mdl_key = tuple(sorted(model)) if model else ()
-daily, daily_all_filtered, totals, promo_filtered = _compute_totals_and_promo(s, e, _ch_key, _st_key, _cat_key, _mdl_key)
-
-promo_spend = sum(r.get('_花费', 0) for r in promo_filtered)
-promo_order_amt = sum(r.get('_总订单金额', 0) for r in promo_filtered)
-promo_roi = promo_order_amt / promo_spend if promo_spend else 0
-promo_direct_amt = sum(r.get('_直接订单金额', 0) for r in promo_filtered)
-promo_impress = sum(r.get('_展现数', 0) for r in promo_filtered)
-promo_clicks = sum(r.get('_点击数', 0) for r in promo_filtered)
-promo_cpc = promo_spend / promo_clicks if promo_clicks else 0
-promo_ctr = promo_clicks / promo_impress if promo_impress else 0
-promo_rate = promo_spend / totals['支付金额'] * 100 if totals['支付金额'] else 0
-promo_direct_roi = promo_direct_amt / promo_spend if promo_spend else 0
-promo_order_cost = promo_spend / totals['支付买家数'] if totals['支付买家数'] else 0
 
 # ── 推广同比数据（去年同期同天数）──
 def _promo_yoy_rows(date_range_start, date_range_end):
@@ -2425,6 +2412,21 @@ if not promo_rows:
         _promo_bytes = _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
     if _promo_bytes:
         promo_rows, ok = _load_from_pickle(_CACHE_PROMO_PKL, _promo_bytes, load_promo_data, 'promo')
+
+# ── 数据加载完成后，重新计算 totals 和 promo 指标（必须在数据就绪后调用）──
+daily, daily_all_filtered, totals, promo_filtered = _compute_totals_and_promo(s, e, _ch_key, _st_key, _cat_key, _mdl_key)
+
+promo_spend = sum(r.get('_花费', 0) for r in promo_filtered)
+promo_order_amt = sum(r.get('_总订单金额', 0) for r in promo_filtered)
+promo_roi = promo_order_amt / promo_spend if promo_spend else 0
+promo_direct_amt = sum(r.get('_直接订单金额', 0) for r in promo_filtered)
+promo_impress = sum(r.get('_展现数', 0) for r in promo_filtered)
+promo_clicks = sum(r.get('_点击数', 0) for r in promo_filtered)
+promo_cpc = promo_spend / promo_clicks if promo_clicks else 0
+promo_ctr = promo_clicks / promo_impress if promo_impress else 0
+promo_rate = promo_spend / totals['支付金额'] * 100 if totals['支付金额'] else 0
+promo_direct_roi = promo_direct_amt / promo_spend if promo_spend else 0
+promo_order_cost = promo_spend / totals['支付买家数'] if totals['支付买家数'] else 0
 
 # ─────────────────────────────────────────────────────────────
 # Tab 结构

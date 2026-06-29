@@ -1,9 +1,0 @@
-__pycache__/
-.workbuddy/
-NUL
-# 本地临时缓存（不提交）
-.data_cache/
-# data/ 目录下的 xlsx 由同步按钮通过 API 推送，同时也允许 git 跟踪（双保险）
-# 若需要本地 git 管理数据文件，删除下面这两行
-data/*.pkl
-data/*.xlsx.bak
