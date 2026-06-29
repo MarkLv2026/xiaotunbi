@@ -1657,39 +1657,9 @@ def _compute_promo_comparison(ps, pe, ys, ye, ch_key, st_key, cat_key, mdl_key):
         'yoy_torders': yoy_torders, 'yoy_tcvr': yoy_tcvr,
     }
 
-_yoy_cur = (end - start).days
-# 调用缓存函数获取环比和同比汇总
-_pcmp = _compute_promo_comparison(prev_s, prev_e, yoy_s, yoy_e, _ch_key, _st_key, _cat_key, _mdl_key)
-
-promo_prev = _promo_yoy_rows(prev_s, prev_e)
-promo_prev_fc = _pcmp['prev_fc']
-promo_prev_amt = _pcmp['prev_amt']
-promo_prev_direct = _pcmp['prev_direct']
-promo_prev_impress = _pcmp['prev_impress']
-promo_prev_clicks = _pcmp['prev_clicks']
-promo_prev_roi = _pcmp['prev_roi']
-promo_prev_droi = _pcmp['prev_droi']
-promo_prev_cpc = _pcmp['prev_cpc']
-promo_prev_ctr = _pcmp['prev_ctr']
-promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
-promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals['支付买家数'] else 0
-
-promo_yoy = _promo_yoy_rows(yoy_s, yoy_e)
-promo_yoy_fc = _pcmp['yoy_fc']
-promo_yoy_amt = _pcmp['yoy_amt']
-promo_yoy_direct = _pcmp['yoy_direct']
-promo_yoy_impress = _pcmp['yoy_impress']
-promo_yoy_clicks = _pcmp['yoy_clicks']
-promo_yoy_roi = _pcmp['yoy_roi']
-promo_yoy_droi = _pcmp['yoy_droi']
-promo_yoy_cpc = _pcmp['yoy_cpc']
-promo_yoy_ctr = _pcmp['yoy_ctr']
-promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
-promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
-promo_yoy_cust = _pcmp['yoy_cust']
-promo_yoy_cv = _pcmp['yoy_cv']
-promo_yoy_torders = _pcmp['yoy_torders']
-promo_yoy_tcvr = _pcmp['yoy_tcvr']
+# NOTE: promo_prev*, promo_yoy*, promo_mom* 变量已移至 _compute_totals_and_promo() 调用之后（约第2429行）
+# 因为它们依赖 totals 变量，而 totals 在数据加载后才能获得
+# 原位置: 第1660-1739行
 
 # YoY 聚合辅助
 def _promo_agg(rows, key_field):
@@ -1716,27 +1686,8 @@ def _yoy_text(cur, prev):
     sign = '+' if chg >= 0 else ''
     return f"{sign}{chg:.1f}%", color
 
-# ── 推广环比数据（上期同天数）──
-_mom_days = (end - start).days
-_mom_end = start - datetime.timedelta(days=1)
-_mom_start = _mom_end - datetime.timedelta(days=_mom_days)
-# promo_mom 也使用全局对比期（由对比模式决定）
-promo_mom = promo_prev
-promo_mom_fc = promo_prev_fc
-promo_mom_amt = promo_prev_amt
-promo_mom_direct = promo_prev_direct
-promo_mom_impress = promo_prev_impress
-promo_mom_clicks = promo_prev_clicks
-promo_mom_roi = promo_prev_roi
-promo_mom_droi = promo_prev_droi
-promo_mom_cpc = promo_prev_cpc
-promo_mom_ctr = promo_prev_ctr
-promo_mom_rate = promo_prev_rate
-promo_mom_order_cost = promo_prev_order_cost
-promo_mom_cust = _pcmp['prev_cust']
-promo_mom_cv = _pcmp['prev_cv']
-promo_mom_torders = _pcmp['prev_torders']
-promo_mom_tcvr = _pcmp['prev_tcvr']
+# NOTE: promo_mom* 变量已移至 _compute_totals_and_promo() 调用之后（约第2429行）
+# 因为它们依赖 promo_prev* 变量
 
 def _promo_delta(cur, mom, yoy, suffix='%'):
     """推广指标环比/同比delta字符串，格式：'环比 +X% / 同比 +Y%'"""
@@ -2427,6 +2378,61 @@ promo_ctr = promo_clicks / promo_impress if promo_impress else 0
 promo_rate = promo_spend / totals['支付金额'] * 100 if totals['支付金额'] else 0
 promo_direct_roi = promo_direct_amt / promo_spend if promo_spend else 0
 promo_order_cost = promo_spend / totals['支付买家数'] if totals['支付买家数'] else 0
+
+# ── 推广同比/环比数据（依赖 totals，必须在 _compute_totals_and_promo 之后）──
+_yoy_cur = (end - start).days
+_pcmp = _compute_promo_comparison(prev_s, prev_e, yoy_s, yoy_e, _ch_key, _st_key, _cat_key, _mdl_key)
+
+promo_prev = _promo_yoy_rows(prev_s, prev_e)
+promo_prev_fc = _pcmp['prev_fc']
+promo_prev_amt = _pcmp['prev_amt']
+promo_prev_direct = _pcmp['prev_direct']
+promo_prev_impress = _pcmp['prev_impress']
+promo_prev_clicks = _pcmp['prev_clicks']
+promo_prev_roi = _pcmp['prev_roi']
+promo_prev_droi = _pcmp['prev_droi']
+promo_prev_cpc = _pcmp['prev_cpc']
+promo_prev_ctr = _pcmp['prev_ctr']
+promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
+promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+
+promo_yoy = _promo_yoy_rows(yoy_s, yoy_e)
+promo_yoy_fc = _pcmp['yoy_fc']
+promo_yoy_amt = _pcmp['yoy_amt']
+promo_yoy_direct = _pcmp['yoy_direct']
+promo_yoy_impress = _pcmp['yoy_impress']
+promo_yoy_clicks = _pcmp['yoy_clicks']
+promo_yoy_roi = _pcmp['yoy_roi']
+promo_yoy_droi = _pcmp['yoy_droi']
+promo_yoy_cpc = _pcmp['yoy_cpc']
+promo_yoy_ctr = _pcmp['yoy_ctr']
+promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
+promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+promo_yoy_cust = _pcmp['yoy_cust']
+promo_yoy_cv = _pcmp['yoy_cv']
+promo_yoy_torders = _pcmp['yoy_torders']
+promo_yoy_tcvr = _pcmp['yoy_tcvr']
+
+# ── 推广环比数据（上期同天数）──
+_mom_days = (end - start).days
+_mom_end = start - datetime.timedelta(days=1)
+_mom_start = _mom_end - datetime.timedelta(days=_mom_days)
+promo_mom = promo_prev
+promo_mom_fc = promo_prev_fc
+promo_mom_amt = promo_prev_amt
+promo_mom_direct = promo_prev_direct
+promo_mom_impress = promo_prev_impress
+promo_mom_clicks = promo_prev_clicks
+promo_mom_roi = promo_prev_roi
+promo_mom_droi = promo_prev_droi
+promo_mom_cpc = promo_prev_cpc
+promo_mom_ctr = promo_prev_ctr
+promo_mom_rate = promo_prev_rate
+promo_mom_order_cost = promo_prev_order_cost
+promo_mom_cust = _pcmp['prev_cust']
+promo_mom_cv = _pcmp['prev_cv']
+promo_mom_torders = _pcmp['prev_torders']
+promo_mom_tcvr = _pcmp['prev_tcvr']
 
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
