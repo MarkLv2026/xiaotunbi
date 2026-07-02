@@ -1787,15 +1787,6 @@ def _promo_delta(cur, mom, yoy, suffix='%'):
 
 # 全时段同条件筛选数据（用于同比查询，不受日期范围限制）
 
-# Monthly data (with dimensions, for channel trend)
-monthly_raw = data.get('monthly', [])
-# all_months: 仅月份维度汇总
-all_months = data.get('all_months', [])
-mm = {r['月份']: r for r in all_months}
-
-ch_rows = group(daily, '渠道')
-cat_rows = group(daily, '品类')
-store_rows = group(daily, '店铺')
 
 # Build monthly/daily trend from filtered daily data
 def build_monthly(rows):
@@ -2469,6 +2460,16 @@ promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals['支付
 promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals['支付买家数'] else 0
 promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
 promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+
+# Monthly data (with dimensions, for channel trend) — 依赖 daily / data，必须在数据加载后计算
+monthly_raw = data.get('monthly', [])
+# all_months: 仅月份维度汇总
+all_months = data.get('all_months', [])
+mm = {r['月份']: r for r in all_months}
+
+ch_rows = group(daily, '渠道')
+cat_rows = group(daily, '品类')
+store_rows = group(daily, '店铺')
 
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
