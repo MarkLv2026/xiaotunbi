@@ -1707,8 +1707,8 @@ promo_prev_roi = _pcmp['prev_roi']
 promo_prev_droi = _pcmp['prev_droi']
 promo_prev_cpc = _pcmp['prev_cpc']
 promo_prev_ctr = _pcmp['prev_ctr']
-promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
-promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+promo_prev_rate = 0  # 在 totals 可用后重算
+promo_prev_order_cost = 0  # 在 totals 可用后重算
 
 promo_yoy = _promo_yoy_rows(yoy_s, yoy_e)
 promo_yoy_fc = _pcmp['yoy_fc']
@@ -1720,8 +1720,8 @@ promo_yoy_roi = _pcmp['yoy_roi']
 promo_yoy_droi = _pcmp['yoy_droi']
 promo_yoy_cpc = _pcmp['yoy_cpc']
 promo_yoy_ctr = _pcmp['yoy_ctr']
-promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
-promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+promo_yoy_rate = 0  # 在 totals 可用后重算
+promo_yoy_order_cost = 0  # 在 totals 可用后重算
 promo_yoy_cust = _pcmp['yoy_cust']
 promo_yoy_cv = _pcmp['yoy_cv']
 promo_yoy_torders = _pcmp['yoy_torders']
@@ -2463,6 +2463,12 @@ promo_ctr = promo_clicks / promo_impress if promo_impress else 0
 promo_rate = promo_spend / totals['支付金额'] * 100 if totals['支付金额'] else 0
 promo_direct_roi = promo_direct_amt / promo_spend if promo_spend else 0
 promo_order_cost = promo_spend / totals['支付买家数'] if totals['支付买家数'] else 0
+
+# 补上环比/同比推广费率（依赖 totals，必须在 totals 赋值后计算）
+promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
+promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
+promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
 
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
