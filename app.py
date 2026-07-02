@@ -410,11 +410,18 @@ with st.sidebar:
                 _CACHE_TARGETS.write_bytes(_file_bytes)
                 # ── 自动持久化到 data/targets.xlsx + 推送 GitHub ──
                 try:
-                    # 1. 保存到 data/targets.xlsx（本地持久化， Streamlit Cloud 重启后仍存在）
+                    # 1. 合并所有月份缓存为完整目标文件
                     _REPO_DATA_DIR.mkdir(exist_ok=True)
-                    _REPO_TARGETS.write_bytes(_file_bytes)
-                    # 2. 自动推送到 GitHub（静默执行，不弹窗）
-                    _ok, _msg = _push_xlsx_to_github(_file_bytes, 'data/targets.xlsx', f'自动同步目标数据（{len(parsed_months)}个月）')
+                    _merged_bytes = _merge_targets_months()
+                    if _merged_bytes:
+                        _REPO_TARGETS.write_bytes(_merged_bytes)
+                        # 2. 自动推送到 GitHub（静默执行，不弹窗）
+                        _all_month_files = sorted(_CACHE_TARGETS_DIR.glob('targets_*.xlsx'))
+                        _all_months = [f.stem.replace('targets_', '') for f in _all_month_files]
+                        _ok, _msg = _push_xlsx_to_github(_merged_bytes, 'data/targets.xlsx', f'自动同步目标数据（{"+".join(_all_months)}）')
+                    else:
+                        _REPO_TARGETS.write_bytes(_file_bytes)
+                        _ok, _msg = _push_xlsx_to_github(_file_bytes, 'data/targets.xlsx', f'自动同步目标数据（{len(parsed_months)}个月）')
                 except Exception as _e:
                     pass  # 静默失败，不影响主流程
                 # 清除session_state缓存，强制重新加载
@@ -453,8 +460,9 @@ with st.sidebar:
             if _targets_ready:
                 if st.button('📤 同步目标数据到云端', use_container_width=True, key='sync_targets'):
                     with st.spinner('正在同步目标数据到 GitHub...'):
+                        _merged_bytes = _merge_targets_months() or _CACHE_TARGETS.read_bytes()
                         _ok, _msg = _push_xlsx_to_github(
-                            _CACHE_TARGETS.read_bytes(),
+                            _merged_bytes,
                             'data/targets.xlsx',
                             f'数据更新：销售目标 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}'
                         )
@@ -989,6 +997,34 @@ def _load_targets_from_repo():
     except Exception as e:
         print(f'[targets] 加载失败: {e}')
         return None
+
+
+def _merge_targets_months():
+    """把 .data_cache/targets/targets_YYYY-MM.xlsx 合并为单个工作簿，返回 bytes"""
+    import io
+    import openpyxl as _xl
+    _CACHE_TARGETS_DIR = _CACHE_DIR / 'targets'
+    merged = _xl.Workbook()
+    merged.remove(merged.active)
+    _inserted = 0
+    if _CACHE_TARGETS_DIR.exists():
+        for month_file in sorted(_CACHE_TARGETS_DIR.glob('targets_*.xlsx')):
+            try:
+                wb = _xl.load_workbook(month_file, data_only=True)
+                for ws in wb.worksheets:
+                    new_ws = merged.create_sheet(title=ws.title)
+                    for row in ws.iter_rows():
+                        for cell in row:
+                            new_ws.cell(row=cell.row, column=cell.column, value=cell.value)
+                _inserted += 1
+            except Exception:
+                pass
+    if not _inserted:
+        return None
+    buf = io.BytesIO()
+    merged.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
 
 
 # 启动时不读取大文件，避免内存/超时问题
@@ -1657,9 +1693,39 @@ def _compute_promo_comparison(ps, pe, ys, ye, ch_key, st_key, cat_key, mdl_key):
         'yoy_torders': yoy_torders, 'yoy_tcvr': yoy_tcvr,
     }
 
-# NOTE: promo_prev*, promo_yoy*, promo_mom* 变量已移至 _compute_totals_and_promo() 调用之后（约第2429行）
-# 因为它们依赖 totals 变量，而 totals 在数据加载后才能获得
-# 原位置: 第1660-1739行
+_yoy_cur = (end - start).days
+# 调用缓存函数获取环比和同比汇总
+_pcmp = _compute_promo_comparison(prev_s, prev_e, yoy_s, yoy_e, _ch_key, _st_key, _cat_key, _mdl_key)
+
+promo_prev = _promo_yoy_rows(prev_s, prev_e)
+promo_prev_fc = _pcmp['prev_fc']
+promo_prev_amt = _pcmp['prev_amt']
+promo_prev_direct = _pcmp['prev_direct']
+promo_prev_impress = _pcmp['prev_impress']
+promo_prev_clicks = _pcmp['prev_clicks']
+promo_prev_roi = _pcmp['prev_roi']
+promo_prev_droi = _pcmp['prev_droi']
+promo_prev_cpc = _pcmp['prev_cpc']
+promo_prev_ctr = _pcmp['prev_ctr']
+promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
+promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+
+promo_yoy = _promo_yoy_rows(yoy_s, yoy_e)
+promo_yoy_fc = _pcmp['yoy_fc']
+promo_yoy_amt = _pcmp['yoy_amt']
+promo_yoy_direct = _pcmp['yoy_direct']
+promo_yoy_impress = _pcmp['yoy_impress']
+promo_yoy_clicks = _pcmp['yoy_clicks']
+promo_yoy_roi = _pcmp['yoy_roi']
+promo_yoy_droi = _pcmp['yoy_droi']
+promo_yoy_cpc = _pcmp['yoy_cpc']
+promo_yoy_ctr = _pcmp['yoy_ctr']
+promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
+promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+promo_yoy_cust = _pcmp['yoy_cust']
+promo_yoy_cv = _pcmp['yoy_cv']
+promo_yoy_torders = _pcmp['yoy_torders']
+promo_yoy_tcvr = _pcmp['yoy_tcvr']
 
 # YoY 聚合辅助
 def _promo_agg(rows, key_field):
@@ -1686,8 +1752,27 @@ def _yoy_text(cur, prev):
     sign = '+' if chg >= 0 else ''
     return f"{sign}{chg:.1f}%", color
 
-# NOTE: promo_mom* 变量已移至 _compute_totals_and_promo() 调用之后（约第2429行）
-# 因为它们依赖 promo_prev* 变量
+# ── 推广环比数据（上期同天数）──
+_mom_days = (end - start).days
+_mom_end = start - datetime.timedelta(days=1)
+_mom_start = _mom_end - datetime.timedelta(days=_mom_days)
+# promo_mom 也使用全局对比期（由对比模式决定）
+promo_mom = promo_prev
+promo_mom_fc = promo_prev_fc
+promo_mom_amt = promo_prev_amt
+promo_mom_direct = promo_prev_direct
+promo_mom_impress = promo_prev_impress
+promo_mom_clicks = promo_prev_clicks
+promo_mom_roi = promo_prev_roi
+promo_mom_droi = promo_prev_droi
+promo_mom_cpc = promo_prev_cpc
+promo_mom_ctr = promo_prev_ctr
+promo_mom_rate = promo_prev_rate
+promo_mom_order_cost = promo_prev_order_cost
+promo_mom_cust = _pcmp['prev_cust']
+promo_mom_cv = _pcmp['prev_cv']
+promo_mom_torders = _pcmp['prev_torders']
+promo_mom_tcvr = _pcmp['prev_tcvr']
 
 def _promo_delta(cur, mom, yoy, suffix='%'):
     """推广指标环比/同比delta字符串，格式：'环比 +X% / 同比 +Y%'"""
@@ -1708,8 +1793,9 @@ monthly_raw = data.get('monthly', [])
 all_months = data.get('all_months', [])
 mm = {r['月份']: r for r in all_months}
 
-# NOTE: ch_rows/cat_rows/store_rows 依赖 daily，已移至 _compute_totals_and_promo() 调用之后
-# 原位置：第1711-1713行
+ch_rows = group(daily, '渠道')
+cat_rows = group(daily, '品类')
+store_rows = group(daily, '店铺')
 
 # Build monthly/daily trend from filtered daily data
 def build_monthly(rows):
@@ -1832,8 +1918,11 @@ def build_weekly_trend(rows, all_rows, limit=12):
             r['支付转化率_同比'] = None
     return result
 
-# NOTE: filtered_monthly/mm_f/unique_days/daily_trend/weekly_trend 依赖 daily，已移至 _compute_totals_and_promo() 调用之后
-# 原位置：第1835-1839行
+filtered_monthly = build_monthly(daily)
+mm_f = {r['月份']: r for r in filtered_monthly}
+unique_days = len(set(r['日期'] for r in daily))
+daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
+weekly_trend = build_weekly_trend(daily, daily_all_filtered, 12)
 
 # ─────────────────────────────────────────────────────────────
 # 新PPT生成函数 - 7页简约大气风格
@@ -2374,71 +2463,6 @@ promo_ctr = promo_clicks / promo_impress if promo_impress else 0
 promo_rate = promo_spend / totals['支付金额'] * 100 if totals['支付金额'] else 0
 promo_direct_roi = promo_direct_amt / promo_spend if promo_spend else 0
 promo_order_cost = promo_spend / totals['支付买家数'] if totals['支付买家数'] else 0
-
-# ── 推广同比/环比数据（依赖 totals，必须在 _compute_totals_and_promo 之后）──
-_yoy_cur = (end - start).days
-_pcmp = _compute_promo_comparison(prev_s, prev_e, yoy_s, yoy_e, _ch_key, _st_key, _cat_key, _mdl_key)
-
-promo_prev = _promo_yoy_rows(prev_s, prev_e)
-promo_prev_fc = _pcmp['prev_fc']
-promo_prev_amt = _pcmp['prev_amt']
-promo_prev_direct = _pcmp['prev_direct']
-promo_prev_impress = _pcmp['prev_impress']
-promo_prev_clicks = _pcmp['prev_clicks']
-promo_prev_roi = _pcmp['prev_roi']
-promo_prev_droi = _pcmp['prev_droi']
-promo_prev_cpc = _pcmp['prev_cpc']
-promo_prev_ctr = _pcmp['prev_ctr']
-promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
-promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals['支付买家数'] else 0
-
-promo_yoy = _promo_yoy_rows(yoy_s, yoy_e)
-promo_yoy_fc = _pcmp['yoy_fc']
-promo_yoy_amt = _pcmp['yoy_amt']
-promo_yoy_direct = _pcmp['yoy_direct']
-promo_yoy_impress = _pcmp['yoy_impress']
-promo_yoy_clicks = _pcmp['yoy_clicks']
-promo_yoy_roi = _pcmp['yoy_roi']
-promo_yoy_droi = _pcmp['yoy_droi']
-promo_yoy_cpc = _pcmp['yoy_cpc']
-promo_yoy_ctr = _pcmp['yoy_ctr']
-promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
-promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
-promo_yoy_cust = _pcmp['yoy_cust']
-promo_yoy_cv = _pcmp['yoy_cv']
-promo_yoy_torders = _pcmp['yoy_torders']
-promo_yoy_tcvr = _pcmp['yoy_tcvr']
-
-# ── 推广环比数据（上期同天数）──
-_mom_days = (end - start).days
-_mom_end = start - datetime.timedelta(days=1)
-_mom_start = _mom_end - datetime.timedelta(days=_mom_days)
-promo_mom = promo_prev
-promo_mom_fc = promo_prev_fc
-promo_mom_amt = promo_prev_amt
-promo_mom_direct = promo_prev_direct
-promo_mom_impress = promo_prev_impress
-promo_mom_clicks = promo_prev_clicks
-promo_mom_roi = promo_prev_roi
-promo_mom_droi = promo_prev_droi
-promo_mom_cpc = promo_prev_cpc
-promo_mom_ctr = promo_prev_ctr
-promo_mom_rate = promo_prev_rate
-promo_mom_order_cost = promo_prev_order_cost
-promo_mom_cust = _pcmp['prev_cust']
-promo_mom_cv = _pcmp['prev_cv']
-promo_mom_torders = _pcmp['prev_torders']
-promo_mom_tcvr = _pcmp['prev_tcvr']
-
-# ── 依赖 daily / daily_all_filtered 的变量（必须在 _compute_totals_and_promo 之后）──
-ch_rows = group(daily, '渠道')
-cat_rows = group(daily, '品类')
-store_rows = group(daily, '店铺')
-filtered_monthly = build_monthly(daily)
-mm_f = {r['月份']: r for r in filtered_monthly}
-unique_days = len(set(r['日期'] for r in daily))
-daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
-weekly_trend = build_weekly_trend(daily, daily_all_filtered, 12)
 
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
@@ -8629,9 +8653,6 @@ with tabs[6]:
                         table_data.append(row_vals)
 
                     elif itype == 'actual':
-                        # 单品模式：跳过Excel中的actual行（实际值由代码自动计算），避免与统一指标行重复
-                        if model_name:
-                            continue
                         actual_total = 0.0
                         for d in date_list:
                             av = _get_actual_value(indicator, shop_name, d, model_name)
@@ -8650,24 +8671,39 @@ with tabs[6]:
                     elif itype == 'calc':
                         calc_rows.append(sr)
 
-                # ── 第一遍后：自动追加缺失的 actual 行 ──
-                # 1. 店铺模式：追加"实际支付件数"（如果Excel中没有）
-                if not model_name and '实际支付件数' not in actual_summary:
-                    qty_total = 0.0
-                    qty_row = ['实际支付件数']
-                    for d in date_list:
-                        qv = _get_actual_value('实际支付件数', shop_name, d)
-                        qty_total += qv
-                    qty_row.append(f'{qty_total:,.0f}' if qty_total else '--')
-                    for d in date_list:
-                        qv = _get_actual_value('实际支付件数', shop_name, d)
-                        qty_row.append(f'{qv:,.0f}' if qv else '--')
-                    table_data.append(qty_row)
-                    actual_summary['实际支付件数'] = {'合计': qty_total}
-                    for d in date_list:
-                        actual_summary['实际支付件数'][d] = _get_actual_value('实际支付件数', shop_name, d)
+                # ── 第一遍后：自动追加缺失的 actual 行（兼容旧模板）──
+                # 1. 店铺模式：追加"实际推广花费" + "实际支付件数"（如果Excel中没有）
+                if not model_name:
+                    if '实际推广花费' not in actual_summary and '实际投入金额' not in actual_summary:
+                        spend_total = 0.0
+                        spend_row = ['实际推广花费']
+                        for d in date_list:
+                            sv = promo_by_shop_date.get((shop_name, d), 0.0)
+                            spend_total += sv
+                        spend_row.append(f'{spend_total:,.0f}' if spend_total else '--')
+                        for d in date_list:
+                            sv = promo_by_shop_date.get((shop_name, d), 0.0)
+                            spend_row.append(f'{sv:,.0f}' if sv else '--')
+                        table_data.append(spend_row)
+                        actual_summary['实际推广花费'] = {'合计': spend_total}
+                        for d in date_list:
+                            actual_summary['实际推广花费'][d] = promo_by_shop_date.get((shop_name, d), 0.0)
+                    if '实际支付件数' not in actual_summary:
+                        qty_total = 0.0
+                        qty_row = ['实际支付件数']
+                        for d in date_list:
+                            qv = _get_actual_value('实际支付件数', shop_name, d)
+                            qty_total += qv
+                        qty_row.append(f'{qty_total:,.0f}' if qty_total else '--')
+                        for d in date_list:
+                            qv = _get_actual_value('实际支付件数', shop_name, d)
+                            qty_row.append(f'{qv:,.0f}' if qv else '--')
+                        table_data.append(qty_row)
+                        actual_summary['实际支付件数'] = {'合计': qty_total}
+                        for d in date_list:
+                            actual_summary['实际支付件数'][d] = _get_actual_value('实际支付件数', shop_name, d)
 
-                # 2. 单品模式：填充 actual_summary 供 calc 行计算使用，并追加"实际投入金额"行到表格
+                # 2. 单品模式：填充 actual_summary 供 calc 行计算使用，并追加缺失的 actual 行
                 if model_name:
                     # 实际成交金额：用于达成率计算
                     amt_total = 0.0
@@ -8677,44 +8713,46 @@ with tabs[6]:
                     actual_summary['实际成交金额'] = {'合计': amt_total}
                     for d in date_list:
                         actual_summary['实际成交金额'][d] = _get_actual_value('成交金额', shop_name, d, model_name)
-                    # 实际投入金额：用于费率计算 + 追加到表格展示
+                    # 实际推广花费（优先）/ 实际投入金额（兼容旧模板）：用于费率计算 + 展示
+                    spend_indicator = '实际推广花费' if '实际推广花费' in actual_summary else '实际投入金额'
                     spend_total = 0.0
                     for d in date_list:
                         sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
                         spend_total += sv
-                    actual_summary['实际投入金额'] = {'合计': spend_total}
+                    actual_summary[spend_indicator] = {'合计': spend_total}
                     for d in date_list:
                         sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
-                        actual_summary['实际投入金额'][d] = sv
-                    # 追加"实际投入金额"行到表格（显示每日推广花费）
-                    spend_row = ['实际推广花费']
-                    spend_row.append(f'{spend_total:,.0f}' if spend_total else '--')
-                    for d in date_list:
-                        sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
-                        spend_row.append(f'{sv:,.0f}' if sv else '--')
-                    table_data.append(spend_row)
+                        actual_summary[spend_indicator][d] = sv
+                    if spend_indicator not in [r[0] for r in table_data]:
+                        spend_row = [spend_indicator]
+                        spend_row.append(f'{spend_total:,.0f}' if spend_total else '--')
+                        for d in date_list:
+                            sv = promo_by_model_date.get((shop_name, model_name, d), 0.0)
+                            spend_row.append(f'{sv:,.0f}' if sv else '--')
+                        table_data.append(spend_row)
                     # 实际支付件数
-                    qty_total = 0.0
-                    for d in date_list:
-                        qv = _get_actual_value('实际支付件数', shop_name, d, model_name)
-                        qty_total += qv
-                    actual_summary['实际支付件数'] = {'合计': qty_total}
-                    for d in date_list:
-                        actual_summary['实际支付件数'][d] = _get_actual_value('实际支付件数', shop_name, d, model_name)
-                    # 追加"实际成交金额"行到表格
-                    amt_row = ['实际成交金额']
-                    amt_row.append(f'{amt_total:,.0f}' if amt_total else '--')
-                    for d in date_list:
-                        av = _get_actual_value('成交金额', shop_name, d, model_name)
-                        amt_row.append(f'{av:,.0f}' if av else '--')
-                    table_data.append(amt_row)
-                    # 追加"实际支付件数"行到表格
-                    qty_row = ['实际支付件数']
-                    qty_row.append(f'{qty_total:,.0f}' if qty_total else '--')
-                    for d in date_list:
-                        qv = _get_actual_value('实际支付件数', shop_name, d, model_name)
-                        qty_row.append(f'{qv:,.0f}' if qv else '--')
-                    table_data.append(qty_row)
+                    if '实际支付件数' not in actual_summary:
+                        qty_total = 0.0
+                        for d in date_list:
+                            qv = _get_actual_value('实际支付件数', shop_name, d, model_name)
+                            qty_total += qv
+                        actual_summary['实际支付件数'] = {'合计': qty_total}
+                        for d in date_list:
+                            actual_summary['实际支付件数'][d] = _get_actual_value('实际支付件数', shop_name, d, model_name)
+                        qty_row = ['实际支付件数']
+                        qty_row.append(f'{qty_total:,.0f}' if qty_total else '--')
+                        for d in date_list:
+                            qv = _get_actual_value('实际支付件数', shop_name, d, model_name)
+                            qty_row.append(f'{qv:,.0f}' if qv else '--')
+                        table_data.append(qty_row)
+                    # 实际成交金额（展示）
+                    if '实际成交金额' not in [r[0] for r in table_data]:
+                        amt_row = ['实际成交金额']
+                        amt_row.append(f'{amt_total:,.0f}' if amt_total else '--')
+                        for d in date_list:
+                            av = _get_actual_value('成交金额', shop_name, d, model_name)
+                            amt_row.append(f'{av:,.0f}' if av else '--')
+                        table_data.append(amt_row)
 
                 # ── 第二遍：处理 calc 行（此时 actual_summary 已完整）──
                 for sr in calc_rows:
@@ -8751,10 +8789,10 @@ with tabs[6]:
                         table_data.append(row_vals)
 
                     elif '费率' in indicator and '目标' not in indicator:
-                        # 实际费率 = 推广花费 / 实际成交金额 × 100
+                        # 实际费率 = 实际推广花费 / 实际成交金额 × 100
                         actual_key = '实际成交金额' if model_name else '成交金额达成'
                         actual_row = _get_actual_summary(actual_summary, actual_key)
-                        spend_row_data = actual_summary.get('实际投入金额', {})
+                        spend_row_data = actual_summary.get('实际推广花费', actual_summary.get('实际投入金额', {}))
                         row_vals = [indicator]
                         # 直接汇总后相除，与结构表保持一致（不逐日过滤无销额的天）
                         calc_total_spend = spend_row_data.get('合计', 0.0)
@@ -9291,7 +9329,7 @@ with tabs[6]:
                     # 固定指标顺序（与单店铺表格一致）
                     # 收集所有存在的指标类型
                     existing_indicators = set(list(all_shop_target.keys()) + list(all_shop_actual.keys()))
-                    fixed_order = ['成交金额目标', '成交金额达成', '实际投入金额', '目标费率', '实际支付件数', '成交金额达成率', '实际费率']
+                    fixed_order = ['成交金额目标', '成交金额达成', '实际推广花费', '目标投入金额', '目标费率', '实际支付件数', '成交金额达成率', '实际费率']
                     always_show = {'成交金额达成率', '实际费率', '实际支付件数'}
                     all_indicators = [ind for ind in fixed_order if ind in existing_indicators or ind in always_show]
 
