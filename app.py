@@ -478,7 +478,7 @@ with st.sidebar:
             # 同步按钮（推送完整文件，向后兼容）
             _targets_ready = _CACHE_TARGETS.exists()
             if _targets_ready:
-            if st.button('📤 同步目标数据到云端', use_container_width=True, key='sync_targets'):
+                if st.button('📤 同步目标数据到云端', use_container_width=True, key='sync_targets'):
                 with st.spinner('正在同步目标数据到 GitHub...'):
                     # 内联合并，避免引用模块尾部才定义的函数
                     import io as _io_sync, openpyxl as _xl_sync
