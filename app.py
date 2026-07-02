@@ -1909,11 +1909,6 @@ def build_weekly_trend(rows, all_rows, limit=12):
             r['支付转化率_同比'] = None
     return result
 
-filtered_monthly = build_monthly(daily)
-mm_f = {r['月份']: r for r in filtered_monthly}
-unique_days = len(set(r['日期'] for r in daily))
-daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
-weekly_trend = build_weekly_trend(daily, daily_all_filtered, 12)
 
 # ─────────────────────────────────────────────────────────────
 # 新PPT生成函数 - 7页简约大气风格
@@ -2470,6 +2465,13 @@ mm = {r['月份']: r for r in all_months}
 ch_rows = group(daily, '渠道')
 cat_rows = group(daily, '品类')
 store_rows = group(daily, '店铺')
+
+# 月度/日度/周度趋势构建 — 依赖 daily，必须在数据加载后计算
+filtered_monthly = build_monthly(daily)
+mm_f = {r['月份']: r for r in filtered_monthly}
+unique_days = len(set(r['日期'] for r in daily))
+daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
+weekly_trend = build_weekly_trend(daily, daily_all_filtered, 12)
 
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
