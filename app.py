@@ -479,41 +479,41 @@ with st.sidebar:
             _targets_ready = _CACHE_TARGETS.exists()
             if _targets_ready:
                 if st.button('📤 同步目标数据到云端', use_container_width=True, key='sync_targets'):
-                with st.spinner('正在同步目标数据到 GitHub...'):
-                    # 内联合并，避免引用模块尾部才定义的函数
-                    import io as _io_sync, openpyxl as _xl_sync
-                    _CACHE_TARGETS_DIR = _CACHE_DIR / 'targets'
-                    _merged_sync = _xl_sync.Workbook()
-                    _merged_sync.remove(_merged_sync.active)
-                    _inserted_sync = 0
-                    if _CACHE_TARGETS_DIR.exists():
-                        for _mf in sorted(_CACHE_TARGETS_DIR.glob('targets_*.xlsx')):
-                            try:
-                                _src = _xl_sync.load_workbook(_mf, data_only=True)
-                                for _sws in _src.worksheets:
-                                    _news = _merged_sync.create_sheet(title=_sws.title)
-                                    for _r in _sws.iter_rows():
-                                        for _c in _r:
-                                            _news.cell(row=_c.row, column=_c.column, value=_c.value)
-                                _inserted_sync += 1
-                            except Exception:
-                                pass
-                    if _inserted_sync:
-                        _buf_sync = _io_sync.BytesIO()
-                        _merged_sync.save(_buf_sync)
-                        _buf_sync.seek(0)
-                        _merged_bytes = _buf_sync.getvalue()
-                    else:
-                        _merged_bytes = _CACHE_TARGETS.read_bytes() if _CACHE_TARGETS.exists() else b''
-                    _ok, _msg = _push_xlsx_to_github(
-                        _merged_bytes,
-                        'data/targets.xlsx',
-                        f'数据更新：销售目标 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}'
-                    )
-                    if _ok:
-                        st.success(_msg + '\n\n所有账号刷新后即可看到最新数据（约1分钟部署）')
-                    else:
-                        st.error(f'同步失败：{_msg}')
+                    with st.spinner('正在同步目标数据到 GitHub...'):
+                        # 内联合并，避免引用模块尾部才定义的函数
+                        import io as _io_sync, openpyxl as _xl_sync
+                        _CACHE_TARGETS_DIR = _CACHE_DIR / 'targets'
+                        _merged_sync = _xl_sync.Workbook()
+                        _merged_sync.remove(_merged_sync.active)
+                        _inserted_sync = 0
+                        if _CACHE_TARGETS_DIR.exists():
+                            for _mf in sorted(_CACHE_TARGETS_DIR.glob('targets_*.xlsx')):
+                                try:
+                                    _src = _xl_sync.load_workbook(_mf, data_only=True)
+                                    for _sws in _src.worksheets:
+                                        _news = _merged_sync.create_sheet(title=_sws.title)
+                                        for _r in _sws.iter_rows():
+                                            for _c in _r:
+                                                _news.cell(row=_c.row, column=_c.column, value=_c.value)
+                                    _inserted_sync += 1
+                                except Exception:
+                                    pass
+                        if _inserted_sync:
+                            _buf_sync = _io_sync.BytesIO()
+                            _merged_sync.save(_buf_sync)
+                            _buf_sync.seek(0)
+                            _merged_bytes = _buf_sync.getvalue()
+                        else:
+                            _merged_bytes = _CACHE_TARGETS.read_bytes() if _CACHE_TARGETS.exists() else b''
+                        _ok, _msg = _push_xlsx_to_github(
+                            _merged_bytes,
+                            'data/targets.xlsx',
+                            f'数据更新：销售目标 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}'
+                        )
+                        if _ok:
+                            st.success(_msg + '\n\n所有账号刷新后即可看到最新数据（约1分钟部署）')
+                        else:
+                            st.error(f'同步失败：{_msg}')
             else:
                 st.caption('💡 上传数据后可同步到云端，使所有账号持久可见')
         else:
