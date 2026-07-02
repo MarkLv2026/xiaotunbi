@@ -1092,12 +1092,12 @@ with fc:
     _dr = data['meta']['dateRange']
     if _sales_loaded:
         _data_max_date = datetime.date.fromisoformat(_dr[1])
-        # 默认取数据最后日期所在月份：月初 → 最后一天
-        _default_start = _data_max_date.replace(day=1)
+        # 默认取数据最新日期倒推近30天
         _default_end = _data_max_date
+        _default_start = _data_max_date - datetime.timedelta(days=29)
     else:
-        _default_start = datetime.date.today().replace(day=1)
         _default_end = datetime.date.today()
+        _default_start = _default_end - datetime.timedelta(days=29)
     with c1:
         start = st.date_input('开始日期', value=_default_start, key='_gf_start')
     with c2:
