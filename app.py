@@ -5,6 +5,8 @@ import datetime
 import io
 import os
 import pathlib
+import sys
+import traceback
 import streamlit as st
 try:
     import pandas as pd
@@ -27,7 +29,25 @@ _CACHE_PROMO_PKL = _CACHE_DIR / 'last_promo.pkl'
 _CACHE_TARGETS = _CACHE_DIR / 'last_targets.xlsx'
 
 
-# 仓库内置数据路径（GitHub 持久化，容器重启后仍有效）
+# 全局顶层异常捕获：把任何启动期未捕获异常显示在页面上，便于诊断
+_ORIG_EXCEPT_HOOK = sys.excepthook
+
+def _global_except_hook(exc_type, exc_value, exc_tb):
+    try:
+        err_html = (
+            '<div style="background:#1e293b;border:1px solid #ef4444;border-radius:8px;padding:14px;margin:10px 0;">'
+            '<div style="color:#ef4444;font-weight:bold;font-size:16px;margin-bottom:8px;">🐬 小豚BI 启动遇到错误</div>'
+            '<pre style="color:#e2e8f0;background:#0f172a;padding:10px;border-radius:6px;overflow:auto;font-size:12px;">'
+            f'{exc_type.__name__}: {exc_value}\n\n{"".join(traceback.format_tb(exc_tb))}'
+            '</pre></div>'
+        )
+        st.markdown(err_html, unsafe_allow_html=True)
+    except Exception:
+        pass
+    _ORIG_EXCEPT_HOOK(exc_type, exc_value, exc_tb)
+
+sys.excepthook = _global_except_hook
+
 _REPO_DATA_DIR = pathlib.Path(__file__).parent / 'data'
 _REPO_SALES = _REPO_DATA_DIR / 'sales.xlsx'
 _REPO_PROMO = _REPO_DATA_DIR / 'promo.xlsx'
