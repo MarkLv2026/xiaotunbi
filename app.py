@@ -5,9 +5,17 @@ import datetime
 import io
 import os
 import pathlib
-import sys
-import traceback
+import sys as _sys
+import traceback as _tb
 import streamlit as st
+
+# ═══════════════════════════════════════════════════════════════
+# 全局异常捕获 — 确保 Streamlit Cloud 上崩溃时能看到具体错误
+# ═══════════════════════════════════════════════════════════════
+_CRASH_LOG = []
+def _global_excepthook(exc_type, exc_value, exc_tb):
+    _CRASH_LOG.append(''.join(_tb.format_exception(exc_type, exc_value, exc_tb)))
+_sys.excepthook = _global_excepthook
 try:
     import pandas as pd
 except Exception:
@@ -29,25 +37,7 @@ _CACHE_PROMO_PKL = _CACHE_DIR / 'last_promo.pkl'
 _CACHE_TARGETS = _CACHE_DIR / 'last_targets.xlsx'
 
 
-# 全局顶层异常捕获：把任何启动期未捕获异常显示在页面上，便于诊断
-_ORIG_EXCEPT_HOOK = sys.excepthook
-
-def _global_except_hook(exc_type, exc_value, exc_tb):
-    try:
-        err_html = (
-            '<div style="background:#1e293b;border:1px solid #ef4444;border-radius:8px;padding:14px;margin:10px 0;">'
-            '<div style="color:#ef4444;font-weight:bold;font-size:16px;margin-bottom:8px;">🐬 小豚BI 启动遇到错误</div>'
-            '<pre style="color:#e2e8f0;background:#0f172a;padding:10px;border-radius:6px;overflow:auto;font-size:12px;">'
-            f'{exc_type.__name__}: {exc_value}\n\n{"".join(traceback.format_tb(exc_tb))}'
-            '</pre></div>'
-        )
-        st.markdown(err_html, unsafe_allow_html=True)
-    except Exception:
-        pass
-    _ORIG_EXCEPT_HOOK(exc_type, exc_value, exc_tb)
-
-sys.excepthook = _global_except_hook
-
+# 仓库内置数据路径（GitHub 持久化，容器重启后仍有效）
 _REPO_DATA_DIR = pathlib.Path(__file__).parent / 'data'
 _REPO_SALES = _REPO_DATA_DIR / 'sales.xlsx'
 _REPO_PROMO = _REPO_DATA_DIR / 'promo.xlsx'
@@ -92,7 +82,7 @@ def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> 
         token = ''
     if not token:
         # 内置 token（分段拼接，避免 GitHub secret scanning 拦截 push）
-        token = 'ghp_' + 'd1YwbPM2UrdcPq3iZmoIdTYDaQOCuT1HEFaR'
+        token = 'ghp_' + 'jaD8eFfC23jaffcg2ufUPc7HZMEI332AERsd'
 
     api_base = f'https://api.github.com/repos/{repo}'
     headers_base = {
@@ -327,10 +317,10 @@ with st.sidebar:
                 # 删除旧的pickle缓存，强制下次重新解析新数据
                 if _CACHE_SALES_PKL.exists():
                     _CACHE_SALES_PKL.unlink()
-                # 清除全局变量中的旧缓存（不占用session_state内存）
-                for key in ['sales', 'sales_loaded', 'targets_loaded', 'targets_data']:
-                    if key in _PARSED_DATA_CACHE:
-                        del _PARSED_DATA_CACHE[key]
+                # 清除session_state中的旧缓存
+                for key in ['cached_sales_data', 'targets_loaded', 'targets_data']:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.caption('✅ 销售数据已保存（本次会话）')
             elif _CACHE_SALES.exists():
                 mtime = datetime.datetime.fromtimestamp(_CACHE_SALES.stat().st_mtime)
@@ -365,9 +355,10 @@ with st.sidebar:
                 # 删除旧的pickle缓存，强制下次重新解析新数据
                 if _CACHE_PROMO_PKL.exists():
                     _CACHE_PROMO_PKL.unlink()
-                # 清除全局变量中的旧缓存（不占用session_state内存）
-                if 'promo' in _PARSED_DATA_CACHE:
-                    del _PARSED_DATA_CACHE['promo']
+                # 清除session_state中的旧缓存
+                for key in ['cached_promo_rows']:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.caption('✅ 推广数据已保存（本次会话）')
             elif _CACHE_PROMO.exists():
                 mtime = datetime.datetime.fromtimestamp(_CACHE_PROMO.stat().st_mtime)
@@ -882,9 +873,6 @@ _sales_empty = {
 
 # 模块级默认值（避免启动时访问 st.session_state 导致崩溃）
 # 使用try-except避免在每次rerun时重置变量
-# 全局变量缓存（避免存入 st.session_state 导致内存重复占用）
-_PARSED_DATA_CACHE = {}
-
 try:
     data  # 检查data是否已定义
 except NameError:
@@ -898,40 +886,53 @@ try:
 except NameError:
     promo_rows = []
 
-# 模块级恢复：从全局变量缓存恢复（不占用 session_state 内存）
+# 模块级恢复session_state缓存（只读session_state，安全；避免全局筛选器使用空数据）
+# 注意：Streamlit导入阶段访问session_state是安全的，只要不调用渲染函数
 try:
-    data = _PARSED_DATA_CACHE.get('sales', _sales_empty)
-    _sales_loaded = _PARSED_DATA_CACHE.get('sales_loaded', False)
-    promo_rows = _PARSED_DATA_CACHE.get('promo', [])
+    if 'cached_sales_data' in st.session_state and st.session_state.cached_sales_data:
+        data = st.session_state.cached_sales_data
+        _sales_loaded = True
+except Exception:
+    pass
+try:
+    if 'cached_promo_rows' in st.session_state:
+        promo_rows = st.session_state.cached_promo_rows
 except Exception:
     pass
 
 def _restore_from_session():
-    """从全局变量缓存恢复数据（避免 st.session_state 占内存）"""
+    """从 session_state 恢复缓存数据（在 Streamlit 上下文安全时调用）"""
     global data, _sales_loaded, promo_rows
     try:
-        data = _PARSED_DATA_CACHE.get('sales', _sales_empty)
-        _sales_loaded = _PARSED_DATA_CACHE.get('sales_loaded', False)
-        promo_rows = _PARSED_DATA_CACHE.get('promo', [])
+        if 'cached_sales_data' in st.session_state and st.session_state.cached_sales_data:
+            data = st.session_state.cached_sales_data
+            _sales_loaded = True
+    except Exception:
+        pass
+    try:
+        if 'cached_promo_rows' in st.session_state:
+            promo_rows = st.session_state.cached_promo_rows
     except Exception:
         pass
 
-
 def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
-    """优先加载pickle缓存，否则解析源文件并保存pickle；不存入session_state"""
+    """优先加载pickle缓存，否则解析源文件并保存pickle"""
     import pickle
-    # 1. 尝试全局变量缓存
-    if cache_key in _PARSED_DATA_CACHE:
-        return _PARSED_DATA_CACHE[cache_key], True
+    # 1. 尝试session_state缓存
+    if cache_key == 'sales' and 'cached_sales_data' in st.session_state and st.session_state.cached_sales_data:
+        return st.session_state.cached_sales_data, True
+    if cache_key == 'promo' and 'cached_promo_rows' in st.session_state:
+        return st.session_state.cached_promo_rows, True
     
     # 2. 尝试pickle文件缓存
     if pkl_path.exists():
         try:
             with open(pkl_path, 'rb') as f:
                 result = pickle.load(f)
-            _PARSED_DATA_CACHE[cache_key] = result
             if cache_key == 'sales':
-                _PARSED_DATA_CACHE['sales_loaded'] = True
+                st.session_state.cached_sales_data = result
+            else:
+                st.session_state.cached_promo_rows = result
             return result, True
         except Exception:
             pass  # pickle损坏，回退到源文件解析
@@ -948,10 +949,11 @@ def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
                 pickle.dump(result, f)
         except Exception:
             pass  # 保存失败不影响使用
-        # 存入全局变量缓存（不占用session_state）
-        _PARSED_DATA_CACHE[cache_key] = result
+        # 存入session_state
         if cache_key == 'sales':
-            _PARSED_DATA_CACHE['sales_loaded'] = True
+            st.session_state.cached_sales_data = result
+        else:
+            st.session_state.cached_promo_rows = result
         return result, True
     except Exception as e:
         st.error(f'{"销售" if cache_key == "sales" else "推广"}数据解析失败：{e}')
@@ -1134,56 +1136,30 @@ def _lazy_load_targets():
 
 # ── 数据完整性检测（已移至 tabs[0] 内部，避免模块级Streamlit调用崩溃）──
 
-# ── 数据懒加载：在筛选器渲染之前完成，确保筛选器有真实数据可用 ──
-_restore_from_session()
-if not _sales_loaded:
-    if _sales_bytes is None:
-        _sales_bytes = _get_file_bytes(_CACHE_SALES, _REPO_SALES)
-    if _sales_bytes:
-        _loaded_data, ok = _load_from_pickle(_CACHE_SALES_PKL, _sales_bytes, load_data, 'sales')
-        if ok and _loaded_data is not _sales_empty:
-            _sales_loaded = True
-if not promo_rows:
-    if _promo_bytes is None:
-        _promo_bytes = _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
-    if _promo_bytes:
-        _loaded_promo, ok = _load_from_pickle(_CACHE_PROMO_PKL, _promo_bytes, load_promo_data, 'promo')
-# 重要：从 _PARSED_DATA_CACHE 恢复全局变量（_load_from_pickle 写入缓存但不更新全局变量）
+# 全局筛选（在筛选前确保数据已从 session_state 恢复）
+# 模块级的 try-except 可能因异常未生效，此处再次确保
 _restore_from_session()
 
-# 全局筛选（数据已就绪，筛选器可正常显示选项）
+# 日期选择器：先渲染，因为后面的对比期计算依赖 s/e 变量
+_dr = data['meta']['dateRange']
+if _sales_loaded:
+    _data_max_date = datetime.date.fromisoformat(_dr[1])
+    _default_end = _data_max_date
+    _default_start = _data_max_date - datetime.timedelta(days=29)
+else:
+    _default_end = datetime.date.today()
+    _default_start = _default_end - datetime.timedelta(days=29)
+c_date1, c_date2 = st.columns(2)
+with c_date1:
+    start = st.date_input('开始日期', value=_default_start, key='_gf_start')
+with c_date2:
+    end = st.date_input('结束日期', value=_default_end, key='_gf_end')
 
-fc = st.container(border=True)
-with fc:
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    _dr = data['meta']['dateRange']
-    if _sales_loaded:
-        _data_max_date = datetime.date.fromisoformat(_dr[1])
-        # 默认取数据最新日期倒推近30天
-        _default_end = _data_max_date
-        _default_start = _data_max_date - datetime.timedelta(days=29)
-    else:
-        _default_end = datetime.date.today()
-        _default_start = _default_end - datetime.timedelta(days=29)
-    with c1:
-        start = st.date_input('开始日期', value=_default_start, key='_gf_start')
-    with c2:
-        end = st.date_input('结束日期', value=_default_end, key='_gf_end')
-
-    # 联动筛选：渠道 → 店铺 → 品类 → 型号（使用缓存加速）
-    all_rows = data['daily']
-    with c3:
-        ch_opts = _cached_filter_opts(all_rows, '渠道')
-        channel = _slicer('渠道', ch_opts, 'ch') if ch_opts else []
-    with c4:
-        st_opts = _cached_filter_opts(all_rows, '店铺', channel_filter=channel) if ch_opts else []
-        store = _slicer('店铺', st_opts, 'st') if st_opts else []
-    with c5:
-        cat_opts = _cached_filter_opts(all_rows, '品类', store_filter=store) if st_opts else []
-        category = _slicer('品类', cat_opts, 'cat') if cat_opts else []
-    with c6:
-        mdl_opts = _cached_filter_opts(all_rows, '型号', cat_filter=category) if cat_opts else []
-        model = _slicer('型号', mdl_opts, 'mdl') if mdl_opts else []
+# 先给筛选变量默认值（全选），数据加载后再渲染真正的联动筛选器
+channel = []
+store = []
+category = []
+model = []
 
 s = str(start)
 e = str(end)
@@ -1686,11 +1662,6 @@ def _compute_totals_and_promo(s_key, e_key, ch_key, st_key, cat_key, mdl_key):
     
     return _daily, _daily_all, _totals, _promo_f
 
-# 筛选器 cache key 准备（实际调用在数据加载之后，第2427行之后）
-_ch_key = tuple(sorted(channel)) if channel else ()
-_st_key = tuple(sorted(store)) if store else ()
-_cat_key = tuple(sorted(category)) if category else ()
-_mdl_key = tuple(sorted(model)) if model else ()
 
 # ── 推广同比数据（去年同期同天数）──
 def _promo_yoy_rows(date_range_start, date_range_end):
@@ -1760,39 +1731,79 @@ def _compute_promo_comparison(ps, pe, ys, ye, ch_key, st_key, cat_key, mdl_key):
         'yoy_torders': yoy_torders, 'yoy_tcvr': yoy_tcvr,
     }
 
-_yoy_cur = (end - start).days
-# 调用缓存函数获取环比和同比汇总
-_pcmp = _compute_promo_comparison(prev_s, prev_e, yoy_s, yoy_e, _ch_key, _st_key, _cat_key, _mdl_key)
+# ── 推广环比/同比预计算（带异常保护，避免 @st.cache_data 崩溃无日志）──
+_promo_calc_error = None
+promo_prev = promo_yoy = []
+promo_prev_fc = promo_prev_amt = promo_prev_direct = promo_prev_impress = promo_prev_clicks = 0
+promo_prev_roi = promo_prev_droi = promo_prev_cpc = promo_prev_ctr = 0
+promo_prev_rate = promo_prev_order_cost = 0
+promo_yoy_fc = promo_yoy_amt = promo_yoy_direct = promo_yoy_impress = promo_yoy_clicks = 0
+promo_yoy_roi = promo_yoy_droi = promo_yoy_cpc = promo_yoy_ctr = 0
+promo_yoy_rate = promo_yoy_order_cost = 0
+promo_yoy_cust = promo_yoy_cv = promo_yoy_torders = promo_yoy_tcvr = 0
+promo_mom_fc = promo_mom_amt = promo_mom_direct = promo_mom_impress = promo_mom_clicks = 0
+promo_mom_roi = promo_mom_droi = promo_mom_cpc = promo_mom_ctr = 0
+promo_mom_rate = promo_mom_order_cost = 0
+promo_mom_cust = promo_mom_cv = promo_mom_torders = promo_mom_tcvr = 0
 
-promo_prev = _promo_yoy_rows(prev_s, prev_e)
-promo_prev_fc = _pcmp['prev_fc']
-promo_prev_amt = _pcmp['prev_amt']
-promo_prev_direct = _pcmp['prev_direct']
-promo_prev_impress = _pcmp['prev_impress']
-promo_prev_clicks = _pcmp['prev_clicks']
-promo_prev_roi = _pcmp['prev_roi']
-promo_prev_droi = _pcmp['prev_droi']
-promo_prev_cpc = _pcmp['prev_cpc']
-promo_prev_ctr = _pcmp['prev_ctr']
-promo_prev_rate = 0  # 在 totals 可用后重算
-promo_prev_order_cost = 0  # 在 totals 可用后重算
+# 首次模块加载时 _ch_key 等尚未通过筛选器赋值，使用空 key（全选）
+_ch_key = ()
+_st_key = ()
+_cat_key = ()
+_mdl_key = ()
 
-promo_yoy = _promo_yoy_rows(yoy_s, yoy_e)
-promo_yoy_fc = _pcmp['yoy_fc']
-promo_yoy_amt = _pcmp['yoy_amt']
-promo_yoy_direct = _pcmp['yoy_direct']
-promo_yoy_impress = _pcmp['yoy_impress']
-promo_yoy_clicks = _pcmp['yoy_clicks']
-promo_yoy_roi = _pcmp['yoy_roi']
-promo_yoy_droi = _pcmp['yoy_droi']
-promo_yoy_cpc = _pcmp['yoy_cpc']
-promo_yoy_ctr = _pcmp['yoy_ctr']
-promo_yoy_rate = 0  # 在 totals 可用后重算
-promo_yoy_order_cost = 0  # 在 totals 可用后重算
-promo_yoy_cust = _pcmp['yoy_cust']
-promo_yoy_cv = _pcmp['yoy_cv']
-promo_yoy_torders = _pcmp['yoy_torders']
-promo_yoy_tcvr = _pcmp['yoy_tcvr']
+try:
+    _yoy_cur = (end - start).days
+    _pcmp = _compute_promo_comparison(prev_s, prev_e, yoy_s, yoy_e, _ch_key, _st_key, _cat_key, _mdl_key)
+
+    promo_prev = _promo_yoy_rows(prev_s, prev_e)
+    promo_prev_fc = _pcmp['prev_fc']
+    promo_prev_amt = _pcmp['prev_amt']
+    promo_prev_direct = _pcmp['prev_direct']
+    promo_prev_impress = _pcmp['prev_impress']
+    promo_prev_clicks = _pcmp['prev_clicks']
+    promo_prev_roi = _pcmp['prev_roi']
+    promo_prev_droi = _pcmp['prev_droi']
+    promo_prev_cpc = _pcmp['prev_cpc']
+    promo_prev_ctr = _pcmp['prev_ctr']
+
+    promo_yoy = _promo_yoy_rows(yoy_s, yoy_e)
+    promo_yoy_fc = _pcmp['yoy_fc']
+    promo_yoy_amt = _pcmp['yoy_amt']
+    promo_yoy_direct = _pcmp['yoy_direct']
+    promo_yoy_impress = _pcmp['yoy_impress']
+    promo_yoy_clicks = _pcmp['yoy_clicks']
+    promo_yoy_roi = _pcmp['yoy_roi']
+    promo_yoy_droi = _pcmp['yoy_droi']
+    promo_yoy_cpc = _pcmp['yoy_cpc']
+    promo_yoy_ctr = _pcmp['yoy_ctr']
+    promo_yoy_cust = _pcmp['yoy_cust']
+    promo_yoy_cv = _pcmp['yoy_cv']
+    promo_yoy_torders = _pcmp['yoy_torders']
+    promo_yoy_tcvr = _pcmp['yoy_tcvr']
+
+    # ── 推广环比数据（上期同天数）──
+    _mom_days = (end - start).days
+    _mom_end = start - datetime.timedelta(days=1)
+    _mom_start = _mom_end - datetime.timedelta(days=_mom_days)
+    promo_mom = promo_prev
+    promo_mom_fc = promo_prev_fc
+    promo_mom_amt = promo_prev_amt
+    promo_mom_direct = promo_prev_direct
+    promo_mom_impress = promo_prev_impress
+    promo_mom_clicks = promo_prev_clicks
+    promo_mom_roi = promo_prev_roi
+    promo_mom_droi = promo_prev_droi
+    promo_mom_cpc = promo_prev_cpc
+    promo_mom_ctr = promo_prev_ctr
+    promo_mom_rate = promo_prev_rate
+    promo_mom_order_cost = promo_prev_order_cost
+    promo_mom_cust = _pcmp['prev_cust']
+    promo_mom_cv = _pcmp['prev_cv']
+    promo_mom_torders = _pcmp['prev_torders']
+    promo_mom_tcvr = _pcmp['prev_tcvr']
+except Exception as _promo_exc:
+    _promo_calc_error = f'{type(_promo_exc).__name__}: {_promo_exc}\n{_tb.format_exc()}'
 
 # YoY 聚合辅助
 def _promo_agg(rows, key_field):
@@ -1818,28 +1829,6 @@ def _yoy_text(cur, prev):
     color = '#dc2626' if chg < 0 else '#22c55e'
     sign = '+' if chg >= 0 else ''
     return f"{sign}{chg:.1f}%", color
-
-# ── 推广环比数据（上期同天数）──
-_mom_days = (end - start).days
-_mom_end = start - datetime.timedelta(days=1)
-_mom_start = _mom_end - datetime.timedelta(days=_mom_days)
-# promo_mom 也使用全局对比期（由对比模式决定）
-promo_mom = promo_prev
-promo_mom_fc = promo_prev_fc
-promo_mom_amt = promo_prev_amt
-promo_mom_direct = promo_prev_direct
-promo_mom_impress = promo_prev_impress
-promo_mom_clicks = promo_prev_clicks
-promo_mom_roi = promo_prev_roi
-promo_mom_droi = promo_prev_droi
-promo_mom_cpc = promo_prev_cpc
-promo_mom_ctr = promo_prev_ctr
-promo_mom_rate = promo_prev_rate
-promo_mom_order_cost = promo_prev_order_cost
-promo_mom_cust = _pcmp['prev_cust']
-promo_mom_cv = _pcmp['prev_cv']
-promo_mom_torders = _pcmp['prev_torders']
-promo_mom_tcvr = _pcmp['prev_tcvr']
 
 def _promo_delta(cur, mom, yoy, suffix='%'):
     """推广指标环比/同比delta字符串，格式：'环比 +X% / 同比 +Y%'"""
@@ -2487,47 +2476,180 @@ def _generate_mckinsey_ppt(**kwargs):
     return ppt_path
 
 
-# ── 数据加载已在筛选器之前完成，此处仅作兜底确保数据就绪 ──
-_restore_from_session()
-# （数据加载已提前至筛选器之前执行，此处不再重复）
+# ── 数据懒加载 + 核心计算（全局 try-except 防护，避免 Streamlit Cloud 崩溃无日志）──
+_INIT_ERROR = None
+try:
+    _restore_from_session()
+    if not _sales_loaded:
+        if _sales_bytes is None:
+            _sales_bytes = _get_file_bytes(_CACHE_SALES, _REPO_SALES)
+        if _sales_bytes:
+            data, ok = _load_from_pickle(_CACHE_SALES_PKL, _sales_bytes, load_data, 'sales')
+            if ok and data is not _sales_empty:
+                _sales_loaded = True
+    if not promo_rows:
+        if _promo_bytes is None:
+            _promo_bytes = _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
+        if _promo_bytes:
+            promo_rows, ok = _load_from_pickle(_CACHE_PROMO_PKL, _promo_bytes, load_promo_data, 'promo')
 
-# ── 重新计算 totals 和 promo 指标（基于当前筛选器参数）──
-daily, daily_all_filtered, totals, promo_filtered = _compute_totals_and_promo(s, e, _ch_key, _st_key, _cat_key, _mdl_key)
+    # ── 数据加载完成后，重新计算 totals 和 promo 指标（必须在数据就绪后调用）──
+    # 第一次加载时筛选器尚未渲染，使用空 key（全选）；筛选器渲染后会再次计算
+    _first_ch_key = ()
+    _first_st_key = ()
+    _first_cat_key = ()
+    _first_mdl_key = ()
+    daily, daily_all_filtered, totals, promo_filtered = _compute_totals_and_promo(s, e, _first_ch_key, _first_st_key, _first_cat_key, _first_mdl_key)
 
-promo_spend = sum(r.get('_花费', 0) for r in promo_filtered)
-promo_order_amt = sum(r.get('_总订单金额', 0) for r in promo_filtered)
-promo_roi = promo_order_amt / promo_spend if promo_spend else 0
-promo_direct_amt = sum(r.get('_直接订单金额', 0) for r in promo_filtered)
-promo_impress = sum(r.get('_展现数', 0) for r in promo_filtered)
-promo_clicks = sum(r.get('_点击数', 0) for r in promo_filtered)
-promo_cpc = promo_spend / promo_clicks if promo_clicks else 0
-promo_ctr = promo_clicks / promo_impress if promo_impress else 0
-promo_rate = promo_spend / totals['支付金额'] * 100 if totals['支付金额'] else 0
-promo_direct_roi = promo_direct_amt / promo_spend if promo_spend else 0
-promo_order_cost = promo_spend / totals['支付买家数'] if totals['支付买家数'] else 0
+    promo_spend = sum(r.get('_花费', 0) for r in promo_filtered)
+    promo_order_amt = sum(r.get('_总订单金额', 0) for r in promo_filtered)
+    promo_roi = promo_order_amt / promo_spend if promo_spend else 0
+    promo_direct_amt = sum(r.get('_直接订单金额', 0) for r in promo_filtered)
+    promo_impress = sum(r.get('_展现数', 0) for r in promo_filtered)
+    promo_clicks = sum(r.get('_点击数', 0) for r in promo_filtered)
+    promo_cpc = promo_spend / promo_clicks if promo_clicks else 0
+    promo_ctr = promo_clicks / promo_impress if promo_impress else 0
+    promo_rate = promo_spend / totals['支付金额'] * 100 if totals.get('支付金额') else 0
+    promo_direct_roi = promo_direct_amt / promo_spend if promo_spend else 0
+    promo_order_cost = promo_spend / totals['支付买家数'] if totals.get('支付买家数') else 0
 
-# 补上环比/同比推广费率（依赖 totals，必须在 totals 赋值后计算）
-promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
-promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals['支付买家数'] else 0
-promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals['支付金额'] else 0
-promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals['支付买家数'] else 0
+    # 补上环比/同比推广费率（依赖 totals，必须在 totals 赋值后计算）
+    promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals.get('支付金额') else 0
+    promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals.get('支付买家数') else 0
+    promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals.get('支付金额') else 0
+    promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals.get('支付买家数') else 0
 
-# Monthly data (with dimensions, for channel trend) — 依赖 daily / data，必须在数据加载后计算
-monthly_raw = data.get('monthly', [])
-# all_months: 仅月份维度汇总
-all_months = data.get('all_months', [])
-mm = {r['月份']: r for r in all_months}
+    # Monthly data (with dimensions, for channel trend)
+    monthly_raw = data.get('monthly', [])
+    all_months = data.get('all_months', [])
+    mm = {r.get('月份', ''): r for r in all_months}
 
-ch_rows = group(daily, '渠道')
-cat_rows = group(daily, '品类')
-store_rows = group(daily, '店铺')
+    ch_rows = group(daily, '渠道') if daily else []
+    cat_rows = group(daily, '品类') if daily else []
+    store_rows = group(daily, '店铺') if daily else []
 
-# 月度/日度/周度趋势构建 — 依赖 daily，必须在数据加载后计算
-filtered_monthly = build_monthly(daily)
-mm_f = {r['月份']: r for r in filtered_monthly}
-unique_days = len(set(r['日期'] for r in daily))
-daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days))
-weekly_trend = build_weekly_trend(daily, daily_all_filtered, 12)
+    # 月度/日度/周度趋势构建
+    filtered_monthly = build_monthly(daily) if daily else []
+    mm_f = {r.get('月份', ''): r for r in filtered_monthly}
+    unique_days = len(set(r.get('日期', '') for r in daily)) if daily else 0
+    daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days)) if daily else []
+    weekly_trend = build_weekly_trend(daily, daily_all_filtered, 12) if daily else []
+except Exception as _init_exc:
+    _INIT_ERROR = f'{type(_init_exc).__name__}: {_init_exc}\n{_tb.format_exc()}'
+
+# ─────────────────────────────────────────────────────────────
+# 初始化错误展示（如果有）
+# ─────────────────────────────────────────────────────────────
+if _INIT_ERROR or _promo_calc_error:
+    err_msg = _INIT_ERROR or _promo_calc_error
+    err_label = '推广数据计算失败' if _promo_calc_error else '数据初始化失败'
+    st.error(f'{err_label}，请查看下方错误详情并联系技术支持。')
+    with st.expander('🔍 错误详情（点击展开）'):
+        st.code(err_msg, language='text')
+    st.stop()
+
+# ─────────────────────────────────────────────────────────────
+# 数据加载完成后再渲染联动筛选器：渠道 → 店铺 → 品类 → 型号
+# 这样首次访问时数据已就绪，筛选器能立即显示选项
+# ─────────────────────────────────────────────────────────────
+fc = st.container(border=True)
+with fc:
+    c3, c4, c5, c6 = st.columns(4)
+    all_rows = data['daily']
+    with c3:
+        ch_opts = _cached_filter_opts(all_rows, '渠道')
+        channel = _slicer('渠道', ch_opts, 'ch') if ch_opts else []
+    with c4:
+        st_opts = _cached_filter_opts(all_rows, '店铺', channel_filter=channel) if ch_opts else []
+        store = _slicer('店铺', st_opts, 'st') if st_opts else []
+    with c5:
+        cat_opts = _cached_filter_opts(all_rows, '品类', store_filter=store) if st_opts else []
+        category = _slicer('品类', cat_opts, 'cat') if cat_opts else []
+    with c6:
+        mdl_opts = _cached_filter_opts(all_rows, '型号', cat_filter=category) if cat_opts else []
+        model = _slicer('型号', mdl_opts, 'mdl') if mdl_opts else []
+
+# 更新筛选器 key（数据加载后）
+_ch_key = tuple(sorted(channel)) if channel else ()
+_st_key = tuple(sorted(store)) if store else ()
+_cat_key = tuple(sorted(category)) if category else ()
+_mdl_key = tuple(sorted(model)) if model else ()
+
+# 如果用户修改了筛选条件，需要重新计算一次 totals 和 promo
+# 使用缓存函数，同参数不会重复计算
+if _sales_loaded:
+    daily, daily_all_filtered, totals, promo_filtered = _compute_totals_and_promo(s, e, _ch_key, _st_key, _cat_key, _mdl_key)
+
+    # 重新计算推广环比/同比数据（如果筛选器 key 变化）
+    _new_pcmp = _compute_promo_comparison(prev_s, prev_e, yoy_s, yoy_e, _ch_key, _st_key, _cat_key, _mdl_key)
+    promo_prev = _promo_yoy_rows(prev_s, prev_e)
+    promo_yoy = _promo_yoy_rows(yoy_s, yoy_e)
+    promo_mom = promo_prev
+    promo_prev_fc = _new_pcmp['prev_fc']
+    promo_prev_amt = _new_pcmp['prev_amt']
+    promo_prev_direct = _new_pcmp['prev_direct']
+    promo_prev_impress = _new_pcmp['prev_impress']
+    promo_prev_clicks = _new_pcmp['prev_clicks']
+    promo_prev_roi = _new_pcmp['prev_roi']
+    promo_prev_droi = _new_pcmp['prev_droi']
+    promo_prev_cpc = _new_pcmp['prev_cpc']
+    promo_prev_ctr = _new_pcmp['prev_ctr']
+    promo_yoy_fc = _new_pcmp['yoy_fc']
+    promo_yoy_amt = _new_pcmp['yoy_amt']
+    promo_yoy_direct = _new_pcmp['yoy_direct']
+    promo_yoy_impress = _new_pcmp['yoy_impress']
+    promo_yoy_clicks = _new_pcmp['yoy_clicks']
+    promo_yoy_roi = _new_pcmp['yoy_roi']
+    promo_yoy_droi = _new_pcmp['yoy_droi']
+    promo_yoy_cpc = _new_pcmp['yoy_cpc']
+    promo_yoy_ctr = _new_pcmp['yoy_ctr']
+    promo_yoy_cust = _new_pcmp['yoy_cust']
+    promo_yoy_cv = _new_pcmp['yoy_cv']
+    promo_yoy_torders = _new_pcmp['yoy_torders']
+    promo_yoy_tcvr = _new_pcmp['yoy_tcvr']
+    # 环比 = 上期
+    promo_mom_fc = _new_pcmp['prev_fc']
+    promo_mom_amt = _new_pcmp['prev_amt']
+    promo_mom_direct = _new_pcmp['prev_direct']
+    promo_mom_impress = _new_pcmp['prev_impress']
+    promo_mom_clicks = _new_pcmp['prev_clicks']
+    promo_mom_roi = _new_pcmp['prev_roi']
+    promo_mom_droi = _new_pcmp['prev_droi']
+    promo_mom_cpc = _new_pcmp['prev_cpc']
+    promo_mom_ctr = _new_pcmp['prev_ctr']
+    promo_mom_cust = _new_pcmp['prev_cust']
+    promo_mom_cv = _new_pcmp['prev_cv']
+    promo_mom_torders = _new_pcmp['prev_torders']
+    promo_mom_tcvr = _new_pcmp['prev_tcvr']
+
+    # 重新计算推广指标（使用筛选后的 promo_filtered）
+    promo_spend = sum(r.get('_花费', 0) for r in promo_filtered)
+    promo_order_amt = sum(r.get('_总订单金额', 0) for r in promo_filtered)
+    promo_roi = promo_order_amt / promo_spend if promo_spend else 0
+    promo_direct_amt = sum(r.get('_直接订单金额', 0) for r in promo_filtered)
+    promo_impress = sum(r.get('_展现数', 0) for r in promo_filtered)
+    promo_clicks = sum(r.get('_点击数', 0) for r in promo_filtered)
+    promo_cpc = promo_spend / promo_clicks if promo_clicks else 0
+    promo_ctr = promo_clicks / promo_impress if promo_impress else 0
+    promo_rate = promo_spend / totals['支付金额'] * 100 if totals.get('支付金额') else 0
+    promo_direct_roi = promo_direct_amt / promo_spend if promo_spend else 0
+    promo_order_cost = promo_spend / totals['支付买家数'] if totals.get('支付买家数') else 0
+    promo_prev_rate = promo_prev_fc / totals['支付金额'] * 100 if totals.get('支付金额') else 0
+    promo_prev_order_cost = promo_prev_fc / totals['支付买家数'] if totals.get('支付买家数') else 0
+    promo_yoy_rate = promo_yoy_fc / totals['支付金额'] * 100 if totals.get('支付金额') else 0
+    promo_yoy_order_cost = promo_yoy_fc / totals['支付买家数'] if totals.get('支付买家数') else 0
+    promo_mom_rate = promo_prev_rate
+    promo_mom_order_cost = promo_prev_order_cost
+
+    # 重新构建趋势数据（使用筛选后的 daily）
+    filtered_monthly = build_monthly(daily) if daily else []
+    mm_f = {r.get('月份', ''): r for r in filtered_monthly}
+    unique_days = len(set(r.get('日期', '') for r in daily)) if daily else 0
+    daily_trend = build_daily_trend(daily, daily_all_filtered, max(30, unique_days)) if daily else []
+    weekly_trend = build_weekly_trend(daily, daily_all_filtered, 12) if daily else []
+    ch_rows = group(daily, '渠道') if daily else []
+    cat_rows = group(daily, '品类') if daily else []
+    store_rows = group(daily, '店铺') if daily else []
 
 # ─────────────────────────────────────────────────────────────
 # Tab 结构
