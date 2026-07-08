@@ -307,10 +307,10 @@ with st.sidebar:
                 # 删除旧的pickle缓存，强制下次重新解析新数据
                 if _CACHE_SALES_PKL.exists():
                     _CACHE_SALES_PKL.unlink()
-                # 清除session_state中的旧缓存
-                for key in ['cached_sales_data', 'targets_loaded', 'targets_data']:
-                    if key in st.session_state:
-                        del st.session_state[key]
+                # 清除全局变量中的旧缓存（不占用session_state内存）
+                for key in ['sales', 'sales_loaded', 'targets_loaded', 'targets_data']:
+                    if key in _PARSED_DATA_CACHE:
+                        del _PARSED_DATA_CACHE[key]
                 st.caption('✅ 销售数据已保存（本次会话）')
             elif _CACHE_SALES.exists():
                 mtime = datetime.datetime.fromtimestamp(_CACHE_SALES.stat().st_mtime)
@@ -345,10 +345,9 @@ with st.sidebar:
                 # 删除旧的pickle缓存，强制下次重新解析新数据
                 if _CACHE_PROMO_PKL.exists():
                     _CACHE_PROMO_PKL.unlink()
-                # 清除session_state中的旧缓存
-                for key in ['cached_promo_rows']:
-                    if key in st.session_state:
-                        del st.session_state[key]
+                # 清除全局变量中的旧缓存（不占用session_state内存）
+                if 'promo' in _PARSED_DATA_CACHE:
+                    del _PARSED_DATA_CACHE['promo']
                 st.caption('✅ 推广数据已保存（本次会话）')
             elif _CACHE_PROMO.exists():
                 mtime = datetime.datetime.fromtimestamp(_CACHE_PROMO.stat().st_mtime)
@@ -863,6 +862,9 @@ _sales_empty = {
 
 # 模块级默认值（避免启动时访问 st.session_state 导致崩溃）
 # 使用try-except避免在每次rerun时重置变量
+# 全局变量缓存（避免存入 st.session_state 导致内存重复占用）
+_PARSED_DATA_CACHE = {}
+
 try:
     data  # 检查data是否已定义
 except NameError:
@@ -876,53 +878,40 @@ try:
 except NameError:
     promo_rows = []
 
-# 模块级恢复session_state缓存（只读session_state，安全；避免全局筛选器使用空数据）
-# 注意：Streamlit导入阶段访问session_state是安全的，只要不调用渲染函数
+# 模块级恢复：从全局变量缓存恢复（不占用 session_state 内存）
 try:
-    if 'cached_sales_data' in st.session_state and st.session_state.cached_sales_data:
-        data = st.session_state.cached_sales_data
-        _sales_loaded = True
-except Exception:
-    pass
-try:
-    if 'cached_promo_rows' in st.session_state:
-        promo_rows = st.session_state.cached_promo_rows
+    data = _PARSED_DATA_CACHE.get('sales', _sales_empty)
+    _sales_loaded = _PARSED_DATA_CACHE.get('sales_loaded', False)
+    promo_rows = _PARSED_DATA_CACHE.get('promo', [])
 except Exception:
     pass
 
 def _restore_from_session():
-    """从 session_state 恢复缓存数据（在 Streamlit 上下文安全时调用）"""
+    """从全局变量缓存恢复数据（避免 st.session_state 占内存）"""
     global data, _sales_loaded, promo_rows
     try:
-        if 'cached_sales_data' in st.session_state and st.session_state.cached_sales_data:
-            data = st.session_state.cached_sales_data
-            _sales_loaded = True
-    except Exception:
-        pass
-    try:
-        if 'cached_promo_rows' in st.session_state:
-            promo_rows = st.session_state.cached_promo_rows
+        data = _PARSED_DATA_CACHE.get('sales', _sales_empty)
+        _sales_loaded = _PARSED_DATA_CACHE.get('sales_loaded', False)
+        promo_rows = _PARSED_DATA_CACHE.get('promo', [])
     except Exception:
         pass
 
+
 def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
-    """优先加载pickle缓存，否则解析源文件并保存pickle"""
+    """优先加载pickle缓存，否则解析源文件并保存pickle；不存入session_state"""
     import pickle
-    # 1. 尝试session_state缓存
-    if cache_key == 'sales' and 'cached_sales_data' in st.session_state and st.session_state.cached_sales_data:
-        return st.session_state.cached_sales_data, True
-    if cache_key == 'promo' and 'cached_promo_rows' in st.session_state:
-        return st.session_state.cached_promo_rows, True
+    # 1. 尝试全局变量缓存
+    if cache_key in _PARSED_DATA_CACHE:
+        return _PARSED_DATA_CACHE[cache_key], True
     
     # 2. 尝试pickle文件缓存
     if pkl_path.exists():
         try:
             with open(pkl_path, 'rb') as f:
                 result = pickle.load(f)
+            _PARSED_DATA_CACHE[cache_key] = result
             if cache_key == 'sales':
-                st.session_state.cached_sales_data = result
-            else:
-                st.session_state.cached_promo_rows = result
+                _PARSED_DATA_CACHE['sales_loaded'] = True
             return result, True
         except Exception:
             pass  # pickle损坏，回退到源文件解析
@@ -939,11 +928,10 @@ def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
                 pickle.dump(result, f)
         except Exception:
             pass  # 保存失败不影响使用
-        # 存入session_state
+        # 存入全局变量缓存（不占用session_state）
+        _PARSED_DATA_CACHE[cache_key] = result
         if cache_key == 'sales':
-            st.session_state.cached_sales_data = result
-        else:
-            st.session_state.cached_promo_rows = result
+            _PARSED_DATA_CACHE['sales_loaded'] = True
         return result, True
     except Exception as e:
         st.error(f'{"销售" if cache_key == "sales" else "推广"}数据解析失败：{e}')
