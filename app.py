@@ -31,7 +31,8 @@ _CACHE_DIR.mkdir(exist_ok=True)
 _CACHE_FILE = _CACHE_DIR / 'last_upload.xlsx'
 _CACHE_SALES = _CACHE_DIR / 'last_sales.xlsx'
 _CACHE_PROMO = _CACHE_DIR / 'last_promo.xlsx'
-# pickle缓存路径（解析后自动保存，下次启动直接加载，0秒 vs 11秒）
+# pickle缓存路径（解析后自动保存，下次启动直接加载）
+# 本地缓存：容器内 .data_cache/ 目录（非持久化，用于同容器内rerun加速）
 _CACHE_SALES_PKL = _CACHE_DIR / 'last_sales.pkl'
 _CACHE_PROMO_PKL = _CACHE_DIR / 'last_promo.pkl'
 _CACHE_TARGETS = _CACHE_DIR / 'last_targets.xlsx'
@@ -42,6 +43,9 @@ _REPO_DATA_DIR = pathlib.Path(__file__).parent / 'data'
 _REPO_SALES = _REPO_DATA_DIR / 'sales.xlsx'
 _REPO_PROMO = _REPO_DATA_DIR / 'promo.xlsx'
 _REPO_TARGETS = _REPO_DATA_DIR / 'targets.xlsx'
+# gzip压缩pickle（提交到Git仓库，云端首次启动秒级加载，避免解析Excel超时崩溃）
+_REPO_SALES_PKL_GZ = _REPO_DATA_DIR / 'sales.pkl.gz'
+_REPO_PROMO_PKL_GZ = _REPO_DATA_DIR / 'promo.pkl.gz'
 
 # ── 型号映射配置 ──
 # 目标表中的型号 → 实际数据中需要汇总的型号列表
@@ -916,15 +920,15 @@ def _restore_from_session():
         pass
 
 def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
-    """优先加载pickle缓存，否则解析源文件并保存pickle"""
-    import pickle
-    # 1. 尝试session_state缓存
+    """优先加载pickle/gzip缓存，否则解析源文件并保存pickle"""
+    import pickle, gzip
+    # 1. 尝试session_state缓存（最快，内存中）
     if cache_key == 'sales' and 'cached_sales_data' in st.session_state and st.session_state.cached_sales_data:
         return st.session_state.cached_sales_data, True
     if cache_key == 'promo' and 'cached_promo_rows' in st.session_state:
         return st.session_state.cached_promo_rows, True
     
-    # 2. 尝试pickle文件缓存
+    # 2. 尝试本地pickle文件缓存（容器内 .data_cache/ 目录）
     if pkl_path.exists():
         try:
             with open(pkl_path, 'rb') as f:
@@ -935,15 +939,41 @@ def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
                 st.session_state.cached_promo_rows = result
             return result, True
         except Exception:
-            pass  # pickle损坏，回退到源文件解析
+            pass  # pickle损坏，回退
     
-    # 3. 解析源文件
+    # 3. 尝试gzip压缩pickle（Git仓库持久化，云端首次启动秒级加载）
+    repo_pkl_gz = _REPO_SALES_PKL_GZ if cache_key == 'sales' else _REPO_PROMO_PKL_GZ
+    if repo_pkl_gz.exists():
+        try:
+            with gzip.open(repo_pkl_gz, 'rb') as f:
+                result = pickle.load(f)
+            # 存入session_state和本地pickle（加速后续rerun）
+            if cache_key == 'sales':
+                st.session_state.cached_sales_data = result
+            else:
+                st.session_state.cached_promo_rows = result
+            # 异步保存本地pickle（不阻塞主流程）
+            try:
+                with open(pkl_path, 'wb') as f:
+                    pickle.dump(result, f)
+            except Exception:
+                pass
+            return result, True
+        except Exception as e:
+            print(f'[pickle] gzip加载失败，回退Excel解析: {e}')
+            # gzip加载失败时，重新读取Excel源文件
+            if cache_key == 'sales':
+                fallback_bytes = _get_file_bytes(_CACHE_SALES, _REPO_SALES)
+            else:
+                fallback_bytes = _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
+    
+    # 4. 解析源Excel文件（仅当所有缓存都不可用时）
     if not fallback_bytes:
         return (_sales_empty if cache_key == 'sales' else []), False
     
     try:
         result = loader_func(fallback_bytes)
-        # 保存pickle缓存
+        # 保存本地pickle缓存
         try:
             with open(pkl_path, 'wb') as f:
                 pickle.dump(result, f)
@@ -2481,17 +2511,20 @@ _INIT_ERROR = None
 try:
     _restore_from_session()
     if not _sales_loaded:
-        if _sales_bytes is None:
+        # 优先检查gzip pickle（Git仓库持久化），存在则跳过读取xlsx
+        if _REPO_SALES_PKL_GZ.exists() or _CACHE_SALES_PKL.exists():
+            _sales_bytes = b''  # 占位，_load_from_pickle会优先用gzip/本地pickle
+        else:
             _sales_bytes = _get_file_bytes(_CACHE_SALES, _REPO_SALES)
-        if _sales_bytes:
-            data, ok = _load_from_pickle(_CACHE_SALES_PKL, _sales_bytes, load_data, 'sales')
-            if ok and data is not _sales_empty:
-                _sales_loaded = True
+        data, ok = _load_from_pickle(_CACHE_SALES_PKL, _sales_bytes, load_data, 'sales')
+        if ok and data is not _sales_empty:
+            _sales_loaded = True
     if not promo_rows:
-        if _promo_bytes is None:
+        if _REPO_PROMO_PKL_GZ.exists() or _CACHE_PROMO_PKL.exists():
+            _promo_bytes = b''
+        else:
             _promo_bytes = _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
-        if _promo_bytes:
-            promo_rows, ok = _load_from_pickle(_CACHE_PROMO_PKL, _promo_bytes, load_promo_data, 'promo')
+        promo_rows, ok = _load_from_pickle(_CACHE_PROMO_PKL, _promo_bytes, load_promo_data, 'promo')
 
     # ── 数据加载完成后，重新计算 totals 和 promo 指标（必须在数据就绪后调用）──
     # 第一次加载时筛选器尚未渲染，使用空 key（全选）；筛选器渲染后会再次计算

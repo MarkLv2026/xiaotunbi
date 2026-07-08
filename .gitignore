@@ -3,7 +3,9 @@ __pycache__/
 NUL
 # 本地临时缓存（不提交）
 .data_cache/
-# data/ 目录下的 xlsx 由同步按钮通过 API 推送，同时也允许 git 跟踪（双保险）
-# 若需要本地 git 管理数据文件，删除下面这两行
+# data/ 目录：xlsx 由同步按钮通过 API 推送
+# 裸 .pkl 不提交（太大），但 .pkl.gz 压缩版提交到仓库（云端加速启动）
 data/*.pkl
 data/*.xlsx.bak
+# 允许压缩pickle提交到仓库
+!data/*.pkl.gz
