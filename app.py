@@ -1134,9 +1134,24 @@ def _lazy_load_targets():
 
 # ── 数据完整性检测（已移至 tabs[0] 内部，避免模块级Streamlit调用崩溃）──
 
-# 全局筛选（在筛选前确保数据已从 session_state 恢复）
-# 模块级的 try-except 可能因异常未生效，此处再次确保
+# ── 数据懒加载：在筛选器渲染之前完成，确保筛选器有真实数据可用 ──
 _restore_from_session()
+if not _sales_loaded:
+    if _sales_bytes is None:
+        _sales_bytes = _get_file_bytes(_CACHE_SALES, _REPO_SALES)
+    if _sales_bytes:
+        _loaded_data, ok = _load_from_pickle(_CACHE_SALES_PKL, _sales_bytes, load_data, 'sales')
+        if ok and _loaded_data is not _sales_empty:
+            _sales_loaded = True
+if not promo_rows:
+    if _promo_bytes is None:
+        _promo_bytes = _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
+    if _promo_bytes:
+        _loaded_promo, ok = _load_from_pickle(_CACHE_PROMO_PKL, _promo_bytes, load_promo_data, 'promo')
+# 重要：从 _PARSED_DATA_CACHE 恢复全局变量（_load_from_pickle 写入缓存但不更新全局变量）
+_restore_from_session()
+
+# 全局筛选（数据已就绪，筛选器可正常显示选项）
 
 fc = st.container(border=True)
 with fc:
@@ -2472,22 +2487,11 @@ def _generate_mckinsey_ppt(**kwargs):
     return ppt_path
 
 
-# ── 数据懒加载：在 tabs 渲染之前完成（消除首次 st.rerun() 双闪）──
+# ── 数据加载已在筛选器之前完成，此处仅作兜底确保数据就绪 ──
 _restore_from_session()
-if not _sales_loaded:
-    if _sales_bytes is None:
-        _sales_bytes = _get_file_bytes(_CACHE_SALES, _REPO_SALES)
-    if _sales_bytes:
-        data, ok = _load_from_pickle(_CACHE_SALES_PKL, _sales_bytes, load_data, 'sales')
-        if ok and data is not _sales_empty:
-            _sales_loaded = True
-if not promo_rows:
-    if _promo_bytes is None:
-        _promo_bytes = _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
-    if _promo_bytes:
-        promo_rows, ok = _load_from_pickle(_CACHE_PROMO_PKL, _promo_bytes, load_promo_data, 'promo')
+# （数据加载已提前至筛选器之前执行，此处不再重复）
 
-# ── 数据加载完成后，重新计算 totals 和 promo 指标（必须在数据就绪后调用）──
+# ── 重新计算 totals 和 promo 指标（基于当前筛选器参数）──
 daily, daily_all_filtered, totals, promo_filtered = _compute_totals_and_promo(s, e, _ch_key, _st_key, _cat_key, _mdl_key)
 
 promo_spend = sum(r.get('_花费', 0) for r in promo_filtered)
