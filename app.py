@@ -1698,6 +1698,9 @@ def _promo_yoy_rows(date_range_start, date_range_end):
     """过滤指定日期范围内的推广数据，保持与主筛选条件一致"""
     _s = str(date_range_start); _e = str(date_range_end)
     out = []
+    # 防御性检查：确保 promo_rows 是可迭代的列表
+    if not isinstance(promo_rows, list):
+        return out
     for r in promo_rows:
         d = r.get('_date', '')
         if not d or d < _s or d > _e:
@@ -1714,10 +1717,17 @@ def _promo_yoy_rows(date_range_start, date_range_end):
     return out
 
 @st.cache_data(show_spinner=False, ttl=300)
-def _compute_promo_comparison(ps, pe, ys, ye, ch_key, st_key, cat_key, mdl_key):
-    """缓存推广环比和同比的汇总计算，避免每次 rerun 遍历全量 promo_rows"""
-    # 环比数据
+def _compute_promo_comparison(ps, pe, ys, ye, ch_key, st_key, cat_key, mdl_key, _version=1):
+    """缓存推广环比和同比的汇总计算，避免每次 rerun 遍历全量 promo_rows
+    
+    _version 参数：每次修改本函数时递增，强制旧缓存失效。
+    """
+    # 防御性检查：确保 _promo_yoy_rows 返回可迭代列表
     prev_rows = _promo_yoy_rows(ps, pe)
+    if not isinstance(prev_rows, list):
+        prev_rows = []
+    prev_rows = [r for r in prev_rows if isinstance(r, dict)]
+    
     prev_fc = sum(r.get('_花费', 0) for r in prev_rows)
     prev_amt = sum(r.get('_总订单金额', 0) for r in prev_rows)
     prev_direct = sum(r.get('_直接订单金额', 0) for r in prev_rows)
@@ -1734,6 +1744,10 @@ def _compute_promo_comparison(ps, pe, ys, ye, ch_key, st_key, cat_key, mdl_key):
     
     # 同比数据（真正去年同期同天数）
     yoy_rows = _promo_yoy_rows(ys, ye)
+    if not isinstance(yoy_rows, list):
+        yoy_rows = []
+    yoy_rows = [r for r in yoy_rows if isinstance(r, dict)]
+    
     yoy_fc = sum(r.get('_花费', 0) for r in yoy_rows)
     yoy_amt = sum(r.get('_总订单金额', 0) for r in yoy_rows)
     yoy_direct = sum(r.get('_直接订单金额', 0) for r in yoy_rows)
@@ -1784,7 +1798,7 @@ _mdl_key = ()
 
 try:
     _yoy_cur = (end - start).days
-    _pcmp = _compute_promo_comparison(prev_s, prev_e, yoy_s, yoy_e, _ch_key, _st_key, _cat_key, _mdl_key)
+    _pcmp = _compute_promo_comparison(prev_s, prev_e, yoy_s, yoy_e, _ch_key, _st_key, _cat_key, _mdl_key, _version=2)
 
     promo_prev = _promo_yoy_rows(prev_s, prev_e)
     promo_prev_fc = _pcmp['prev_fc']
@@ -2614,7 +2628,7 @@ if _sales_loaded:
     daily, daily_all_filtered, totals, promo_filtered = _compute_totals_and_promo(s, e, _ch_key, _st_key, _cat_key, _mdl_key)
 
     # 重新计算推广环比/同比数据（如果筛选器 key 变化）
-    _new_pcmp = _compute_promo_comparison(prev_s, prev_e, yoy_s, yoy_e, _ch_key, _st_key, _cat_key, _mdl_key)
+    _new_pcmp = _compute_promo_comparison(prev_s, prev_e, yoy_s, yoy_e, _ch_key, _st_key, _cat_key, _mdl_key, _version=2)
     promo_prev = _promo_yoy_rows(prev_s, prev_e)
     promo_yoy = _promo_yoy_rows(yoy_s, yoy_e)
     promo_mom = promo_prev
