@@ -610,34 +610,33 @@ def load_promo_data(file_bytes: bytes):
             _scene = r.get('营销场景') or r.get('推广场景') or r.get('场景') or r.get('营销渠道') or ''
             r['_营销场景'] = str(_scene).strip() if _scene else r['_渠道']
             # Amount fields - try both possible names
-            spend = r.get('花费', None) or r.get('花费', 0)
+            spend = r.get('花费', 0) or 0
             r['_花费'] = float(spend) if spend not in (None, '') else 0.0
-            impress = r.get('展现数', None) or r.get('展现数', 0)
+            impress = r.get('展现数', 0) or 0
             r['_展现数'] = float(impress) if impress not in (None, '') else 0.0
-            clicks = r.get('点击数', None) or r.get('点击数', 0)
+            clicks = r.get('点击数', 0) or 0
             r['_点击数'] = float(clicks) if clicks not in (None, '') else 0.0
-            direct_amt = r.get('直接订单金额', None) or r.get('直接订单金额', 0)
-            indirect_amt = r.get('间接订单金额', None) or r.get('间接订单金额', 0)
-            total_amt = r.get('总订单金额', None) or r.get('总订单金额', 0)
+            direct_amt = r.get('直接订单金额', 0) or 0
+            indirect_amt = r.get('间接订单金额', 0) or 0
+            total_amt = r.get('总订单金额', 0) or 0
             r['_直接订单金额'] = float(direct_amt) if direct_amt not in (None, '') else 0.0
             r['_间接订单金额'] = float(indirect_amt) if indirect_amt not in (None, '') else 0.0
             r['_总订单金额'] = float(total_amt) if total_amt not in (None, '') else 0.0
             r['_总加购数'] = float(r.get('总加购数', 0) or 0)
             # 成交客户数 — 用于客户维度分析
             cust = (r.get('成交客户数', None) or r.get('成交客户', None) or
-                    r.get('订单客户数', None) or r.get('支付买家数', None) or
-                    r.get('成交买家数', None) or 0)
+                    r.get('订单客户数', None) or r.get('支付买家数', 0) or 0)
             r['_成交客户数'] = float(cust) if cust not in (None, '') else 0.0
             # 总成交订单量 — 用于总转化率（=总订单行/点击数）
             total_orders = (r.get('总订单行', None) or r.get('订单行', None) or
                            r.get('成交订单数', None) or r.get('订单数', None) or
-                           r.get('总成交订单数', None) or r.get('总订单数', None) or 0)
+                           r.get('总成交订单数', 0) or 0)
             r['_总成交订单量'] = float(total_orders) if total_orders not in (None, '') else 0.0
             # 直接订单量 — 用于直接转化率（=直接订单行/点击数）
             direct_orders = (r.get('直接订单行', None) or r.get('直接成交订单数', None) or
-                            r.get('直接订单数', None) or r.get('直接成交订单量', None) or 0)
+                            r.get('直接订单数', 0) or 0)
             r['_直接订单量'] = float(direct_orders) if direct_orders not in (None, '') else 0.0
-            roi = r.get('投产比', None) or r.get('投产比', 0)
+            roi = r.get('投产比', 0) or 0
             r['_投产比'] = float(roi) if roi not in (None, '') else 0.0
             rows.append(r)
     return rows
@@ -2326,9 +2325,9 @@ def _generate_mckinsey_ppt(**kwargs):
     kpi_data = [
         ('支付金额', _num(cur_sum.get('支付金额', 0), '¥'), _pct(gmv_g)),
         ('访客数', _num(cur_sum.get('商品访客数', 0)), _pct(vis_g)),
-        ('转化率', f"{cur_sum.get('支付转化率', 0)*100:.2f}%", _pct(cvr_g)),
-        ('客单价', f"¥{cur_sum.get('客单价', 0):,.0f}", _pct(aov_g)),
-        ('退款率', f"{cur_sum.get('退款率', 0)*100:.2f}%", _pct(ref_g)),
+        ('转化率', f"{(cur_sum.get('支付转化率', 0) or 0) * 100:.2f}%", _pct(cvr_g)),
+        ('客单价', f"¥{(cur_sum.get('客单价', 0) or 0):,.0f}", _pct(aov_g)),
+        ('退款率', f"{(cur_sum.get('退款率', 0) or 0) * 100:.2f}%", _pct(ref_g)),
     ]
     for i, (label, val, chg) in enumerate(kpi_data):
         _add_kpi_card(slide, 0.25 + i * 1.92, 1.15, 1.75, 0.8, label, val, chg,
@@ -2359,10 +2358,10 @@ def _generate_mckinsey_ppt(**kwargs):
     for ch_key, cv in sorted(cur_by_channel.items(), key=lambda x: x[1].get('支付金额', 0), reverse=True)[:6]:
         ch_name = ch_key[0] if isinstance(ch_key, tuple) else str(ch_key)
         pv = prev_by_channel.get(ch_key, {})
-        gmv_chg = (cv.get('支付金额', 0) - pv.get('支付金额', 0)) / pv.get('支付金额', 1) if pv.get('支付金额', 1) else None
+        gmv_chg = ((cv.get('支付金额', 0) or 0) - (pv.get('支付金额', 0) or 0)) / pv.get('支付金额', 1) if pv.get('支付金额', 1) else None
         share = cv.get('支付金额', 0) / total_gmv_c * 100 if total_gmv_c else 0
         ch_rows.append([ch_name, _num(cv.get('支付金额', 0), '¥'), f'{share:.1f}%', _pct(gmv_chg),
-                        _num(cv.get('支付转化率', 0)*100, '%')])
+                        _num((cv.get('支付转化率', 0) or 0) * 100, '%')])
     _add_table(slide, 0.3, 1.15, ['渠道', 'GMV', '占比', '环比', '转化率'], ch_rows, [1.8, 2.0, 1.0, 1.2, 1.2])
 
     # 品类销售结构表
@@ -2370,9 +2369,9 @@ def _generate_mckinsey_ppt(**kwargs):
     for cat_key, cv in sorted(cur_by_cat.items(), key=lambda x: x[1].get('支付金额', 0), reverse=True)[:5]:
         cat_name = cat_key[1] if len(cat_key) > 1 else str(cat_key)
         pv = prev_by_cat.get(cat_key, {})
-        gmv_chg = (cv.get('支付金额', 0) - pv.get('支付金额', 0)) / pv.get('支付金额', 1) if pv.get('支付金额', 1) else None
+        gmv_chg = ((cv.get('支付金额', 0) or 0) - (pv.get('支付金额', 0) or 0)) / pv.get('支付金额', 1) if pv.get('支付金额', 1) else None
         cat_rows.append([cat_name, _num(cv.get('支付金额', 0), '¥'), _pct(gmv_chg),
-                         f"{cv.get('支付转化率', 0)*100:.1f}%", _num(cv.get('客单价', 0), '¥')])
+                         f"{(cv.get('支付转化率', 0) or 0) * 100:.1f}%", _num(cv.get('客单价', 0), '¥')])
     _add_table(slide, 0.3, 1.15 + 0.32 * (len(ch_rows) + 1) + 0.15,
                ['品类', 'GMV', '环比', '转化率', '客单价'], cat_rows, [1.8, 2.0, 1.2, 1.2, 1.2])
 
@@ -2465,7 +2464,7 @@ def _generate_mckinsey_ppt(**kwargs):
     _add_text_block(slide, 0.3, 1.15, 4.5, 1.5, ['▎本期核心教训'] + lessons[:3], Pt(9))
 
     # 下期目标
-    next_gmv_target = cur_sum.get('支付金额', 0) * 1.05  # 默认+5%
+    next_gmv_target = (cur_sum.get('支付金额', 0) or 0) * 1.05  # 默认+5%
     next_targets = [
         f'• GMV目标：¥{next_gmv_target:,.0f}（环比+5%）',
         f'• 转化率目标：≥{cur_sum.get("支付转化率", 0)*100*1.03:.2f}%',
@@ -2500,7 +2499,7 @@ def _generate_mckinsey_ppt(**kwargs):
     for ch_key, cv in sorted(cur_by_channel.items(), key=lambda x: x[1].get('支付金额', 0), reverse=True)[:8]:
         ch_name = ch_key[0] if isinstance(ch_key, tuple) else str(ch_key)
         ch_detail.append([ch_name, _num(cv.get('支付金额', 0), '¥'), _num(cv.get('商品访客数', 0)),
-                          f"{cv.get('支付转化率', 0)*100:.1f}%", _num(cv.get('客单价', 0), '¥')])
+                          f"{(cv.get('支付转化率', 0) or 0) * 100:.1f}%", _num(cv.get('客单价', 0), '¥')])
     _add_table(slide, 0.3, 1.15, ['渠道', 'GMV', '访客数', '转化率', '客单价'], ch_detail,
                [1.5, 2.0, 1.5, 1.2, 1.5])
 
@@ -3150,7 +3149,7 @@ with tabs[1]:
         _ln = {}
         for r in promo_filtered:
             ln = r.get('产品线', '') or r.get('营销场景', '') or '未标注'
-            _ln[ln] = _ln.get(ln, 0) + r.get('_花费', 0)
+            _ln[ln] = (_ln.get(ln, 0) or 0) + (r.get('_花费', 0) or 0)
         _ln_r = [{'产品线': k, '花费': v} for k, v in _ln.items() if v > 0]
         if _ln_r:
             fig = px.pie(pd.DataFrame(_ln_r), names='产品线', values='花费', hole=.45,
@@ -3187,9 +3186,9 @@ with tabs[1]:
             # 同比
             vy = _store_yoy.get(k, {})
             _fc_yoy, _ = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
-            _droi_yoy, _ = _yoy_text(_d_roi, (vy.get('直接订单金额', 0) / vy.get('花费', 1)) if vy.get('花费', 0) else None)
-            _cpc_yoy, _ = _yoy_text(_cpc, (vy.get('花费', 0) / vy.get('点击数', 1)) if vy.get('点击数', 0) else None)
-            _yc = vy.get('总加购数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+            _droi_yoy, _ = _yoy_text(_d_roi, ((vy.get('直接订单金额', 0) or 0) / (vy.get('花费', 1) or 1)) if vy.get('花费', 0) else None)
+            _cpc_yoy, _ = _yoy_text(_cpc, ((vy.get('花费', 0) or 0) / (vy.get('点击数', 1) or 1)) if vy.get('点击数', 0) else None)
+            _yc = (vy.get('总加购数', 0) or 0) / (vy.get('点击数', 1) or 1) * 100 if vy.get('点击数', 0) else None
             _cv_yoy, _ = _yoy_text(_cv, _yc) if _cv and _yc else ('--', '')
             _s_amt = _sales_by_store.get(k, 0)
             _sm_r.append({
@@ -3271,9 +3270,9 @@ with tabs[1]:
             _cpc = _fc / _clk if _clk else 0
             vy = _chan_yoy.get(k, {})
             _fc_yoy, _ = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
-            _droi_yoy, _ = _yoy_text(_d_roi, (vy.get('直接订单金额', 0) / vy.get('花费', 1)) if vy.get('花费', 0) else None)
-            _cpc_yoy, _ = _yoy_text(_cpc, (vy.get('花费', 0) / vy.get('点击数', 1)) if vy.get('点击数', 0) else None)
-            _yc = vy.get('成交客户数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+            _droi_yoy, _ = _yoy_text(_d_roi, ((vy.get('直接订单金额', 0) or 0) / (vy.get('花费', 1) or 1)) if vy.get('花费', 0) else None)
+            _cpc_yoy, _ = _yoy_text(_cpc, ((vy.get('花费', 0) or 0) / (vy.get('点击数', 1) or 1)) if vy.get('点击数', 0) else None)
+            _yc = (vy.get('成交客户数', 0) or 0) / (vy.get('点击数', 1) or 1) * 100 if vy.get('点击数', 0) else None
             _cv_yoy, _ = _yoy_text(_cv, _yc) if _cv and _yc else ('--', '')
             _s_amt_cm = _sales_by_channel.get(k, 0)
             _cm_r.append({
@@ -3407,9 +3406,9 @@ with tabs[1]:
             _cpc = _fc / _clk if _clk else 0
             vy = _sku_yoy.get(k, {})
             _fc_yoy, _ = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
-            _droi_yoy, _ = _yoy_text(_d_roi, (vy.get('直接订单金额', 0) / vy.get('花费', 1)) if vy.get('花费', 0) else None)
-            _cpc_yoy, _ = _yoy_text(_cpc, (vy.get('花费', 0) / vy.get('点击数', 1)) if vy.get('点击数', 0) else None)
-            _yc = vy.get('成交客户数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+            _droi_yoy, _ = _yoy_text(_d_roi, ((vy.get('直接订单金额', 0) or 0) / (vy.get('花费', 1) or 1)) if vy.get('花费', 0) else None)
+            _cpc_yoy, _ = _yoy_text(_cpc, ((vy.get('花费', 0) or 0) / (vy.get('点击数', 1) or 1)) if vy.get('点击数', 0) else None)
+            _yc = (vy.get('成交客户数', 0) or 0) / (vy.get('点击数', 1) or 1) * 100 if vy.get('点击数', 0) else None
             _cv_yoy, _ = _yoy_text(_cv, _yc) if _cv and _yc else ('--', '')
             _s_mdl = _sales_by_model.get(k, 0)
             _sku_r.append({
@@ -3491,11 +3490,11 @@ with tabs[1]:
                 _cv = v['成交客户数'] / _clk * 100 if _clk else 0
                 vy = _cat_yoy.get(k, {})
                 _fc_yoy, _fc_c = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
-                _y_dri = vy.get('直接订单金额', 0) / vy.get('花费', 1) if vy.get('花费', 0) else None
+                _y_dri = (vy.get('直接订单金额', 0) or 0) / (vy.get('花费', 1) or 1) if vy.get('花费', 0) else None
                 _dri_yoy, _dri_c = _yoy_text(_dri, _y_dri) if _dri and _y_dri else ('--', '')
-                _y_cpc = vy.get('花费', 0) / vy.get('点击数', 1) if vy.get('点击数', 0) else None
+                _y_cpc = (vy.get('花费', 0) or 0) / (vy.get('点击数', 1) or 1) if vy.get('点击数', 0) else None
                 _cpc_yoy, _cpc_c = _yoy_text(_cpc_v, _y_cpc) if _cpc_v and _y_cpc else ('--', '')
-                _y_cv = vy.get('成交客户数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+                _y_cv = (vy.get('成交客户数', 0) or 0) / (vy.get('点击数', 1) or 1) * 100 if vy.get('点击数', 0) else None
                 _cv_yoy, _cv_c = _yoy_text(_cv, _y_cv) if _cv and _y_cv else ('--', '')
                 _cat_r.append({
                     '产品线': k,
@@ -3544,11 +3543,11 @@ with tabs[1]:
                 _cv = v['成交客户数'] / _clk * 100 if _clk else 0
                 vy = _scene_yoy.get(k, {})
                 _fc_yoy, _fc_c = _yoy_text(_fc, vy.get('花费', 0) if vy.get('花费', 0) else None)
-                _y_dri = vy.get('直接订单金额', 0) / vy.get('花费', 1) if vy.get('花费', 0) else None
+                _y_dri = (vy.get('直接订单金额', 0) or 0) / (vy.get('花费', 1) or 1) if vy.get('花费', 0) else None
                 _dri_yoy, _dri_c = _yoy_text(_dri, _y_dri) if _dri and _y_dri else ('--', '')
-                _y_cpc = vy.get('花费', 0) / vy.get('点击数', 1) if vy.get('点击数', 0) else None
+                _y_cpc = (vy.get('花费', 0) or 0) / (vy.get('点击数', 1) or 1) if vy.get('点击数', 0) else None
                 _cpc_yoy, _cpc_c = _yoy_text(_cpc_v, _y_cpc) if _cpc_v and _y_cpc else ('--', '')
-                _y_cv = vy.get('成交客户数', 0) / vy.get('点击数', 1) * 100 if vy.get('点击数', 0) else None
+                _y_cv = (vy.get('成交客户数', 0) or 0) / (vy.get('点击数', 1) or 1) * 100 if vy.get('点击数', 0) else None
                 _cv_yoy, _cv_c = _yoy_text(_cv, _y_cv) if _cv and _y_cv else ('--', '')
                 _scene_r.append({
                     '营销场景': k,
@@ -3738,12 +3737,12 @@ with tabs[2]:
         def promo_sum(rows):
             s = {}
             for r in rows:
-                s['_花费'] = s.get('_花费', 0) + r.get('_花费', 0)
-                s['_展现数'] = s.get('_展现数', 0) + r.get('_展现数', 0)
-                s['_点击数'] = s.get('_点击数', 0) + r.get('_点击数', 0)
-                s['_总订单金额'] = s.get('_总订单金额', 0) + r.get('_总订单金额', 0)
-                s['_直接订单金额'] = s.get('_直接订单金额', 0) + r.get('_直接订单金额', 0)
-                s['_总加购数'] = s.get('_总加购数', 0) + r.get('_总加购数', 0)
+                s['_花费'] = (s.get('_花费', 0) or 0) + (r.get('_花费', 0) or 0)
+                s['_展现数'] = (s.get('_展现数', 0) or 0) + (r.get('_展现数', 0) or 0)
+                s['_点击数'] = (s.get('_点击数', 0) or 0) + (r.get('_点击数', 0) or 0)
+                s['_总订单金额'] = (s.get('_总订单金额', 0) or 0) + (r.get('_总订单金额', 0) or 0)
+                s['_直接订单金额'] = (s.get('_直接订单金额', 0) or 0) + (r.get('_直接订单金额', 0) or 0)
+                s['_总加购数'] = (s.get('_总加购数', 0) or 0) + (r.get('_总加购数', 0) or 0)
             return s
 
         promo_cur = promo_sum(promo_cur_rows)
@@ -3767,11 +3766,11 @@ with tabs[2]:
             else:
                 # ROI and 点击率 are computed
                 if k_name == 'ROI':
-                    cur_v = promo_cur.get('_总订单金额', 0) / promo_cur.get('_花费', 1)
-                    prev_v = promo_prev.get('_总订单金额', 0) / promo_prev.get('_花费', 1)
+                    cur_v = (promo_cur.get('_总订单金额', 0) or 0) / (promo_cur.get('_花费', 1) or 1)
+                    prev_v = (promo_prev.get('_总订单金额', 0) or 0) / (promo_prev.get('_花费', 1) or 1)
                 elif k_name == '点击率':
-                    cur_v = promo_cur.get('_点击数', 0) / promo_cur.get('_展现数', 1) * 100
-                    prev_v = promo_prev.get('_点击数', 0) / promo_prev.get('_展现数', 1) * 100
+                    cur_v = (promo_cur.get('_点击数', 0) or 0) / (promo_cur.get('_展现数', 1) or 1) * 100
+                    prev_v = (promo_prev.get('_点击数', 0) or 0) / (promo_prev.get('_展现数', 1) or 1) * 100
                 else:
                     cur_v = prev_v = 0
             delta_v = (cur_v - prev_v) / prev_v if prev_v else None
@@ -3813,11 +3812,11 @@ with tabs[2]:
                 prev_v = promo_prev.get(k_key, 0) / divisor
             else:
                 if k_name == 'ROI':
-                    cur_v = promo_cur.get('_总订单金额', 0) / promo_cur.get('_花费', 1)
-                    prev_v = promo_prev.get('_总订单金额', 0) / promo_prev.get('_花费', 1)
+                    cur_v = (promo_cur.get('_总订单金额', 0) or 0) / (promo_cur.get('_花费', 1) or 1)
+                    prev_v = (promo_prev.get('_总订单金额', 0) or 0) / (promo_prev.get('_花费', 1) or 1)
                 elif k_name == '点击率':
-                    cur_v = promo_cur.get('_点击数', 0) / promo_cur.get('_展现数', 1) * 100
-                    prev_v = promo_prev.get('_点击数', 0) / promo_prev.get('_展现数', 1) * 100
+                    cur_v = (promo_cur.get('_点击数', 0) or 0) / (promo_cur.get('_展现数', 1) or 1) * 100
+                    prev_v = (promo_prev.get('_点击数', 0) or 0) / (promo_prev.get('_展现数', 1) or 1) * 100
                 else:
                     cur_v = prev_v = 0
             chg = (cur_v - prev_v) / prev_v if prev_v else None
@@ -4142,7 +4141,7 @@ with tabs[2]:
                 _s_amt_p = _p_sales_total_prev
             _fee_c = _spend / _s_amt_c if _s_amt_c else None
             # 对比期费率：只有对比期有花费且销售数据存在时才计算
-            _prev_spend = prev_r.get('_花费', 0) if prev_r else 0
+            _prev_spend = (prev_r.get('_花费', 0) or 0) if prev_r else 0
             _fee_p = _prev_spend / _s_amt_p if _prev_spend and _s_amt_p else None
             r['_fee_rate'] = _fee_c  # 临时赋值供后续读取
             # 同时给 prev_r 也赋上费率，供统一循环读取
@@ -5726,8 +5725,8 @@ def _generate_midea_ppt(**kwargs):
     kpi_data = [
         ('GMV', _num(cur_sum.get('支付金额', 0), '¥'), _pct(gmv_g)),
         ('访客数', _num(cur_sum.get('商品访客数', 0)), _pct(vis_g)),
-        ('转化率', f"{cur_sum.get('支付转化率', 0)*100:.2f}%", _pct(cvr_g)),
-        ('客单价', f"¥{cur_sum.get('客单价', 0):,.0f}", _pct(aov_g)),
+        ('转化率', f"{(cur_sum.get('支付转化率', 0) or 0) * 100:.2f}%", _pct(cvr_g)),
+        ('客单价', f"¥{(cur_sum.get('客单价', 0) or 0):,.0f}", _pct(aov_g)),
     ]
     
     for i, (label, val, chg) in enumerate(kpi_data):
@@ -5794,7 +5793,7 @@ def _generate_midea_ppt(**kwargs):
         y_pos += 0.4
         for star in rising_stars[:3]:
             model = star.get('型号', '')
-            gmv = star.get('本期GMV', 0)
+            gmv = star.get('本期GMV', 0) or 0
             _add_text(slide, 0.7, y_pos, 4.0, 0.3, f'• {model}  ¥{gmv:,.0f}', Pt(10), DARK_GRAY)
             y_pos += 0.35
 
@@ -5825,7 +5824,7 @@ def _generate_midea_ppt(**kwargs):
     slide = _add_slide(prs, '下期目标与计划', '关键里程碑')
     
     # 目标
-    next_gmv = cur_sum.get('支付金额', 0) * 1.05
+    next_gmv = (cur_sum.get('支付金额', 0) or 0) * 1.05
     targets = [
         f'GMV目标：¥{next_gmv:,.0f}（环比+5%）',
         f'转化率目标：≥{cur_sum.get("支付转化率", 0)*100*1.03:.2f}%',
@@ -5939,7 +5938,7 @@ def _gen_one_line_summary(gmv_g, shapley, ch_model_issues, vis_g, cvr_g, aov_g):
     # 找最大拖累型号
     worst_loss = 0; worst_name = ''
     for m in (ch_model_issues or []):
-        loss = m.get('上期GMV', 0) - m.get('本期GMV', 0)
+        loss = (m.get('上期GMV', 0) or 0) - (m.get('本期GMV', 0) or 0)
         if loss > worst_loss:
             worst_loss = loss
             worst_name = m.get('型号', '')
@@ -6239,9 +6238,9 @@ with tabs[4]:
     _kpi5 = [
         ('💰 支付金额', gmv_g, cur_sum.get('支付金额',0), prev_sum_all.get('支付金额',0), '¥', False),
         ('👁 访客数',   vis_g, cur_sum.get('商品访客数',0), prev_sum_all.get('商品访客数',0), '', False),
-        ('🔄 转化率',  cvr_g, cur_sum.get('支付转化率',0)*100, prev_sum_all.get('支付转化率',0)*100, '', True),
+        ('🔄 转化率',  cvr_g, (cur_sum.get('支付转化率',0) or 0) * 100, (prev_sum_all.get('支付转化率',0) or 0) * 100, '', True),
         ('🎫 客单价',  aov_g, cur_sum.get('客单价',0), prev_sum_all.get('客单价',0), '¥', False),
-        ('↩️ 退款率',  ref_g, cur_sum.get('退款率',0)*100, prev_sum_all.get('退款率',0)*100, '', True),
+        ('↩️ 退款率',  ref_g, (cur_sum.get('退款率',0) or 0) * 100, (prev_sum_all.get('退款率',0) or 0) * 100, '', True),
     ]
     for col, (mname, mch, cv, pv, pre, ispct) in zip(kpi5_cols, _kpi5):
         with col:
@@ -6287,8 +6286,8 @@ with tabs[4]:
         _prev_buyer = prev_sum_all.get('支付买家数', 0)
         _cur_cart   = cur_sum.get('商品加购人数', 0)
         _prev_cart  = prev_sum_all.get('商品加购人数', 0)
-        _cur_cvr    = cur_sum.get('支付转化率', 0) * 100
-        _prev_cvr   = prev_sum_all.get('支付转化率', 0) * 100
+        _cur_cvr    = (cur_sum.get('支付转化率', 0) or 0) * 100
+        _prev_cvr   = (prev_sum_all.get('支付转化率', 0) or 0) * 100
 
         for col, (lbl, cv, pv, is_pct) in zip(
             [h1c1, h1c2, h1c3, h1c4],
@@ -6318,8 +6317,8 @@ with tabs[4]:
             _cv_vis  = cv.get('商品访客数', 0)
             _pv_vis  = pv.get('商品访客数', 0)
             _cv_buy  = cv.get('支付买家数', 0)
-            _cv_cvr  = cv.get('支付转化率', 0) * 100
-            _pv_cvr  = pv.get('支付转化率', 0) * 100
+            _cv_cvr  = (cv.get('支付转化率', 0) or 0) * 100
+            _pv_cvr  = (pv.get('支付转化率', 0) or 0) * 100
             _vis_chg = (_cv_vis - _pv_vis) / _pv_vis if _pv_vis else None
             _cvr_chg = (_cv_cvr - _pv_cvr)  # pp差
             _vis_share = _cv_vis / max(_cur_vis, 1) * 100
@@ -6348,8 +6347,8 @@ with tabs[4]:
             _pv_vis  = pv.get('商品访客数', 0)
             _cv_buyer = cv.get('支付买家数', 0)
             _pv_buyer = pv.get('支付买家数', 0)
-            _cv_cvr  = cv.get('支付转化率', 0) * 100
-            _pv_cvr  = pv.get('支付转化率', 0) * 100
+            _cv_cvr  = (cv.get('支付转化率', 0) or 0) * 100
+            _pv_cvr  = (pv.get('支付转化率', 0) or 0) * 100
             _cv_aov  = cv.get('客单价', 0)
             _pv_aov  = pv.get('客单价', 0)
             _cv_cart = cv.get('商品加购人数', 0)
@@ -6464,7 +6463,7 @@ with tabs[4]:
                 if growth > 0.30 and mc > 500:
                     rising_stars.append({'渠道': mk_key[0], '品类': mk_key[1], '型号': mk_key[2],
                         '上期GMV': mp, '本期GMV': mc, '增速': growth,
-                        '访客增幅': _pct((mv.get('商品访客数',0)-pv_m.get('商品访客数',0))/max(pv_m.get('商品访客数',1),1))})
+                        '访客增幅': _pct(((mv.get('商品访客数',0) or 0) - (pv_m.get('商品访客数',0) or 0))/max(pv_m.get('商品访客数',1),1))})
             elif mc > 2000:
                 rising_stars.append({'渠道': mk_key[0], '品类': mk_key[1], '型号': mk_key[2],
                     '上期GMV': 0, '本期GMV': mc, '增速': float('inf'), '访客增幅': '新上榜'})
@@ -6504,8 +6503,8 @@ with tabs[4]:
             pv = prev_by_cat.get(cat_key, {})
             _cv_gmv = cv.get('支付金额', 0); _pv_gmv = pv.get('支付金额', 0)
             _cv_cnt = cv.get('支付件数', 0)
-            _cv_cvr = cv.get('支付转化率', 0) * 100
-            _pv_cvr = pv.get('支付转化率', 0) * 100
+            _cv_cvr = (cv.get('支付转化率', 0) or 0) * 100
+            _pv_cvr = (pv.get('支付转化率', 0) or 0) * 100
             _cv_aov = cv.get('客单价', 0)
             _pv_aov = pv.get('客单价', 0)
             _gmv_chg = (_cv_gmv - _pv_gmv) / _pv_gmv if _pv_gmv else None
@@ -6573,8 +6572,8 @@ with tabs[4]:
                         '渠道': mk_key[0], '品类': mk_key[1], '型号': mk_key[2],
                         '上期转化': f'{cvr_p*100:.2f}%', '本期转化': f'{cvr_c*100:.2f}%',
                         '降幅': f"<span style='color:#dc2626;font-weight:700'>{_pct(cvr_drop)}</span>",
-                        '本期访客': f"{mv.get('商品访客数',0):,.0f}",
-                        '本期GMV': f"¥{mv.get('支付金额',0):,.0f}",
+                        '本期访客': f"{(mv.get('商品访客数',0) or 0):,.0f}",
+                        '本期GMV': f"¥{(mv.get('支付金额',0) or 0):,.0f}",
                         '漏斗判断': fn,
                     })
         cvr_drop_models.sort(key=lambda x: float(str(x.get('降幅','+0%')).replace('<span','').split('%')[0].split('>')[1] if '<span' in str(x.get('降幅','')) else '0') if False else 0)
@@ -6622,8 +6621,8 @@ with tabs[4]:
             _cv_vis  = mv.get('商品访客数', 0)
             _pv_vis  = pv_m.get('商品访客数', 0)
             _cv_buyer = mv.get('支付买家数', 0)
-            _cv_cvr  = mv.get('支付转化率', 0) * 100
-            _pv_cvr  = pv_m.get('支付转化率', 0) * 100
+            _cv_cvr  = (mv.get('支付转化率', 0) or 0) * 100
+            _pv_cvr  = (pv_m.get('支付转化率', 0) or 0) * 100
             _cv_aov  = mv.get('客单价', 0)
             _pv_aov  = pv_m.get('客单价', 0)
             _cv_cart = mv.get('商品加购人数', 0)
@@ -6719,8 +6718,8 @@ with tabs[4]:
             pv = prev_by_channel.get(ch_key, {})
             _cv_gmv = cv.get('支付金额', 0); _pv_gmv = pv.get('支付金额', 0)
             _cv_vis = cv.get('商品访客数', 0)
-            _cv_cvr = cv.get('支付转化率', 0) * 100
-            _pv_cvr = pv.get('支付转化率', 0) * 100
+            _cv_cvr = (cv.get('支付转化率', 0) or 0) * 100
+            _pv_cvr = (pv.get('支付转化率', 0) or 0) * 100
             _cv_aov = cv.get('客单价', 0); _pv_aov = pv.get('客单价', 0)
             _gmv_chg = (_cv_gmv - _pv_gmv) / _pv_gmv if _pv_gmv else None
             _share = _cv_gmv / max(total_gmv_c, 1) * 100
@@ -7057,7 +7056,7 @@ with tabs[4]:
         # ── 人侧行动 ──
         if vis_g is not None and vis_g < -0.08:
             vis_loss_share = abs(vis_g) / (abs(vis_g) + abs(cvr_g or 0) + abs(aov_g or 0) + 0.001)
-            gmv_loss = max(0, prev_sum_all.get('支付金额',0) - cur_sum.get('支付金额',0))
+            gmv_loss = max(0, (prev_sum_all.get('支付金额',0) or 0) - (cur_sum.get('支付金额',0) or 0))
             recover_amt = gmv_loss * vis_loss_share
             add_action('P0', '【人·流量】紧急排查核心渠道流量断崖',
                 f'<b>现状：</b>访客{_pct(vis_g)}（{prev_sum_all.get("商品访客数",0):,.0f}→{cur_sum.get("商品访客数",0):,.0f}），'
@@ -7074,8 +7073,8 @@ with tabs[4]:
 
         # ── 货侧行动 ──
         if cvr_g is not None and cvr_g < -0.08:
-            ccvr = cur_sum.get('支付转化率',0)*100; pcvr = prev_sum_all.get('支付转化率',0)*100
-            lost_orders = cur_sum.get('商品访客数',0) * (prev_sum_all.get('支付转化率',0) - cur_sum.get('支付转化率',0))
+            ccvr = (cur_sum.get('支付转化率',0) or 0) * 100; pcvr = (prev_sum_all.get('支付转化率',0) or 0) * 100
+            lost_orders = cur_sum.get('商品访客数',0) * ((prev_sum_all.get('支付转化率',0) or 0) - (cur_sum.get('支付转化率',0) or 0))
             lost_gmv_val = lost_orders * cur_sum.get('客单价', 0)
             add_action('P0', '【货·转化】全店转化率紧急提升行动',
                 f'<b>现状：</b>{pcvr:.2f}%→{ccvr:.2f}%（↓{pcvr-ccvr:.2f}pp），少成交约{lost_orders:,.0f}单，影响¥{lost_gmv_val:,.0f}<br><br>'
@@ -7090,7 +7089,7 @@ with tabs[4]:
                 recover=f'¥{lost_gmv_val:,.0f}')
 
         if aov_g is not None and aov_g < -0.06:
-            aov_loss = (prev_sum_all.get('客单价',0) - cur_sum.get('客单价',0)) * cur_sum.get('支付买家数', 1)
+            aov_loss = ((prev_sum_all.get('客单价',0) or 0) - (cur_sum.get('客单价',0) or 0)) * cur_sum.get('支付买家数', 1)
             add_action('P1', '【货·客单价】高客单价SKU曝光恢复',
                 f'<b>现状：</b>¥{prev_sum_all.get("客单价",0):.0f}→¥{cur_sum.get("客单价",0):.0f}（{_pct(aov_g)}），损失约¥{aov_loss:,.0f}<br><br>'
                 f'<b>🔍 根因排查：</b><br>'
@@ -7181,7 +7180,7 @@ with tabs[4]:
 
         # ── 退款率措施 ──
         if ref_g is not None and ref_g > 0.05:
-            crp = cur_sum.get('退款率', 0) * 100
+            crp = (cur_sum.get('退款率', 0) or 0) * 100
             ref_loss = cur_sum.get('支付金额', 0) * ref_g
             if crp > 8 or ref_g > 0.10:
                 add_action('P1', '【货·售后】退款率异常升高',
@@ -7204,8 +7203,8 @@ with tabs[4]:
                 pv = prev_by_store.get(store_key, {})
                 _cv_vis  = cv.get('商品访客数', 0)
                 _pv_vis  = pv.get('商品访客数', 0)
-                _cv_cvr  = cv.get('支付转化率', 0) * 100
-                _pv_cvr  = pv.get('支付转化率', 0) * 100
+                _cv_cvr  = (cv.get('支付转化率', 0) or 0) * 100
+                _pv_cvr  = (pv.get('支付转化率', 0) or 0) * 100
                 _cv_aov  = cv.get('客单价', 0)
                 _pv_aov  = pv.get('客单价', 0)
                 _cv_cart = cv.get('商品加购人数', 0)
@@ -7259,8 +7258,8 @@ with tabs[4]:
                 pv_m = prev_by_model.get(mk_key, {})
                 _cv_vis  = mv.get('商品访客数', 0)
                 _pv_vis  = pv_m.get('商品访客数', 0)
-                _cv_cvr  = mv.get('支付转化率', 0) * 100
-                _pv_cvr  = pv_m.get('支付转化率', 0) * 100
+                _cv_cvr  = (mv.get('支付转化率', 0) or 0) * 100
+                _pv_cvr  = (pv_m.get('支付转化率', 0) or 0) * 100
                 _cv_aov  = mv.get('客单价', 0)
                 _pv_aov  = pv_m.get('客单价', 0)
 
@@ -7520,9 +7519,9 @@ with tabs[4]:
 
         # 2. 高转化率但低流量的型号（隐藏的宝石）
         for mk_key, mv in cur_by_model.items():
-            cvr_val = mv.get('支付转化率', 0) * 100
+            cvr_val = (mv.get('支付转化率', 0) or 0) * 100
             vis_val = mv.get('商品访客数', 0)
-            avg_cvr = cur_sum.get('支付转化率', 0) * 100 if cur_sum.get('支付转化率', 0) else 0
+            avg_cvr = (cur_sum.get('支付转化率', 0) or 0) * 100 if cur_sum.get('支付转化率', 0) else 0
             if cvr_val > avg_cvr * 1.5 and vis_val > 30 and vis_val < 500:
                 gmv_val = mv.get('支付金额', 0)
                 if gmv_val > 500:
@@ -7558,7 +7557,7 @@ with tabs[4]:
             '诊断时间': datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
             '诊断区间': f'{s}~{e}', '对比区间': f'{prev_s}~{prev_e}',
             'GMV变化': _pct(gmv_g), '访客变化': _pct(vis_g),
-            '转化率变化': f"{(cur_sum.get('支付转化率',0)-prev_sum_all.get('支付转化率',0))*100:+.2f}pp" if prev_sum_all.get('支付转化率',0) else '--',
+            '转化率变化': f"{((cur_sum.get('支付转化率',0) or 0) - (prev_sum_all.get('支付转化率',0) or 0))*100:+.2f}pp" if prev_sum_all.get('支付转化率',0) else '--',
             '客单价变化': _pct(aov_g), '退款率变化': _pct(ref_g),
             '健康评分': f'{health_score:.0f}/100', '健康结论': hv[0],
             '渠道异常型号数': len(ch_model_issues), '转化骤降数': len(cvr_drop_models),
