@@ -6816,7 +6816,12 @@ with tabs[4]:
             promo_cur_diag  = [r for r in promo_rows if s            <= r.get('_date','') <= e           ]
             promo_prev_diag = [r for r in promo_rows if _t2_prev_s <= r.get('_date','') <= _t2_prev_e]
             def _promo_sum(rows):
-                return {k: sum(r.get(f'_{k}',0) for r in rows) for k in ['花费','展现数','点击数','总订单金额','直接订单金额','总加购数']}
+                def _sf(v):
+                    try:
+                        return float(v) if v not in (None, '') else 0.0
+                    except (ValueError, TypeError):
+                        return 0.0
+                return {k: sum(_sf(r.get(f'_{k}',0)) for r in rows) for k in ['花费','展现数','点击数','总订单金额','直接订单金额','总加购数']}
             p_cur  = _promo_sum(promo_cur_diag)
             p_prev = _promo_sum(promo_prev_diag)
 
