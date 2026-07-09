@@ -325,6 +325,8 @@ with st.sidebar:
                 for key in ['cached_sales_data', 'targets_loaded', 'targets_data']:
                     if key in st.session_state:
                         del st.session_state[key]
+                # 强制清除 Streamlit @st.cache_data 内部缓存
+                st.cache_data.clear()
                 st.caption('✅ 销售数据已保存（本次会话）')
             elif _CACHE_SALES.exists():
                 mtime = datetime.datetime.fromtimestamp(_CACHE_SALES.stat().st_mtime)
@@ -363,6 +365,8 @@ with st.sidebar:
                 for key in ['cached_promo_rows']:
                     if key in st.session_state:
                         del st.session_state[key]
+                # 强制清除 Streamlit @st.cache_data 内部缓存
+                st.cache_data.clear()
                 st.caption('✅ 推广数据已保存（本次会话）')
             elif _CACHE_PROMO.exists():
                 mtime = datetime.datetime.fromtimestamp(_CACHE_PROMO.stat().st_mtime)
@@ -462,6 +466,8 @@ with st.sidebar:
                 for key in ['targets_loaded', 'targets_data']:
                     if key in st.session_state:
                         del st.session_state[key]
+                # 强制清除 Streamlit @st.cache_data 内部缓存
+                st.cache_data.clear()
                 st.caption(f'✅ 已保存 {len(parsed_months)} 个月份：{", ".join(parsed_months)}（已自动同步云端）')
             else:
                 # 检查按月缓存
