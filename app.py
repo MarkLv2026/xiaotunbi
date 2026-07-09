@@ -1856,13 +1856,13 @@ def _promo_agg(rows, key_field):
     for r in rows:
         k = r.get(key_field, '') or '未标注'
         d.setdefault(k, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0, '成交客户数': 0})
-        d[k]['花费'] += r.get('_花费', 0)
-        d[k]['展现数'] += r.get('_展现数', 0)
-        d[k]['点击数'] += r.get('_点击数', 0)
-        d[k]['总订单金额'] += r.get('_总订单金额', 0)
-        d[k]['直接订单金额'] += r.get('_直接订单金额', 0)
-        d[k]['总加购数'] += r.get('_总加购数', 0)
-        d[k]['成交客户数'] += r.get('_成交客户数', 0)
+        d[k]['花费'] += r.get('_花费', 0) or 0
+        d[k]['展现数'] += r.get('_展现数', 0) or 0
+        d[k]['点击数'] += r.get('_点击数', 0) or 0
+        d[k]['总订单金额'] += r.get('_总订单金额', 0) or 0
+        d[k]['直接订单金额'] += r.get('_直接订单金额', 0) or 0
+        d[k]['总加购数'] += r.get('_总加购数', 0) or 0
+        d[k]['成交客户数'] += r.get('_成交客户数', 0) or 0
     return d
 
 def _yoy_text(cur, prev):
@@ -3091,8 +3091,8 @@ with tabs[1]:
                 continue
             key = dt if promo_gran == '按日' else dt[:7]
             _pr.setdefault(key, {'花费': 0, '总订单金额': 0})
-            _pr[key]['花费'] += r.get('_花费', 0)
-            _pr[key]['总订单金额'] += r.get('_总订单金额', 0)
+            _pr[key]['花费'] += r.get('_花费', 0) or 0
+            _pr[key]['总订单金额'] += r.get('_总订单金额', 0) or 0
         _pr_s = sorted(_pr.items())
         if _pr_s:
             fig = go.Figure()
@@ -3114,8 +3114,8 @@ with tabs[1]:
                 continue
             gk = dt if promo_gran == '按日' else dt[:7]
             _roi_gr.setdefault(gk, {'花费': 0, '总订单金额': 0})
-            _roi_gr[gk]['花费'] += r.get('_花费', 0)
-            _roi_gr[gk]['总订单金额'] += r.get('_总订单金额', 0)
+            _roi_gr[gk]['花费'] += r.get('_花费', 0) or 0
+            _roi_gr[gk]['总订单金额'] += r.get('_总订单金额', 0) or 0
         _roi_s = sorted(_roi_gr.items())
         if _roi_s:
             _x_label = '日期' if promo_gran == '按日' else '月份'
@@ -3132,8 +3132,8 @@ with tabs[1]:
         for r in promo_filtered:
             pn = r.get('推广计划', '') or r.get('计划ID', '') or '未标注'
             _pl.setdefault(pn, {'花费': 0, '总订单金额': 0})
-            _pl[pn]['花费'] += r.get('_花费', 0)
-            _pl[pn]['总订单金额'] += r.get('_总订单金额', 0)
+            _pl[pn]['花费'] += r.get('_花费', 0) or 0
+            _pl[pn]['总订单金额'] += r.get('_总订单金额', 0) or 0
         _pl_r = [{'推广计划': k, '花费': v['花费'], '总订单金额': v['总订单金额'],
                     'ROI': v['总订单金额']/v['花费'] if v['花费'] else 0} for k, v in _pl.items()]
         if _pl_r:
@@ -3167,13 +3167,13 @@ with tabs[1]:
         for r in promo_filtered:
             sn = r.get('_店铺', '') or r.get('店铺', '') or '未标注'
             _store_m.setdefault(sn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0, '成交客户数': 0})
-            _store_m[sn]['花费'] += r.get('_花费', 0)
-            _store_m[sn]['展现数'] += r.get('_展现数', 0)
-            _store_m[sn]['点击数'] += r.get('_点击数', 0)
-            _store_m[sn]['总订单金额'] += r.get('_总订单金额', 0)
-            _store_m[sn]['直接订单金额'] += r.get('_直接订单金额', 0)
-            _store_m[sn]['总加购数'] += r.get('_总加购数', 0)
-            _store_m[sn]['成交客户数'] += r.get('_成交客户数', 0)
+            _store_m[sn]['花费'] += r.get('_花费', 0) or 0
+            _store_m[sn]['展现数'] += r.get('_展现数', 0) or 0
+            _store_m[sn]['点击数'] += r.get('_点击数', 0) or 0
+            _store_m[sn]['总订单金额'] += r.get('_总订单金额', 0) or 0
+            _store_m[sn]['直接订单金额'] += r.get('_直接订单金额', 0) or 0
+            _store_m[sn]['总加购数'] += r.get('_总加购数', 0) or 0
+            _store_m[sn]['成交客户数'] += r.get('_成交客户数', 0) or 0
         _store_yoy = _promo_agg(promo_yoy, '_店铺')
         _sm_r = []
         for k, v in sorted(_store_m.items(), key=lambda x: x[1]['花费'], reverse=True):
@@ -3252,13 +3252,13 @@ with tabs[1]:
         for r in promo_filtered:
             cn = r.get('_渠道', '') or r.get('渠道', '') or '未标注'
             _chan_m.setdefault(cn, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0, '成交客户数': 0})
-            _chan_m[cn]['花费'] += r.get('_花费', 0)
-            _chan_m[cn]['展现数'] += r.get('_展现数', 0)
-            _chan_m[cn]['点击数'] += r.get('_点击数', 0)
-            _chan_m[cn]['总订单金额'] += r.get('_总订单金额', 0)
-            _chan_m[cn]['直接订单金额'] += r.get('_直接订单金额', 0)
-            _chan_m[cn]['总加购数'] += r.get('_总加购数', 0)
-            _chan_m[cn]['成交客户数'] += r.get('_成交客户数', 0)
+            _chan_m[cn]['花费'] += r.get('_花费', 0) or 0
+            _chan_m[cn]['展现数'] += r.get('_展现数', 0) or 0
+            _chan_m[cn]['点击数'] += r.get('_点击数', 0) or 0
+            _chan_m[cn]['总订单金额'] += r.get('_总订单金额', 0) or 0
+            _chan_m[cn]['直接订单金额'] += r.get('_直接订单金额', 0) or 0
+            _chan_m[cn]['总加购数'] += r.get('_总加购数', 0) or 0
+            _chan_m[cn]['成交客户数'] += r.get('_成交客户数', 0) or 0
         _chan_yoy = _promo_agg(promo_yoy, '_渠道')
         _cm_r = []
         for k, v in sorted(_chan_m.items(), key=lambda x: x[1]['花费'], reverse=True):
@@ -3345,11 +3345,11 @@ with tabs[1]:
             if not dt:
                 continue
             _dp.setdefault(dt, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '总加购数': 0})
-            _dp[dt]['花费'] += r.get('_花费', 0)
-            _dp[dt]['展现数'] += r.get('_展现数', 0)
-            _dp[dt]['点击数'] += r.get('_点击数', 0)
-            _dp[dt]['总订单金额'] += r.get('_总订单金额', 0)
-            _dp[dt]['总加购数'] += r.get('_总加购数', 0)
+            _dp[dt]['花费'] += r.get('_花费', 0) or 0
+            _dp[dt]['展现数'] += r.get('_展现数', 0) or 0
+            _dp[dt]['点击数'] += r.get('_点击数', 0) or 0
+            _dp[dt]['总订单金额'] += r.get('_总订单金额', 0) or 0
+            _dp[dt]['总加购数'] += r.get('_总加购数', 0) or 0
         # 按日期汇总销售支付金额（用于推广日明细费率）
         _sales_amt_by_day = {}
         for r in daily:
@@ -3388,13 +3388,13 @@ with tabs[1]:
         for r in promo_filtered:
             sku = r.get('_型号', '') or r.get('型号', '') or r.get('SKU', '') or '未标注'
             _sku.setdefault(sku, {'花费': 0, '展现数': 0, '点击数': 0, '总订单金额': 0, '直接订单金额': 0, '总加购数': 0, '成交客户数': 0})
-            _sku[sku]['花费'] += r.get('_花费', 0)
-            _sku[sku]['展现数'] += r.get('_展现数', 0)
-            _sku[sku]['点击数'] += r.get('_点击数', 0)
-            _sku[sku]['总订单金额'] += r.get('_总订单金额', 0)
-            _sku[sku]['直接订单金额'] += r.get('_直接订单金额', 0)
-            _sku[sku]['总加购数'] += r.get('_总加购数', 0)
-            _sku[sku]['成交客户数'] += r.get('_成交客户数', 0)
+            _sku[sku]['花费'] += r.get('_花费', 0) or 0
+            _sku[sku]['展现数'] += r.get('_展现数', 0) or 0
+            _sku[sku]['点击数'] += r.get('_点击数', 0) or 0
+            _sku[sku]['总订单金额'] += r.get('_总订单金额', 0) or 0
+            _sku[sku]['直接订单金额'] += r.get('_直接订单金额', 0) or 0
+            _sku[sku]['总加购数'] += r.get('_总加购数', 0) or 0
+            _sku[sku]['成交客户数'] += r.get('_成交客户数', 0) or 0
         _sku_yoy = _promo_agg(promo_yoy, '_型号')
         _sku_r = []
         for k, v in sorted(_sku.items(), key=lambda x: x[1]['花费'], reverse=True):
@@ -6922,7 +6922,7 @@ with tabs[4]:
                     if key not in result:
                         result[key] = {'_花费': 0, '_展现数': 0, '_点击数': 0, '_直接订单金额': 0, '_总订单金额': 0, '_总成交订单量': 0, '_直接订单量': 0}
                     for k in ['_花费', '_展现数', '_点击数', '_直接订单金额', '_总订单金额', '_总成交订单量', '_直接订单量']:
-                        result[key][k] += r.get(k, 0)
+                        result[key][k] += r.get(k, 0) or 0
                 return result
 
             # 本期和推广对比期数据
@@ -7319,7 +7319,7 @@ with tabs[4]:
                     if key not in result:
                         result[key] = {'_花费': 0, '_直接订单金额': 0, '_总订单金额': 0, '_点击数': 0, '_展现数': 0}
                     for k in ['_花费', '_直接订单金额', '_总订单金额', '_点击数', '_展现数']:
-                        result[key][k] += r.get(k, 0)
+                        result[key][k] += r.get(k, 0) or 0
                 return result
 
             promo_by_plan_cur = _agg_promo_by_dims(promo_cur, ['_渠道', '_店铺', '_营销场景', '推广计划'])
