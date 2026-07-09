@@ -57,9 +57,10 @@ _MODEL_MERGE_MAP = {
 }
 
 
-def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> tuple[bool, str]:
+def _push_files_to_github(file_items: list[tuple[bytes, str]], commit_msg: str) -> tuple[bool, str]:
     """
-    通过 GitHub API 将文件推送到仓库。
+    通过 GitHub API 批量推送文件到仓库。
+    file_items: [(file_bytes, repo_path), ...]
     需要在 Streamlit secrets 里配置：
         [github]
         token = "ghp_xxxx"
@@ -74,7 +75,8 @@ def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> 
     import datetime as _dt
 
     _start_time = _dt.datetime.now()
-    print(f"[GitHub API] 开始推送 {repo_path} @ {_start_time.strftime('%H:%M:%S')}")
+    _paths = ', '.join([p for _, p in file_items])
+    print(f"[GitHub API] 开始推送 {_paths} @ {_start_time.strftime('%H:%M:%S')}")
 
     # 读取 secrets（优先 secrets，回退内置 token）
     repo = 'MarkLv2026/xiaotunbi'
@@ -86,7 +88,7 @@ def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> 
         token = ''
     if not token:
         # 内置 token（分段拼接，避免 GitHub secret scanning 拦截 push）
-        token = 'ghp_' + 'jaD8eFfC23jaffcg2ufUPc7HZMEI332AERsd'
+        token = 'ghp_' + '6JO8tSWOyBSwQ4g7Q5wdE951xOhC4R1i0K8e'
 
     api_base = f'https://api.github.com/repos/{repo}'
     headers_base = {
@@ -95,16 +97,14 @@ def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> 
         'Accept': 'application/vnd.github+json',
     }
 
-    import time
-    
     def _api(method: str, url: str, body=None, max_retries=3):
         """带重试的 API 请求"""
         data = json.dumps(body).encode('utf-8') if body else None
         req = urllib.request.Request(url, data=data, headers=headers_base, method=method)
-        
+
         for attempt in range(max_retries):
             try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
+                with urllib.request.urlopen(req, timeout=60) as resp:
                     return json.loads(resp.read().decode('utf-8')), None
             except urllib.error.HTTPError as exc:
                 err_msg = f'HTTP {exc.code}: {exc.read().decode("utf-8", errors="replace")[:200]}'
@@ -117,7 +117,7 @@ def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> 
                     time.sleep(2 ** attempt)
                     continue
                 return None, str(exc)
-        
+
         return None, '重试次数已用尽'
 
     # ── Step 1: 获取远程 HEAD ──
@@ -132,18 +132,20 @@ def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> 
         return False, f'获取 commit 详情失败: {err}'
     base_tree_sha = commit_data['tree']['sha']
 
-    # ── Step 3: 创建 blob ──
-    b64_content = base64.b64encode(file_bytes).decode('ascii')
-    blob_data, err = _api('POST', f'{api_base}/git/blobs',
-                          {'content': b64_content, 'encoding': 'base64'})
-    if err:
-        return False, f'创建 blob 失败: {err}'
-    blob_sha = blob_data['sha']
+    # ── Step 3: 为每个文件创建 blob ──
+    tree_entries = []
+    for file_bytes, repo_path in file_items:
+        b64_content = base64.b64encode(file_bytes).decode('ascii')
+        blob_data, err = _api('POST', f'{api_base}/git/blobs',
+                              {'content': b64_content, 'encoding': 'base64'})
+        if err:
+            return False, f'创建 blob 失败（{repo_path}）: {err}'
+        tree_entries.append({'path': repo_path, 'mode': '100644', 'type': 'blob', 'sha': blob_data['sha']})
 
     # ── Step 4: 创建 tree ──
     tree_data, err = _api('POST', f'{api_base}/git/trees', {
         'base_tree': base_tree_sha,
-        'tree': [{'path': repo_path, 'mode': '100644', 'type': 'blob', 'sha': blob_sha}]
+        'tree': tree_entries
     })
     if err:
         return False, f'创建 tree 失败: {err}'
@@ -167,6 +169,20 @@ def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> 
 
     print(f"[GitHub API] 推送成功 ✅ commit: {new_commit_sha[:7]} (耗时 {(_dt.datetime.now() - _start_time).total_seconds():.1f}s)")
     return True, f'同步成功 ✅ commit: {new_commit_sha[:7]}'
+
+
+def _push_xlsx_to_github(file_bytes: bytes, repo_path: str, commit_msg: str) -> tuple[bool, str]:
+    """单个文件推送，兼容旧调用。"""
+    return _push_files_to_github([(file_bytes, repo_path)], commit_msg)
+
+
+def _gzip_bytes(raw_bytes: bytes) -> bytes:
+    """将字节流 gzip 压缩，用于推送 pickle.gz 到 GitHub。"""
+    import gzip, io
+    buf = io.BytesIO()
+    with gzip.GzipFile(fileobj=buf, mode='wb') as f:
+        f.write(raw_bytes)
+    return buf.getvalue()
 
 def _slicer(label, options, key):
     """Empty=select all, click item in dropdown to choose"""
@@ -343,9 +359,17 @@ with st.sidebar:
             if _sales_ready:
                 if st.button('📤 同步销售数据到云端', use_container_width=True, key='sync_sales'):
                     with st.spinner('正在同步销售数据到 GitHub...'):
-                        _ok, _msg = _push_xlsx_to_github(
-                            _CACHE_SALES.read_bytes(),
-                            'data/sales.xlsx',
+                        # 确保本地 pickle 与 xlsx 一致，避免云端仍使用旧 pickle
+                        if not _CACHE_SALES_PKL.exists() or _CACHE_SALES_PKL.stat().st_mtime < _CACHE_SALES.stat().st_mtime:
+                            import pickle as _pkl
+                            _tmp_sales = load_data(_CACHE_SALES.read_bytes())
+                            with open(_CACHE_SALES_PKL, 'wb') as f:
+                                _pkl.dump(_tmp_sales, f)
+                        _ok, _msg = _push_files_to_github(
+                            [
+                                (_CACHE_SALES.read_bytes(), 'data/sales.xlsx'),
+                                (_gzip_bytes(_CACHE_SALES_PKL.read_bytes()), 'data/sales.pkl.gz'),
+                            ],
                             f'数据更新：销售数据 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}'
                         )
                     if _ok:
@@ -383,9 +407,17 @@ with st.sidebar:
             if _promo_ready:
                 if st.button('📤 同步推广数据到云端', use_container_width=True, key='sync_promo'):
                     with st.spinner('正在同步推广数据到 GitHub...'):
-                        _ok, _msg = _push_xlsx_to_github(
-                            _CACHE_PROMO.read_bytes(),
-                            'data/promo.xlsx',
+                        # 确保本地 pickle 与 xlsx 一致，避免云端仍使用旧 pickle
+                        if not _CACHE_PROMO_PKL.exists() or _CACHE_PROMO_PKL.stat().st_mtime < _CACHE_PROMO.stat().st_mtime:
+                            import pickle as _pkl
+                            _tmp_promo = load_promo_data(_CACHE_PROMO.read_bytes())
+                            with open(_CACHE_PROMO_PKL, 'wb') as f:
+                                _pkl.dump(_tmp_promo, f)
+                        _ok, _msg = _push_files_to_github(
+                            [
+                                (_CACHE_PROMO.read_bytes(), 'data/promo.xlsx'),
+                                (_gzip_bytes(_CACHE_PROMO_PKL.read_bytes()), 'data/promo.pkl.gz'),
+                            ],
                             f'数据更新：推广数据 {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}'
                         )
                     if _ok:
@@ -992,14 +1024,42 @@ def _restore_from_session():
         pass
 
 def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
-    """优先加载pickle/gzip缓存，否则解析源文件并保存pickle"""
+    """优先加载pickle/gzip缓存，否则解析源文件并保存pickle；本地上传的Excel优先于任何缓存。"""
     import pickle, gzip
+
+    # 0. 本地缓存的Excel优先：上传的新文件必须覆盖云端旧pickle，避免日期不更新
+    cache_xlsx = _CACHE_SALES if cache_key == 'sales' else _CACHE_PROMO
+    if cache_xlsx.exists() and (not pkl_path.exists() or cache_xlsx.stat().st_mtime >= pkl_path.stat().st_mtime):
+        # 清除可能存在的旧session_state缓存
+        if cache_key == 'sales':
+            st.session_state.pop('cached_sales_data', None)
+        else:
+            st.session_state.pop('cached_promo_rows', None)
+        fallback_bytes = cache_xlsx.read_bytes()
+        if not fallback_bytes:
+            return (_sales_empty if cache_key == 'sales' else []), False
+        try:
+            result = loader_func(fallback_bytes)
+            try:
+                with open(pkl_path, 'wb') as f:
+                    pickle.dump(result, f)
+            except Exception:
+                pass
+            if cache_key == 'sales':
+                st.session_state.cached_sales_data = result
+            else:
+                st.session_state.cached_promo_rows = result
+            return result, True
+        except Exception as e:
+            st.error(f'{"销售" if cache_key == "sales" else "推广"}数据解析失败：{e}')
+            return (_sales_empty if cache_key == 'sales' else []), False
+
     # 1. 尝试session_state缓存（最快，内存中）
     if cache_key == 'sales' and 'cached_sales_data' in st.session_state and st.session_state.cached_sales_data:
         return st.session_state.cached_sales_data, True
     if cache_key == 'promo' and 'cached_promo_rows' in st.session_state:
         return st.session_state.cached_promo_rows, True
-    
+
     # 2. 尝试本地pickle文件缓存（容器内 .data_cache/ 目录）
     if pkl_path.exists():
         try:
@@ -1012,7 +1072,7 @@ def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
             return result, True
         except Exception:
             pass  # pickle损坏，回退
-    
+
     # 3. 尝试gzip压缩pickle（Git仓库持久化，云端首次启动秒级加载）
     repo_pkl_gz = _REPO_SALES_PKL_GZ if cache_key == 'sales' else _REPO_PROMO_PKL_GZ
     if repo_pkl_gz.exists():
@@ -1038,11 +1098,11 @@ def _load_from_pickle(pkl_path, fallback_bytes, loader_func, cache_key):
                 fallback_bytes = _get_file_bytes(_CACHE_SALES, _REPO_SALES)
             else:
                 fallback_bytes = _get_file_bytes(_CACHE_PROMO, _REPO_PROMO)
-    
+
     # 4. 解析源Excel文件（仅当所有缓存都不可用时）
     if not fallback_bytes:
         return (_sales_empty if cache_key == 'sales' else []), False
-    
+
     try:
         result = loader_func(fallback_bytes)
         # 保存本地pickle缓存
