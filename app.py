@@ -1728,17 +1728,17 @@ def _compute_promo_comparison(ps, pe, ys, ye, ch_key, st_key, cat_key, mdl_key, 
         prev_rows = []
     prev_rows = [r for r in prev_rows if isinstance(r, dict)]
     
-    prev_fc = sum(r.get('_花费', 0) for r in prev_rows)
-    prev_amt = sum(r.get('_总订单金额', 0) for r in prev_rows)
-    prev_direct = sum(r.get('_直接订单金额', 0) for r in prev_rows)
-    prev_impress = sum(r.get('_展现数', 0) for r in prev_rows)
-    prev_clicks = sum(r.get('_点击数', 0) for r in prev_rows)
+    prev_fc = sum((r.get('_花费') or 0) for r in prev_rows)
+    prev_amt = sum((r.get('_总订单金额') or 0) for r in prev_rows)
+    prev_direct = sum((r.get('_直接订单金额') or 0) for r in prev_rows)
+    prev_impress = sum((r.get('_展现数') or 0) for r in prev_rows)
+    prev_clicks = sum((r.get('_点击数') or 0) for r in prev_rows)
     prev_roi = prev_amt / prev_fc if prev_fc else 0
     prev_droi = prev_direct / prev_fc if prev_fc else 0
     prev_cpc = prev_fc / prev_clicks if prev_clicks else 0
     prev_ctr = prev_clicks / prev_impress if prev_impress else 0
-    prev_torders = sum(r.get('_总成交订单量', 0) for r in prev_rows)
-    prev_cust = sum(r.get('_成交客户数', 0) for r in prev_rows)
+    prev_torders = sum((r.get('_总成交订单量') or 0) for r in prev_rows)
+    prev_cust = sum((r.get('_成交客户数') or 0) for r in prev_rows)
     prev_cv = prev_cust / prev_clicks * 100 if prev_clicks else 0
     prev_tcvr = prev_torders / prev_clicks * 100 if prev_clicks else 0
     
@@ -1748,17 +1748,17 @@ def _compute_promo_comparison(ps, pe, ys, ye, ch_key, st_key, cat_key, mdl_key, 
         yoy_rows = []
     yoy_rows = [r for r in yoy_rows if isinstance(r, dict)]
     
-    yoy_fc = sum(r.get('_花费', 0) for r in yoy_rows)
-    yoy_amt = sum(r.get('_总订单金额', 0) for r in yoy_rows)
-    yoy_direct = sum(r.get('_直接订单金额', 0) for r in yoy_rows)
-    yoy_impress = sum(r.get('_展现数', 0) for r in yoy_rows)
-    yoy_clicks = sum(r.get('_点击数', 0) for r in yoy_rows)
+    yoy_fc = sum((r.get('_花费') or 0) for r in yoy_rows)
+    yoy_amt = sum((r.get('_总订单金额') or 0) for r in yoy_rows)
+    yoy_direct = sum((r.get('_直接订单金额') or 0) for r in yoy_rows)
+    yoy_impress = sum((r.get('_展现数') or 0) for r in yoy_rows)
+    yoy_clicks = sum((r.get('_点击数') or 0) for r in yoy_rows)
     yoy_roi = yoy_amt / yoy_fc if yoy_fc else 0
     yoy_droi = yoy_direct / yoy_fc if yoy_fc else 0
     yoy_cpc = yoy_fc / yoy_clicks if yoy_clicks else 0
     yoy_ctr = yoy_clicks / yoy_impress if yoy_impress else 0
-    yoy_torders = sum(r.get('_总成交订单量', 0) for r in yoy_rows)
-    yoy_cust = sum(r.get('_成交客户数', 0) for r in yoy_rows)
+    yoy_torders = sum((r.get('_总成交订单量') or 0) for r in yoy_rows)
+    yoy_cust = sum((r.get('_成交客户数') or 0) for r in yoy_rows)
     yoy_cv = yoy_cust / yoy_clicks * 100 if yoy_clicks else 0
     yoy_tcvr = yoy_torders / yoy_clicks * 100 if yoy_clicks else 0
     
@@ -2548,12 +2548,12 @@ try:
     _first_mdl_key = ()
     daily, daily_all_filtered, totals, promo_filtered = _compute_totals_and_promo(s, e, _first_ch_key, _first_st_key, _first_cat_key, _first_mdl_key)
 
-    promo_spend = sum(r.get('_花费', 0) for r in promo_filtered)
-    promo_order_amt = sum(r.get('_总订单金额', 0) for r in promo_filtered)
+    promo_spend = sum((r.get('_花费') or 0) for r in promo_filtered)
+    promo_order_amt = sum((r.get('_总订单金额') or 0) for r in promo_filtered)
     promo_roi = promo_order_amt / promo_spend if promo_spend else 0
-    promo_direct_amt = sum(r.get('_直接订单金额', 0) for r in promo_filtered)
-    promo_impress = sum(r.get('_展现数', 0) for r in promo_filtered)
-    promo_clicks = sum(r.get('_点击数', 0) for r in promo_filtered)
+    promo_direct_amt = sum((r.get('_直接订单金额') or 0) for r in promo_filtered)
+    promo_impress = sum((r.get('_展现数') or 0) for r in promo_filtered)
+    promo_clicks = sum((r.get('_点击数') or 0) for r in promo_filtered)
     promo_cpc = promo_spend / promo_clicks if promo_clicks else 0
     promo_ctr = promo_clicks / promo_impress if promo_impress else 0
     promo_rate = promo_spend / totals['支付金额'] * 100 if totals.get('支付金额') else 0
@@ -2670,12 +2670,12 @@ if _sales_loaded:
     promo_mom_tcvr = _new_pcmp['prev_tcvr']
 
     # 重新计算推广指标（使用筛选后的 promo_filtered）
-    promo_spend = sum(r.get('_花费', 0) for r in promo_filtered)
-    promo_order_amt = sum(r.get('_总订单金额', 0) for r in promo_filtered)
+    promo_spend = sum((r.get('_花费') or 0) for r in promo_filtered)
+    promo_order_amt = sum((r.get('_总订单金额') or 0) for r in promo_filtered)
     promo_roi = promo_order_amt / promo_spend if promo_spend else 0
-    promo_direct_amt = sum(r.get('_直接订单金额', 0) for r in promo_filtered)
-    promo_impress = sum(r.get('_展现数', 0) for r in promo_filtered)
-    promo_clicks = sum(r.get('_点击数', 0) for r in promo_filtered)
+    promo_direct_amt = sum((r.get('_直接订单金额') or 0) for r in promo_filtered)
+    promo_impress = sum((r.get('_展现数') or 0) for r in promo_filtered)
+    promo_clicks = sum((r.get('_点击数') or 0) for r in promo_filtered)
     promo_cpc = promo_spend / promo_clicks if promo_clicks else 0
     promo_ctr = promo_clicks / promo_impress if promo_impress else 0
     promo_rate = promo_spend / totals['支付金额'] * 100 if totals.get('支付金额') else 0
@@ -2805,7 +2805,7 @@ with tabs[0]:
         _pctr_d = _promo_delta(promo_ctr*100, promo_mom_ctr*100, promo_yoy_ctr*100, '%')
         _pcpc_d = _promo_delta(promo_cpc, promo_mom_cpc, promo_yoy_cpc, '%')
         # 推广转化率 = 总成交订单量 / 点击数 * 100
-        _p_torders = sum(r.get('_总成交订单量', 0) for r in promo_filtered)
+        _p_torders = sum((r.get('_总成交订单量') or 0) for r in promo_filtered)
         _p_cv = _p_torders / promo_clicks * 100 if promo_clicks else 0
         _pcv_d = _promo_delta(_p_cv, promo_mom_tcvr, promo_yoy_tcvr, '%')
         _prs = promo_order_amt / totals['支付金额'] * 100 if totals['支付金额'] else 0
@@ -3059,13 +3059,13 @@ with tabs[1]:
         # ── KPI 指标 ──
         _ps = promo_spend
         _ro = promo_roi
-        _imp = sum(r.get('_展现数', 0) for r in promo_filtered)
-        _clk = sum(r.get('_点击数', 0) for r in promo_filtered)
+        _imp = sum((r.get('_展现数') or 0) for r in promo_filtered)
+        _clk = sum((r.get('_点击数') or 0) for r in promo_filtered)
         _ctr = _clk / _imp if _imp else 0
         _cpc = _ps / _clk if _clk else 0
-        _da = sum(r.get('_总订单金额', 0) for r in promo_filtered)
+        _da = sum((r.get('_总订单金额') or 0) for r in promo_filtered)
         # 推广转化率 = 总成交订单量 / 点击数 * 100
-        _torders = sum(r.get('_总成交订单量', 0) for r in promo_filtered)
+        _torders = sum((r.get('_总成交订单量') or 0) for r in promo_filtered)
         _cv = _torders / _clk * 100 if _clk else 0
         pfc_d = _promo_delta(_ps, promo_mom_fc, promo_yoy_fc, '%')
         proi_d = _promo_delta(_ro, promo_mom_roi, promo_yoy_roi, '%')
