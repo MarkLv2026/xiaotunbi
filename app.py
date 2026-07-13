@@ -644,6 +644,26 @@ class _PromoRow:
     def __repr__(self):
         return f'_PromoRow(date={self._date}, shop={self._shop})'
 
+    # ── pickle 序列化支持（st.cache_data 需要）──
+    def __getstate__(self):
+        """返回所有 __slots__ 属性的字典，用于 pickle 序列化。"""
+        return {slot: getattr(self, slot) for slot in self.__slots__}
+
+    def __setstate__(self, state):
+        """从字典恢复 __slots__ 属性，用于 pickle 反序列化。"""
+        for slot in self.__slots__:
+            setattr(self, slot, state.get(slot))
+
+    def __reduce__(self):
+        """返回 (构造函数, 参数元组)，让 pickle 能重建对象。"""
+        return (
+            _PromoRow,
+            (self._date, self._shop, self._channel, self._cat, self._model, self._scene,
+             self._spend, self._impress, self._clicks, self._total_amt, self._direct_amt,
+             self._indirect_amt, self._cart, self._cust, self._total_orders,
+             self._direct_orders, self._roi)
+        )
+
 
 @st.cache_data(show_spinner=False)
 def load_data(file_bytes: bytes):
@@ -1858,7 +1878,8 @@ def _compute_promo_comparison(ps, pe, ys, ye, ch_key, st_key, cat_key, mdl_key, 
     prev_rows = _promo_yoy_rows(ps, pe)
     if not isinstance(prev_rows, list):
         prev_rows = []
-    prev_rows = [r for r in prev_rows if isinstance(r, dict)]
+    # 兼容 _PromoRow 对象（有 get 方法但不是 dict）
+    prev_rows = [r for r in prev_rows if isinstance(r, dict) or hasattr(r, 'get')]
     
     prev_fc = sum((r.get('_花费') or 0) for r in prev_rows)
     prev_amt = sum((r.get('_总订单金额') or 0) for r in prev_rows)
@@ -1878,7 +1899,8 @@ def _compute_promo_comparison(ps, pe, ys, ye, ch_key, st_key, cat_key, mdl_key, 
     yoy_rows = _promo_yoy_rows(ys, ye)
     if not isinstance(yoy_rows, list):
         yoy_rows = []
-    yoy_rows = [r for r in yoy_rows if isinstance(r, dict)]
+    # 兼容 _PromoRow 对象（有 get 方法但不是 dict）
+    yoy_rows = [r for r in yoy_rows if isinstance(r, dict) or hasattr(r, 'get')]
     
     yoy_fc = sum((r.get('_花费') or 0) for r in yoy_rows)
     yoy_amt = sum((r.get('_总订单金额') or 0) for r in yoy_rows)
