@@ -10,6 +10,14 @@ import traceback as _tb
 import streamlit as st
 
 # ═══════════════════════════════════════════════════════════════
+# 看板标题配置（改这里即可更换品牌/看板名称）
+# ═══════════════════════════════════════════════════════════════
+BRAND_SHORT = '电商'                       # 用于PPT/CSV等文件前缀
+HERO_TITLE = '电商销售经营BI看板'          # 页面主标题
+HERO_SUBTITLE = '经营总览 · 时间段对比 · 趋势分析 · 智能诊断，一页完成日常复盘。'
+PAGE_TITLE = '电商BI看板'                  # 浏览器标签页标题
+
+# ═══════════════════════════════════════════════════════════════
 # 全局异常捕获 — 确保 Streamlit Cloud 上崩溃时能看到具体错误
 # ═══════════════════════════════════════════════════════════════
 _CRASH_LOG = []
@@ -199,7 +207,7 @@ def _slicer(label, options, key):
     return list(sel) if sel else all_opts
 
 
-st.set_page_config(page_title='小豚当家BI看板', layout='wide', initial_sidebar_state='expanded')
+st.set_page_config(page_title=PAGE_TITLE, layout='wide', initial_sidebar_state='expanded')
 
 # 防御性 session state 预初始化（防止 Streamlit "SessionInfo not initialized" 错误）
 try:
@@ -288,7 +296,7 @@ _SALT = 'xiaotun_bi_2026_salt'
 if not st.session_state.authenticated:
     col_center = st.columns([1, 2, 1])
     with col_center[1]:
-        st.markdown('''<div class="hero"><div><span class="badge">影锋BI风格</span><span class="badge">全域电商经营驾驶舱</span></div><h1 class="hero-title">小豚当家销售经营BI看板</h1><div class="hero-sub">请输入账号密码登录</div></div>''', unsafe_allow_html=True)
+        st.markdown(f'''<div class="hero"><div><span class="badge">影锋BI风格</span><span class="badge">全域电商经营驾驶舱</span></div><h1 class="hero-title">{HERO_TITLE}</h1><div class="hero-sub">请输入账号密码登录</div></div>''', unsafe_allow_html=True)
         with st.form('login_form'):
             _lu = st.text_input('用户名')
             _lp = st.text_input('密码', type='password')
@@ -320,7 +328,7 @@ if not st.session_state.authenticated:
                 st.error('❌ 用户名或密码错误，或账号未授权')
     st.stop()
 
-st.markdown('''<div class="hero"><div><span class="badge">影锋BI风格</span><span class="badge">全域电商经营驾驶舱</span><span class="badge">上传即更新</span></div><h1 class="hero-title">小豚当家销售经营BI看板</h1><div class="hero-sub">经营总览 · 时间段对比 · 趋势分析 · 智能诊断, 一页完成日常复盘。</div></div>''', unsafe_allow_html=True)
+st.markdown(f'''<div class="hero"><div><span class="badge">影锋BI风格</span><span class="badge">全域电商经营驾驶舱</span><span class="badge">上传即更新</span></div><h1 class="hero-title">{HERO_TITLE}</h1><div class="hero-sub">{HERO_SUBTITLE}</div></div>''', unsafe_allow_html=True)
 
 with st.sidebar:
     # 用户信息栏
@@ -2261,7 +2269,7 @@ def _generate_mckinsey_ppt(**kwargs):
         p_pg.font.name = 'Arial'
         pg_brand = slide.shapes.add_textbox(Inches(7.0), Inches(5.18), Inches(2.9), Inches(0.28))
         tf_br = pg_brand.text_frame; p_br = tf_br.paragraphs[0]
-        p_br.text = '小豚BI 智能诊断  |  ' + period_cur; p_br.font.size = Pt(8)
+        p_br.text = f'{BRAND_SHORT}BI 智能诊断  |  ' + period_cur; p_br.font.size = Pt(8)
         p_br.font.color.rgb = LT_GRAY; p_br.alignment = PP_ALIGN.RIGHT; p_br.font.name = 'Arial'
         return slide
 
@@ -2669,7 +2677,7 @@ def _generate_mckinsey_ppt(**kwargs):
 
     # 保存文件
     tmpdir = tempfile.gettempdir()
-    ppt_path = os.path.join(tmpdir, f'xiaotunbi_ppt_{s.replace("-", "")}_{e.replace("-", "")}.pptx')
+    ppt_path = os.path.join(tmpdir, f'{BRAND_SHORT}bi_ppt_{s.replace("-", "")}_{e.replace("-", "")}.pptx')
     prs.save(ppt_path)
     return ppt_path
 
@@ -5757,7 +5765,7 @@ def _generate_midea_ppt(**kwargs):
         footer = slide.shapes.add_textbox(Inches(0.5), Inches(5.35), Inches(9), Inches(0.2))
         tf3 = footer.text_frame
         p3 = tf3.paragraphs[0]
-        p3.text = f'小豚BI  |  {period_cur}'
+        p3.text = f'{BRAND_SHORT}BI  |  {period_cur}'
         p3.font.size = Pt(8)
         p3.font.color.rgb = MID_GRAY
         p3.font.name = 'Arial'
@@ -7738,7 +7746,7 @@ with tabs[4]:
         _render_download_panel(
             dl_data if dl_data else [],
             list(dl_data[0].keys()) if dl_data else [],
-            f'xiaotunbi_diagnosis_{s.replace("-","")}_{e.replace("-","")}.csv', '📥 完整诊断报告（含执行清单）')
+            f'{BRAND_SHORT}bi_diagnosis_{s.replace("-","")}_{e.replace("-","")}.csv', '📥 完整诊断报告（含执行清单）')
 
     # ── 生成麦肯锡复盘PPT按钮（放在所有子Tab之后，确保变量已定义）──
     st.markdown('<hr style="margin:20px 0;border:none;border-top:1px dashed #cbd5e1;">', unsafe_allow_html=True)
@@ -7771,7 +7779,7 @@ with tabs[4]:
                 with open(_ppt_path, 'rb') as f:
                     st.download_button(
                         label=f'📥 下载复盘PPT ({_period_label_cur})',
-                        data=f, file_name=f'xiaotunbi_复盘_{s.replace("-","")}_{e.replace("-","")}.pptx',
+                        data=f, file_name=f'{BRAND_SHORT}bi_复盘_{s.replace("-","")}_{e.replace("-","")}.pptx',
                         mime='application/vnd.openxmlformats-officedocument.presentationml.presentation',
                         key='dl_midea_ppt')
                 st.success(f'✅ PPT已生成（美的风格），点击上方按钮下载')
