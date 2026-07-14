@@ -597,18 +597,13 @@ with st.sidebar:
             st.session_state[_k] = ''
         st.rerun()
 
-# ── PromoRow: 内存优化的推广数据行（__slots__ 替代 dict，节省 ~60% 内存）──
-class _PromoRow:
-    """用 __slots__ 替代 dict 存储推广数据，内存从 312MB → 129MB。
+# ── PromoRow: 内存优化的推广数据行（dict 子类，兼容 pickle 序列化）──
+class _PromoRow(dict):
+    """用 dict 子类存储推广数据，保持与原有 dict.get() 的完全兼容。
     
-    通过 get(key, default) 方法保持与原有 dict.get() 的完全兼容，
+    同时通过 __getattr__ 支持属性访问，保持代码风格一致。
     所有现有代码无需修改。
     """
-    __slots__ = ('_date','_shop','_channel','_cat','_model','_scene',
-                 '_spend','_impress','_clicks','_total_amt','_direct_amt',
-                 '_indirect_amt','_cart','_cust','_total_orders',
-                 '_direct_orders','_roi')
-    
     # 中文 key → 内部属性名映射（兼容 r.get('_花费', 0)）
     _KEY_MAP = {
         '_date': '_date', '_店铺': '_shop', '_渠道': '_channel',
@@ -619,11 +614,14 @@ class _PromoRow:
         '_成交客户数': '_cust', '_总成交订单量': '_total_orders',
         '_直接订单量': '_direct_orders', '_投产比': '_roi',
     }
+    # 反向映射：属性名 → 中文 key
+    _ATTR_MAP = {v: k for k, v in _KEY_MAP.items()}
 
     def __init__(self, date='', shop='', channel='', cat='', model='', scene='',
                  spend=0.0, impress=0.0, clicks=0.0, total_amt=0.0, direct_amt=0.0,
                  indirect_amt=0.0, cart=0.0, cust=0.0, total_orders=0.0,
                  direct_orders=0.0, roi=0.0):
+        super().__init__()
         self._date = date
         self._shop = shop
         self._channel = channel
@@ -642,35 +640,22 @@ class _PromoRow:
         self._direct_orders = direct_orders
         self._roi = roi
 
-    def get(self, key, default=None):
-        """兼容 dict.get() 风格访问: r.get('_花费', 0)"""
-        attr = self._KEY_MAP.get(key)
-        if attr is None:
-            return default
-        return getattr(self, attr, default)
+    def __getattr__(self, name):
+        """支持属性访问: row._date, row._spend 等"""
+        if name in self._ATTR_MAP:
+            return self.get(self._ATTR_MAP[name], 0)
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        """属性设置时同步更新 dict 内容"""
+        if name.startswith('_') and name in self._ATTR_MAP:
+            super().__setitem__(self._ATTR_MAP[name], value)
+        super().__setattr__(name, value)
 
     def __repr__(self):
         return f'_PromoRow(date={self._date}, shop={self._shop})'
 
-    # ── pickle 序列化支持（st.cache_data 需要）──
-    def __getstate__(self):
-        """返回所有 __slots__ 属性的字典，用于 pickle 序列化。"""
-        return {slot: getattr(self, slot) for slot in self.__slots__}
-
-    def __setstate__(self, state):
-        """从字典恢复 __slots__ 属性，用于 pickle 反序列化。"""
-        for slot in self.__slots__:
-            setattr(self, slot, state.get(slot))
-
-    def __reduce__(self):
-        """返回 (构造函数, 参数元组)，让 pickle 能重建对象。"""
-        return (
-            _PromoRow,
-            (self._date, self._shop, self._channel, self._cat, self._model, self._scene,
-             self._spend, self._impress, self._clicks, self._total_amt, self._direct_amt,
-             self._indirect_amt, self._cart, self._cust, self._total_orders,
-             self._direct_orders, self._roi)
-        )
+    # dict 原生支持 pickle，无需额外方法
 
 
 @st.cache_data(show_spinner=False)
