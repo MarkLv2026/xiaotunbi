@@ -363,10 +363,15 @@ with st.sidebar:
             st.markdown('**建议工作表**')
             st.caption('天猫数据源 / 京东抖音数据源')
             # 同步按钮
-            _sales_ready = _CACHE_SALES.exists()
+            _sales_ready = _CACHE_SALES.exists() or _REPO_SALES.exists()
             if _sales_ready:
                 if st.button('📤 同步销售数据到云端', use_container_width=True, key='sync_sales'):
                     with st.spinner('正在同步销售数据到 GitHub...'):
+                        # 若容器重启后本地缓存丢失，但仓库数据仍在，先从仓库恢复本地缓存
+                        if not _CACHE_SALES.exists() and _REPO_SALES.exists():
+                            _CACHE_SALES.write_bytes(_REPO_SALES.read_bytes())
+                            if _CACHE_SALES_PKL.exists():
+                                _CACHE_SALES_PKL.unlink()
                         # 确保本地 pickle 与 xlsx 一致，避免云端仍使用旧 pickle
                         if not _CACHE_SALES_PKL.exists() or _CACHE_SALES_PKL.stat().st_mtime < _CACHE_SALES.stat().st_mtime:
                             import pickle as _pkl
@@ -411,10 +416,15 @@ with st.sidebar:
             st.markdown('**建议工作表**')
             st.caption('京东推广数据源 / 天猫推广数据源')
             # 同步按钮
-            _promo_ready = _CACHE_PROMO.exists()
+            _promo_ready = _CACHE_PROMO.exists() or _REPO_PROMO.exists()
             if _promo_ready:
                 if st.button('📤 同步推广数据到云端', use_container_width=True, key='sync_promo'):
                     with st.spinner('正在同步推广数据到 GitHub...'):
+                        # 若容器重启后本地缓存丢失，但仓库数据仍在，先从仓库恢复本地缓存
+                        if not _CACHE_PROMO.exists() and _REPO_PROMO.exists():
+                            _CACHE_PROMO.write_bytes(_REPO_PROMO.read_bytes())
+                            if _CACHE_PROMO_PKL.exists():
+                                _CACHE_PROMO_PKL.unlink()
                         # 确保本地 pickle 与 xlsx 一致，避免云端仍使用旧 pickle
                         if not _CACHE_PROMO_PKL.exists() or _CACHE_PROMO_PKL.stat().st_mtime < _CACHE_PROMO.stat().st_mtime:
                             import pickle as _pkl
